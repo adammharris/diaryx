@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { detectTauri } from './utils/tauri.js';
 
 export interface JournalEntry {
     id: string;
@@ -34,11 +35,32 @@ interface JournalDB extends DBSchema {
 
 class StorageAdapter {
     private db: IDBPDatabase<JournalDB> | null = null;
-    private isTauri: boolean = false;
+    private _isTauri: boolean | null = null;
+    private isBuilding: boolean = false;
 
     constructor() {
-        // Detect if we're running in Tauri
-        this.isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+        // Detect if we're in build mode (prerendering)
+        this.isBuilding = typeof window === 'undefined' || typeof document === 'undefined';
+    }
+
+    // Use the shared Tauri detection utility
+    private get isTauri(): boolean {
+        if (this._isTauri === null) {
+            this._isTauri = detectTauri();
+        }
+        return this._isTauri;
+    }
+
+    // Method to force refresh Tauri detection
+    public refreshTauriDetection(): void {
+        this._isTauri = null;
+        // Force re-detection
+        const _ = this.isTauri;
+    }
+
+    // Public getter for Tauri status (for debugging and UI)
+    public get isRunningInTauri(): boolean {
+        return this.isTauri;
     }
 
     async initDB() {
@@ -346,21 +368,33 @@ Try editing this entry to experiment with markdown!`,
 
     // Combined operations (filesystem + cache in Tauri, web-only in browser)
     async getAllEntries(): Promise<JournalEntryMetadata[]> {
+        // During build/prerender, return empty array to avoid errors
+        if (this.isBuilding) {
+            return [];
+        }
+
         if (this.isTauri) {
             try {
-                // Try to get from filesystem first
-                const entries = await this.getEntriesFromFS();
+                // Try to get from filesystem first with timeout
+                const timeoutPromise = new Promise<never>((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout loading entries')), 15000)
+                );
                 
-                // Cache the results
-                if (entries.length > 0) {
-                    await this.cacheEntries(entries);
-                }
+                const entriesPromise = this.getEntriesFromFS();
+                const entries = await Promise.race([entriesPromise, timeoutPromise]);
+                
+                // Cache the results and clear stale entries
+                await this.cacheEntries(entries);
                 
                 return entries;
             } catch (error) {
                 console.error('Failed to get entries from filesystem, trying cache:', error);
-                // Fallback to cache
-                return await this.getCachedEntries();
+                // Fallback to cache but warn about potential stale data
+                const cachedEntries = await this.getCachedEntries();
+                if (cachedEntries.length > 0) {
+                    console.warn('Using cached entries - data may be stale if files were deleted');
+                }
+                return cachedEntries;
             }
         } else {
             // Web mode - use IndexedDB and create default entries if needed
@@ -370,10 +404,20 @@ Try editing this entry to experiment with markdown!`,
     }
 
     async getEntry(id: string): Promise<JournalEntry | null> {
+        // During build/prerender, return null to avoid errors
+        if (this.isBuilding) {
+            return null;
+        }
+
         if (this.isTauri) {
             try {
-                // Try filesystem first
-                const entry = await this.getEntryFromFS(id);
+                // Try filesystem first with timeout to prevent infinite loading
+                const timeoutPromise = new Promise<never>((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout loading entry')), 10000)
+                );
+                
+                const entryPromise = this.getEntryFromFS(id);
+                const entry = await Promise.race([entryPromise, timeoutPromise]);
                 
                 // Cache the result
                 if (entry) {
@@ -382,9 +426,13 @@ Try editing this entry to experiment with markdown!`,
                 
                 return entry;
             } catch (error) {
-                console.error('Failed to get entry from filesystem, trying cache:', error);
+                console.error(`Failed to get entry ${id} from filesystem, trying cache:`, error);
                 // Fallback to cache
-                return await this.getCachedEntry(id);
+                const cachedEntry = await this.getCachedEntry(id);
+                if (!cachedEntry) {
+                    console.warn(`Entry ${id} not found in filesystem or cache, may have been deleted`);
+                }
+                return cachedEntry;
             }
         } else {
             // Web mode - only use IndexedDB
@@ -393,6 +441,11 @@ Try editing this entry to experiment with markdown!`,
     }
 
     async saveEntry(id: string, content: string): Promise<boolean> {
+        // During build/prerender, return false to avoid errors
+        if (this.isBuilding) {
+            return false;
+        }
+
         if (this.isTauri) {
             const success = await this.saveEntryToFS(id, content);
             
@@ -412,6 +465,11 @@ Try editing this entry to experiment with markdown!`,
     }
 
     async createEntry(title: string): Promise<string | null> {
+        // During build/prerender, return null to avoid errors
+        if (this.isBuilding) {
+            return null;
+        }
+
         if (this.isTauri) {
             return await this.createEntryInFS(title);
         } else {
@@ -421,6 +479,11 @@ Try editing this entry to experiment with markdown!`,
     }
 
     async deleteEntry(id: string): Promise<boolean> {
+        // During build/prerender, return false to avoid errors
+        if (this.isBuilding) {
+            return false;
+        }
+
         if (this.isTauri) {
             const success = await this.deleteEntryFromFS(id);
             
@@ -432,6 +495,30 @@ Try editing this entry to experiment with markdown!`,
         } else {
             // Web mode - delete from IndexedDB
             return await this.deleteEntryInWeb(id);
+        }
+    }
+
+    // Method to clear cache and force refresh from filesystem
+    async clearCacheAndRefresh(): Promise<void> {
+        const db = await this.initDB();
+        const tx = db.transaction(['entries'], 'readwrite');
+        await tx.objectStore('entries').clear();
+        await tx.done;
+        console.log('Cache cleared - next load will fetch fresh data from filesystem');
+    }
+
+    // Method to check if an entry exists before trying to load it
+    async entryExists(id: string): Promise<boolean> {
+        if (this.isTauri) {
+            try {
+                const entry = await this.getEntryFromFS(id);
+                return entry !== null;
+            } catch (error) {
+                return false;
+            }
+        } else {
+            const entry = await this.getCachedEntry(id);
+            return entry !== null;
         }
     }
 }

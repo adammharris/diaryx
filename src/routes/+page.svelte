@@ -41,8 +41,26 @@
       entries = await storage.getAllEntries();
     } catch (error) {
       console.error('Failed to load entries:', error);
+      // Show error message to user
+      alert('Failed to load entries. Some files may have been deleted.');
     } finally {
       isLoading = false;
+    }
+  }
+
+  async function refreshEntries() {
+    if (isTauri) {
+      try {
+        // Clear cache and reload from filesystem
+        await storage.clearCacheAndRefresh();
+        await loadEntries();
+      } catch (error) {
+        console.error('Failed to refresh:', error);
+        alert('Failed to refresh entries');
+      }
+    } else {
+      // In web mode, just reload
+      await loadEntries();
     }
   }
 
@@ -119,14 +137,24 @@
         <h1 class="app-title">Diaryx</h1>
         <p class="app-subtitle">Personal Journal</p>
       </div>
-      <button 
-        class="settings-btn"
-        onclick={handleOpenSettings}
-        aria-label="Open settings"
-        title="Settings"
-      >
-        ⚙️
-      </button>
+      <div class="header-buttons">
+        <button 
+          class="refresh-btn"
+          onclick={refreshEntries}
+          aria-label="Refresh entries"
+          title="Refresh entries from filesystem"
+        >
+          🔄
+        </button>
+        <button 
+          class="settings-btn"
+          onclick={handleOpenSettings}
+          aria-label="Open settings"
+          title="Settings"
+        >
+          ⚙️
+        </button>
+      </div>
     </div>
 
     <div class="new-entry">
@@ -237,6 +265,12 @@
     font-size: 0.875rem;
   }
 
+  .header-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .refresh-btn,
   .settings-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
@@ -249,8 +283,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 2.5rem;
+    height: 2.5rem;
   }
 
+  .refresh-btn:hover,
   .settings-btn:hover {
     background: rgba(255, 255, 255, 0.2);
   }

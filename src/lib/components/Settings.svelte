@@ -1,13 +1,25 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount } from 'svelte';
     import { currentTheme, themes, setTheme } from '../stores/theme.js';
+    import { storage } from '../storage.js';
 
     const dispatch = createEventDispatcher<{
         close: {};
     }>();
 
     let selectedTheme = $currentTheme;
-    let isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    let isTauri = false;
+
+    onMount(() => {
+        // Get initial detection
+        isTauri = storage.isRunningInTauri;
+        
+        // Refresh detection after a short delay in case Tauri takes time to load
+        setTimeout(() => {
+            storage.refreshTauriDetection();
+            isTauri = storage.isRunningInTauri;
+        }, 200);
+    });
 
     function handleThemeChange(themeName: string) {
         selectedTheme = themeName;
