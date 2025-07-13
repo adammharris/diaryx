@@ -1,0 +1,363 @@
+<script lang="ts">
+  import { storage, type JournalEntryMetadata } from '../lib/storage.js';
+  import EntryCard from '../lib/components/EntryCard.svelte';
+  import Editor from '../lib/components/Editor.svelte';
+  import Settings from '../lib/components/Settings.svelte';
+  import { currentTheme } from '../lib/stores/theme.js';
+
+  let entries: JournalEntryMetadata[] = $state([]);
+  let selectedEntryId: string | null = $state(null);
+  let isLoading = $state(true);
+  let searchQuery = $state('');
+  let isCreating = $state(false);
+  let newEntryTitle = $state('');
+  let showSettings = $state(false);
+  let isTauri = $state(false);
+
+  // Initialize theme and detect environment
+  $effect(() => {
+    // This will trigger the theme initialization
+    currentTheme.set($currentTheme);
+    // Detect if we're in Tauri
+    isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+  });
+
+  // Filtered entries based on search
+  let filteredEntries = $derived(
+    entries.filter(entry => 
+      entry.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      entry.preview.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  );
+
+  // Load entries on mount
+  $effect(() => {
+    loadEntries();
+  });
+
+  async function loadEntries() {
+    isLoading = true;
+    try {
+      entries = await storage.getAllEntries();
+    } catch (error) {
+      console.error('Failed to load entries:', error);
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  function handleSelectEntry(event: CustomEvent<{ id: string }>) {
+    selectedEntryId = event.detail.id;
+  }
+
+  async function handleDeleteEntry(event: CustomEvent<{ id: string }>) {
+    try {
+      const success = await storage.deleteEntry(event.detail.id);
+      if (success) {
+        entries = entries.filter(e => e.id !== event.detail.id);
+        if (selectedEntryId === event.detail.id) {
+          selectedEntryId = null;
+        }
+      } else {
+        alert('Failed to delete entry');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete entry');
+    }
+  }
+
+  function handleCloseEditor() {
+    selectedEntryId = null;
+  }
+
+  function handleEntrySaved() {
+    // Refresh the entries list
+    loadEntries();
+  }
+
+  async function handleCreateEntry() {
+    if (!newEntryTitle.trim()) return;
+    
+    isCreating = true;
+    try {
+      const id = await storage.createEntry(newEntryTitle);
+      if (id) {
+        newEntryTitle = '';
+        await loadEntries();
+        selectedEntryId = id;
+      } else {
+        alert('Failed to create entry');
+      }
+    } catch (error) {
+      console.error('Create error:', error);
+      alert('Failed to create entry');
+    } finally {
+      isCreating = false;
+    }
+  }
+
+  function handleKeydownCreate(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      handleCreateEntry();
+    }
+  }
+
+  function handleOpenSettings() {
+    showSettings = true;
+  }
+
+  function handleCloseSettings() {
+    showSettings = false;
+  }
+</script>
+
+<main class="app-container">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="header-content">
+        <h1 class="app-title">Diaryx</h1>
+        <p class="app-subtitle">Personal Journal</p>
+      </div>
+      <button 
+        class="settings-btn"
+        onclick={handleOpenSettings}
+        aria-label="Open settings"
+        title="Settings"
+      >
+        ⚙️
+      </button>
+    </div>
+
+    <div class="new-entry">
+      <input
+        type="text"
+        placeholder="New journal entry title..."
+        bind:value={newEntryTitle}
+        onkeydown={handleKeydownCreate}
+        class="new-entry-input"
+      />
+      <button
+        onclick={handleCreateEntry}
+        disabled={isCreating || !newEntryTitle.trim()}
+        class="new-entry-btn"
+      >
+        {isCreating ? '...' : '+'}
+      </button>
+    </div>
+
+    <div class="search-container">
+      <input
+        type="text"
+        placeholder="Search entries..."
+        bind:value={searchQuery}
+        class="search-input"
+      />
+    </div>
+
+    <div class="entries-container">
+      {#if isLoading}
+        <div class="loading">Loading entries...</div>
+      {:else if filteredEntries.length === 0}
+        <div class="no-entries">
+          {searchQuery ? 'No entries match your search' : 'No journal entries found. Create your first entry above!'}
+        </div>
+      {:else}
+        {#each filteredEntries as entry (entry.id)}
+          <EntryCard 
+            {entry} 
+            on:select={handleSelectEntry}
+            on:delete={handleDeleteEntry}
+          />
+        {/each}
+      {/if}
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <Editor 
+      entryId={selectedEntryId}
+      on:close={handleCloseEditor}
+      on:saved={handleEntrySaved}
+    />
+  </main>
+</main>
+
+{#if showSettings}
+  <Settings on:close={handleCloseSettings} />
+{/if}
+
+<style>
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--color-background, #f8fafc);
+  }
+
+  .app-container {
+    display: flex;
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    width: 350px;
+    background: var(--color-surface, white);
+    border-right: 1px solid var(--color-border, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .header-content {
+    flex: 1;
+  }
+
+  .app-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem 0;
+  }
+
+  .app-subtitle {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.875rem;
+  }
+
+  .settings-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .settings-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .new-entry {
+    display: flex;
+    padding: 1rem;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+  }
+
+  .new-entry-input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border, #d1d5db);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .new-entry-input:focus {
+    border-color: var(--color-primary, #3b82f6);
+  }
+
+  .new-entry-btn {
+    padding: 0.75rem 1rem;
+    background: var(--color-primary, #3b82f6);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+    min-width: 3rem;
+  }
+
+  .new-entry-btn:hover:not(:disabled) {
+    background: var(--color-primaryHover, #2563eb);
+  }
+
+  .new-entry-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .search-container {
+    padding: 1rem;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border, #d1d5db);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+  }
+
+  .search-input:focus {
+    border-color: var(--color-primary, #3b82f6);
+  }
+
+  .entries-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .main-content {
+    flex: 1;
+    padding: 1rem;
+    overflow: hidden;
+  }
+
+  .loading,
+  .no-entries {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    color: var(--color-textSecondary, #6b7280);
+    text-align: center;
+    font-size: 0.875rem;
+  }
+
+  .no-entries {
+    line-height: 1.5;
+  }
+
+  /* Responsive design */
+  @media (max-width: 768px) {
+    .app-container {
+      flex-direction: column;
+    }
+
+    .sidebar {
+      width: 100%;
+      height: 50vh;
+    }
+
+    .main-content {
+      height: 50vh;
+    }
+  }
+</style>
