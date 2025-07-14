@@ -1,17 +1,13 @@
 <script lang="ts">
     import type { JournalEntryMetadata } from '../storage/index.ts';
-    import { createEventDispatcher } from 'svelte';
 
     interface Props {
         entry: JournalEntryMetadata;
+        onselect?: (event: { id: string }) => void;
+        ondelete?: (event: { id: string }) => void;
     }
 
-    let { entry }: Props = $props();
-
-    const dispatch = createEventDispatcher<{
-        select: { id: string };
-        delete: { id: string };
-    }>();
+    let { entry, onselect, ondelete }: Props = $props();
 
     // Check if entry content appears to be encrypted by looking at the preview
     let isEntryEncrypted = $derived(entry.preview.includes('🔒') && entry.preview.includes('encrypted'));
@@ -30,13 +26,51 @@
     }
 
     function handleSelect() {
-        dispatch('select', { id: entry.id });
+        console.log('EntryCard.handleSelect called for entry:', entry.id);
+        onselect?.({ id: entry.id });
     }
 
-    function handleDelete(event: Event) {
+    async function handleDelete(event: Event) {
+        console.log('EntryCard.handleDelete called for entry:', entry.id);
         event.stopPropagation();
-        if (confirm(`Are you sure you want to delete "${entry.title}"?`)) {
-            dispatch('delete', { id: entry.id });
+        console.log('Event propagation stopped');
+        
+        let userConfirmed = false;
+        
+        // Try Tauri dialog first, fallback to browser confirm
+        try {
+            console.log('Window available:', typeof window !== 'undefined');
+            console.log('__TAURI__ in window:', typeof window !== 'undefined' && '__TAURI__' in window);
+            
+            // Force using Tauri dialog since we know we're in Tauri
+            console.log('Using Tauri dialog');
+            const { confirm } = await import('@tauri-apps/plugin-dialog');
+            console.log('About to show Tauri dialog');
+            userConfirmed = await confirm(
+                `Are you sure you want to delete "${entry.title}"?`,
+                { title: 'Delete Entry', kind: 'warning' }
+            );
+            console.log('Tauri dialog completed with result:', userConfirmed);
+        } catch (error) {
+            console.error('Dialog error, falling back to browser confirm:', error);
+            const result = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
+            console.log('Fallback confirm result:', result);
+            // Handle case where confirm might return a Promise
+            if (result && typeof result.then === 'function') {
+                userConfirmed = await result;
+            } else {
+                userConfirmed = result;
+            }
+            console.log('Final fallback confirm result:', userConfirmed);
+        }
+        
+        console.log('Final userConfirmed value:', userConfirmed);
+        
+        if (userConfirmed) {
+            console.log('User confirmed deletion, calling ondelete callback');
+            ondelete?.({ id: entry.id });
+        } else {
+            console.log('User cancelled deletion');
         }
     }
 </script>
@@ -114,7 +148,7 @@
         cursor: pointer;
         padding: 0.25rem;
         border-radius: 4px;
-        opacity: 0;
+        opacity: 0.5;
         transition: all 0.2s ease;
         line-height: 1;
     }

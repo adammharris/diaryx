@@ -112,12 +112,18 @@ export class TauriStorageAdapter implements IFileSystemStorage {
     async deleteEntryFromFS(id: string): Promise<boolean> {
         try {
             const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
+            console.log(`TauriAdapter.deleteEntryFromFS called with id: ${id}`);
+            console.log(`Full file path: ${filePath}`);
+            console.log(`Base directory: ${this.baseDir}`);
             
             // Check if file exists first
             const fileExists = await exists(filePath, { baseDir: this.baseDir });
+            console.log(`File exists: ${fileExists}`);
             
             if (fileExists) {
+                console.log(`Removing file: ${filePath}`);
                 await remove(filePath, { baseDir: this.baseDir });
+                console.log(`File removed successfully`);
                 return true;
             } else {
                 console.warn(`File ${filePath} does not exist, considering deletion successful`);

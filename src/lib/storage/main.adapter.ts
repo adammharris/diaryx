@@ -160,20 +160,29 @@ export class MainStorageAdapter implements IStorageAdapter {
     }
 
     async deleteEntry(id: string): Promise<boolean> {
+        console.log('MainAdapter.deleteEntry called with id:', id);
+        console.log('Current environment:', this.environment);
+        
         // During build/prerender, return false to avoid errors
         if (this.environment === 'build') {
+            console.log('Build environment detected, returning false');
             return false;
         }
 
         if (this.environment === 'tauri' && this.tauriAdapter) {
+            console.log('Using Tauri adapter for deletion');
             const success = await this.tauriAdapter.deleteEntryFromFS(id);
+            console.log('Tauri adapter delete result:', success);
             
             if (success) {
+                console.log('Deleting from cache');
                 await this.cacheAdapter.deleteCachedEntry(id);
+                console.log('Cache deletion complete');
             }
             
             return success;
         } else {
+            console.log('Using web adapter for deletion');
             // Web mode - delete from IndexedDB
             return await this.deleteEntryInWeb(id);
         }

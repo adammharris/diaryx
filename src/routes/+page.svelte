@@ -64,19 +64,23 @@
     }
   }
 
-  function handleSelectEntry(event: CustomEvent<{ id: string }>) {
-    selectedEntryId = event.detail.id;
+  function handleSelectEntry(event: { id: string }) {
+    selectedEntryId = event.id;
   }
 
-  async function handleDeleteEntry(event: CustomEvent<{ id: string }>) {
+  async function handleDeleteEntry(event: { id: string }) {
+    console.log('handleDeleteEntry called with id:', event.id);
     try {
-      const success = await storage.deleteEntry(event.detail.id);
+      const success = await storage.deleteEntry(event.id);
+      console.log('Delete result:', success);
       if (success) {
-        entries = entries.filter(e => e.id !== event.detail.id);
-        if (selectedEntryId === event.detail.id) {
+        entries = entries.filter(e => e.id !== event.id);
+        if (selectedEntryId === event.id) {
           selectedEntryId = null;
         }
+        console.log('Entry deleted successfully');
       } else {
+        console.log('Delete failed');
         alert('Failed to delete entry');
       }
     } catch (error) {
@@ -201,8 +205,8 @@
         {#each filteredEntries as entry (entry.id)}
           <EntryCard 
             {entry} 
-            on:select={handleSelectEntry}
-            on:delete={handleDeleteEntry}
+            onselect={handleSelectEntry}
+            ondelete={handleDeleteEntry}
           />
         {/each}
       {/if}
