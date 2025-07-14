@@ -25,6 +25,11 @@
             password = '';
             showPassword = false;
             isSubmitting = false;
+            // Focus the password input after a short delay to ensure it's rendered
+            setTimeout(() => {
+                const input = document.querySelector('.password-input') as HTMLInputElement;
+                input?.focus();
+            }, 100);
         }
     });
 
@@ -62,10 +67,23 @@
 </script>
 
 {#if isVisible}
-    <div class="modal-overlay" onclick={handleCancel}>
-        <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+    <div 
+        class="modal-overlay" 
+        onclick={handleCancel}
+        onkeydown={(e) => e.key === 'Escape' && handleCancel()}
+        role="presentation"
+    >
+        <div 
+            class="modal-content" 
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="password-modal-title"
+            tabindex="-1"
+        >
             <div class="modal-header">
-                <h3 class="modal-title">🔒 Enter Password</h3>
+                <h3 class="modal-title" id="password-modal-title">🔒 Enter Password</h3>
                 <button class="close-btn" onclick={handleCancel} aria-label="Close">✕</button>
             </div>
 
@@ -87,7 +105,6 @@
                         onkeydown={handleKeydown}
                         placeholder="Enter password..."
                         class="password-input"
-                        autofocus
                         disabled={isSubmitting}
                     />
                     <button
