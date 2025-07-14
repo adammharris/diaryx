@@ -4,6 +4,7 @@
   import Editor from '../lib/components/Editor.svelte';
   import Settings from '../lib/components/Settings.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
+  import { detectTauri } from '../lib/utils/tauri.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let selectedEntryId: string | null = $state(null);
@@ -13,13 +14,14 @@
   let newEntryTitle = $state('');
   let showSettings = $state(false);
   let isTauri = $state(false);
+  let reloadTimeout: number | null = null;
 
   // Initialize theme and detect environment
   $effect(() => {
     // This will trigger the theme initialization
     currentTheme.set($currentTheme);
-    // Detect if we're in Tauri
-    isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    // Detect if we're in Tauri using the proper utility
+    isTauri = detectTauri();
   });
 
   // Filtered entries based on search
@@ -30,9 +32,41 @@
     )
   );
 
-  // Load entries on mount
+  // Load entries on mount and start file watching
   $effect(() => {
     loadEntries();
+    
+    // Start file watching in Tauri mode
+    if (isTauri) {
+      storage.startFileWatching(() => {
+        console.log('File change detected, debouncing reload');
+        
+        // Clear existing timeout
+        if (reloadTimeout) {
+          clearTimeout(reloadTimeout);
+        }
+        
+        // Debounce the reload to avoid excessive calls
+        reloadTimeout = setTimeout(() => {
+          console.log('Reloading entries due to file change');
+          loadEntries();
+          reloadTimeout = null;
+        }, 300);
+      });
+    }
+    
+    // Cleanup function to stop watching when component is destroyed
+    return () => {
+      if (isTauri) {
+        storage.stopFileWatching();
+      }
+      
+      // Clear any pending timeout
+      if (reloadTimeout) {
+        clearTimeout(reloadTimeout);
+        reloadTimeout = null;
+      }
+    };
   });
 
   async function loadEntries() {
@@ -48,21 +82,6 @@
     }
   }
 
-  async function refreshEntries() {
-    if (isTauri) {
-      try {
-        // Clear cache and reload from filesystem
-        await storage.clearCacheAndRefresh();
-        await loadEntries();
-      } catch (error) {
-        console.error('Failed to refresh:', error);
-        alert('Failed to refresh entries');
-      }
-    } else {
-      // In web mode, just reload
-      await loadEntries();
-    }
-  }
 
   function handleSelectEntry(event: { id: string }) {
     selectedEntryId = event.id;
@@ -149,14 +168,6 @@
         <p class="app-subtitle">Personal Journal</p>
       </div>
       <div class="header-buttons">
-        <button 
-          class="refresh-btn"
-          onclick={refreshEntries}
-          aria-label="Refresh entries"
-          title="Refresh entries from filesystem"
-        >
-          🔄
-        </button>
         <button 
           class="settings-btn"
           onclick={handleOpenSettings}
@@ -282,7 +293,6 @@
     gap: 0.5rem;
   }
 
-  .refresh-btn,
   .settings-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
@@ -299,7 +309,6 @@
     height: 2.5rem;
   }
 
-  .refresh-btn:hover,
   .settings-btn:hover {
     background: rgba(255, 255, 255, 0.2);
   }

@@ -307,5 +307,28 @@ export class MainStorageAdapter implements IStorageAdapter {
 
     async cleanup(): Promise<void> {
         await this.cacheAdapter.close();
+        
+        // Stop file watching if active
+        if (this.environment === 'tauri' && this.tauriAdapter) {
+            this.tauriAdapter.stopWatching();
+        }
+    }
+
+    /**
+     * Start watching for file changes (Tauri only)
+     */
+    async startFileWatching(onChange: () => void): Promise<void> {
+        if (this.environment === 'tauri' && this.tauriAdapter) {
+            await this.tauriAdapter.startWatching(onChange);
+        }
+    }
+
+    /**
+     * Stop watching for file changes (Tauri only)
+     */
+    stopFileWatching(): void {
+        if (this.environment === 'tauri' && this.tauriAdapter) {
+            this.tauriAdapter.stopWatching();
+        }
     }
 }

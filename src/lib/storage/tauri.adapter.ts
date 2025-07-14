@@ -8,6 +8,7 @@ import {
     remove, 
     exists, 
     readDir,
+    watchImmediate,
     BaseDirectory 
 } from '@tauri-apps/plugin-fs';
 import type { JournalEntry, JournalEntryMetadata, IFileSystemStorage } from './types.js';
@@ -18,6 +19,8 @@ export class TauriStorageAdapter implements IFileSystemStorage {
     private readonly baseDir = BaseDirectory.Document;
     private readonly fileExtension = '.md';
     private readonly journalFolder = 'Diaryx';
+    private fileWatcher: (() => void) | null = null;
+    private onFileChange: (() => void) | null = null;
 
     async getEntriesFromFS(): Promise<JournalEntryMetadata[]> {
         try {
@@ -220,5 +223,49 @@ export class TauriStorageAdapter implements IFileSystemStorage {
             timeoutMs,
             `Timeout loading entry ${id} from filesystem`
         );
+    }
+
+    /**
+     * Start watching for file changes in the journal directory
+     */
+    async startWatching(onChange: () => void): Promise<void> {
+        if (this.fileWatcher) {
+            return; // Already watching
+        }
+
+        try {
+            console.log('Starting file system watcher for:', this.journalFolder);
+            this.onFileChange = onChange;
+            
+            this.fileWatcher = await watchImmediate(
+                [this.journalFolder],
+                (event) => {
+                    console.log('File system event:', event);
+                    // Debounce the callback to avoid excessive calls
+                    if (this.onFileChange) {
+                        setTimeout(() => {
+                            this.onFileChange?.();
+                        }, 100);
+                    }
+                },
+                { baseDir: this.baseDir }
+            );
+            
+            console.log('File system watcher started successfully');
+        } catch (error) {
+            console.error('Failed to start file system watcher:', error);
+        }
+    }
+
+    /**
+     * Stop watching for file changes
+     */
+    stopWatching(): void {
+        if (this.fileWatcher) {
+            console.log('Stopping file system watcher');
+            this.fileWatcher();
+            this.fileWatcher = null;
+            this.onFileChange = null;
+        }
     }
 }
