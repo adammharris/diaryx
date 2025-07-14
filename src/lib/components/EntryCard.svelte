@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { JournalEntryMetadata } from '../storage/index.ts';
+    import { detectTauri } from '../utils/tauri.ts';
 
     interface Props {
         entry: JournalEntryMetadata;
@@ -37,31 +38,29 @@
         
         let userConfirmed = false;
         
-        // Try Tauri dialog first, fallback to browser confirm
-        try {
-            console.log('Window available:', typeof window !== 'undefined');
-            console.log('__TAURI__ in window:', typeof window !== 'undefined' && '__TAURI__' in window);
-            
-            // Force using Tauri dialog since we know we're in Tauri
+        // Detect platform and use appropriate dialog
+        const isTauri = detectTauri();
+        console.log('Tauri detection result:', isTauri);
+        
+        if (isTauri) {
             console.log('Using Tauri dialog');
-            const { confirm } = await import('@tauri-apps/plugin-dialog');
-            console.log('About to show Tauri dialog');
-            userConfirmed = await confirm(
-                `Are you sure you want to delete "${entry.title}"?`,
-                { title: 'Delete Entry', kind: 'warning' }
-            );
-            console.log('Tauri dialog completed with result:', userConfirmed);
-        } catch (error) {
-            console.error('Dialog error, falling back to browser confirm:', error);
-            const result = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
-            console.log('Fallback confirm result:', result);
-            // Handle case where confirm might return a Promise
-            if (result && typeof result.then === 'function') {
-                userConfirmed = await result;
-            } else {
-                userConfirmed = result;
+            try {
+                const { confirm } = await import('@tauri-apps/plugin-dialog');
+                console.log('Dialog imported successfully');
+                console.log('About to show dialog, awaiting user response...');
+                userConfirmed = await confirm(
+                    `Are you sure you want to delete "${entry.title}"?`,
+                    { title: 'Delete Entry', kind: 'warning' }
+                );
+                console.log('Dialog closed with result:', userConfirmed);
+            } catch (error) {
+                console.error('Tauri dialog error:', error);
+                console.log('Falling back to browser confirm');
+                userConfirmed = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
             }
-            console.log('Final fallback confirm result:', userConfirmed);
+        } else {
+            console.log('Using browser confirm');
+            userConfirmed = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
         }
         
         console.log('Final userConfirmed value:', userConfirmed);
@@ -148,7 +147,7 @@
         cursor: pointer;
         padding: 0.25rem;
         border-radius: 4px;
-        opacity: 0.5;
+        opacity: 0;
         transition: all 0.2s ease;
         line-height: 1;
     }
