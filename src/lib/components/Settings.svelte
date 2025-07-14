@@ -1,23 +1,31 @@
 <script lang="ts">
-    import { createEventDispatcher, onMount } from 'svelte';
     import { currentTheme, themes, setTheme } from '../stores/theme.js';
+    import { storage } from '../storage/index.js';
 
-    const dispatch = createEventDispatcher<{
-        close: {};
-    }>();
+    interface Props {
+        onclose?: () => void;
+    }
 
-    let selectedTheme = $currentTheme;
-    let isTauri = false;
+    let { onclose }: Props = $props();
 
-    onMount(() => {
+    let selectedTheme = $state($currentTheme);
+    let isTauri = $state(false);
+
+    // Initialize detection when component mounts
+    $effect(() => {
         // Get initial detection
         isTauri = storage.isRunningInTauri;
         
         // Refresh detection after a short delay in case Tauri takes time to load
         setTimeout(() => {
-            storage.refreshTauriDetection();
+            storage.refreshEnvironmentDetection();
             isTauri = storage.isRunningInTauri;
         }, 200);
+    });
+
+    // Keep selectedTheme in sync with the store
+    $effect(() => {
+        selectedTheme = $currentTheme;
     });
 
     function handleThemeChange(themeName: string) {
@@ -26,7 +34,7 @@
     }
 
     function handleClose() {
-        dispatch('close', {});
+        onclose?.();
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -102,9 +110,9 @@
                     A beautiful journaling app built with Tauri and Svelte.<br>
                     <br>
                     <strong>Mode:</strong> {isTauri ? 'Desktop (Tauri)' : 'Web Browser'}<br>
-                    <strong>Storage:</strong> {isTauri ? 'Files + IndexedDB' : 'IndexedDB only'}<br>
+                    <strong>Storage:</strong> {isTauri ? 'Files + IndexedDB Cache' : 'IndexedDB only'}<br>
                     {#if isTauri}
-                        <strong>Location:</strong> ~/Documents/Diaryx/entries/
+                        <strong>Location:</strong> ~/Documents/Diaryx/
                     {:else}
                         <em>Note: In web mode, entries are stored locally in your browser's database.</em>
                     {/if}

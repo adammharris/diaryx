@@ -224,7 +224,7 @@
 </main>
 
 {#if showSettings}
-  <Settings on:close={handleCloseSettings} />
+  <Settings onclose={handleCloseSettings} />
 {/if}
 
 <style>
