@@ -1,7 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from 'svelte';
     import { currentTheme, themes, setTheme } from '../stores/theme.js';
-    import { storage } from '../storage.js';
 
     const dispatch = createEventDispatcher<{
         close: {};

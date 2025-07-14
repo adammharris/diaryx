@@ -27,49 +27,34 @@
     }
 
     function handleSelect() {
-        console.log('EntryCard.handleSelect called for entry:', entry.id);
         onselect?.({ id: entry.id });
     }
 
     async function handleDelete(event: Event) {
-        console.log('EntryCard.handleDelete called for entry:', entry.id);
         event.stopPropagation();
-        console.log('Event propagation stopped');
         
         let userConfirmed = false;
         
         // Detect platform and use appropriate dialog
         const isTauri = detectTauri();
-        console.log('Tauri detection result:', isTauri);
         
         if (isTauri) {
-            console.log('Using Tauri dialog');
             try {
                 const { confirm } = await import('@tauri-apps/plugin-dialog');
-                console.log('Dialog imported successfully');
-                console.log('About to show dialog, awaiting user response...');
                 userConfirmed = await confirm(
                     `Are you sure you want to delete "${entry.title}"?`,
                     { title: 'Delete Entry', kind: 'warning' }
                 );
-                console.log('Dialog closed with result:', userConfirmed);
             } catch (error) {
                 console.error('Tauri dialog error:', error);
-                console.log('Falling back to browser confirm');
                 userConfirmed = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
             }
         } else {
-            console.log('Using browser confirm');
             userConfirmed = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
         }
         
-        console.log('Final userConfirmed value:', userConfirmed);
-        
         if (userConfirmed) {
-            console.log('User confirmed deletion, calling ondelete callback');
             ondelete?.({ id: entry.id });
-        } else {
-            console.log('User cancelled deletion');
         }
     }
 </script>
