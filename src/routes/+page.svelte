@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { storage, type JournalEntryMetadata } from '../lib/storage.js';
+  import { storage, type JournalEntryMetadata } from '../lib/storage/index.ts';
   import EntryCard from '../lib/components/EntryCard.svelte';
   import Editor from '../lib/components/Editor.svelte';
   import Settings from '../lib/components/Settings.svelte';
@@ -92,6 +92,13 @@
   function handleEntrySaved() {
     // Refresh the entries list
     loadEntries();
+  }
+
+  async function handleEntryDecrypted() {
+    // Small delay to ensure metadata update is complete
+    setTimeout(() => {
+      loadEntries();
+    }, 100);
   }
 
   async function handleCreateEntry() {
@@ -207,6 +214,7 @@
       entryId={selectedEntryId}
       on:close={handleCloseEditor}
       on:saved={handleEntrySaved}
+      on:decrypted={handleEntryDecrypted}
     />
   </main>
 </main>

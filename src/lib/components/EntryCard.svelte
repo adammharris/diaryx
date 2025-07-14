@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { JournalEntryMetadata } from '../storage.js';
+    import type { JournalEntryMetadata } from '../storage/index.ts';
     import { createEventDispatcher } from 'svelte';
 
     interface Props {
@@ -12,6 +12,12 @@
         select: { id: string };
         delete: { id: string };
     }>();
+
+    // Check if entry content appears to be encrypted by looking at the preview
+    let isEntryEncrypted = $derived(entry.preview.includes('🔒') && entry.preview.includes('encrypted'));
+    
+    // The preview is already handled by the storage layer
+    let displayPreview = $derived(entry.preview);
 
     function formatDate(dateString: string) {
         return new Date(dateString).toLocaleDateString('en-US', {
@@ -43,7 +49,12 @@
     onkeydown={(e) => e.key === 'Enter' && handleSelect()}
 >
     <div class="entry-header">
-        <h3 class="entry-title">{entry.title}</h3>
+        <h3 class="entry-title">
+            {#if isEntryEncrypted}
+                <span class="encryption-indicator" title="This entry is encrypted">🔒</span>
+            {/if}
+            {entry.title}
+        </h3>
         <button 
             class="delete-btn" 
             onclick={handleDelete}
@@ -53,7 +64,7 @@
         </button>
     </div>
     
-    <p class="entry-preview">{entry.preview}</p>
+    <p class="entry-preview" class:encrypted={isEntryEncrypted}>{displayPreview}</p>
     
     <div class="entry-meta">
         <span class="entry-date">{formatDate(entry.modified_at)}</span>
@@ -138,5 +149,17 @@
     .entry-date {
         font-size: 0.75rem;
         color: var(--color-textSecondary, #9ca3af);
+    }
+
+    .encryption-indicator {
+        color: #f59e0b;
+        margin-right: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .entry-preview.encrypted {
+        color: var(--color-textSecondary, #6b7280);
+        font-style: italic;
+        opacity: 0.8;
     }
 </style>

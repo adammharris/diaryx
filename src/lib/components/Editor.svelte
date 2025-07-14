@@ -1,7 +1,10 @@
 <script lang="ts">
-    import { storage, type JournalEntry } from '../storage.js';
+    import { storage, type JournalEntry } from '../storage/index.ts';
     import { createEventDispatcher } from 'svelte';
     import SvelteMarkdown from 'svelte-markdown';
+    import PasswordPrompt from './PasswordPrompt.svelte';
+    import { passwordStore } from '../stores/password.js';
+    import { isEncrypted, decrypt, encrypt } from '../utils/crypto.js';
 
     interface Props {
         entryId: string | null;
@@ -12,6 +15,7 @@
     const dispatch = createEventDispatcher<{
         close: {};
         saved: { id: string };
+        decrypted: { id: string };
     }>();
 
     let entry: JournalEntry | null = $state(null);
@@ -19,6 +23,8 @@
     let isPreview = $state(false);
     let isSaving = $state(false);
     let isLoading = $state(false);
+    let needsPassword = $state(false);
+    let isEncryptionEnabled = $state(false);
 
     // Load entry when entryId changes
     $effect(() => {
@@ -27,6 +33,8 @@
         } else {
             entry = null;
             content = '';
+            needsPassword = false;
+            isEncryptionEnabled = false;
         }
     });
 
@@ -34,9 +42,41 @@
         if (!entryId) return;
         
         isLoading = true;
+        needsPassword = false;
+        
         try {
-            entry = await storage.getEntry(entryId);
-            content = entry?.content || '';
+            const rawEntry = await storage.getEntry(entryId);
+            if (!rawEntry) return;
+
+            entry = rawEntry;
+            
+            // Check if entry is encrypted
+            if (isEncrypted(rawEntry.content)) {
+                isEncryptionEnabled = true;
+                
+                // Try to decrypt with cached password first
+                const decryptedEntry = await passwordStore.tryDecryptWithCache(rawEntry);
+                
+                if (decryptedEntry) {
+                    // Successfully decrypted with cached password
+                    content = decryptedEntry.content;
+                    
+                    // Update title from decrypted content
+                    const firstLine = decryptedEntry.content.split('\n')[0];
+                    if (firstLine.startsWith('#')) {
+                        entry.title = firstLine.replace(/^#+\s*/, '').trim();
+                    }
+                } else {
+                    // Need password from user
+                    content = '';
+                    needsPassword = true;
+                    passwordStore.startPrompting(entryId);
+                }
+            } else {
+                // Entry is not encrypted
+                isEncryptionEnabled = false;
+                content = rawEntry.content;
+            }
         } catch (error) {
             console.error('Failed to load entry:', error);
         } finally {
@@ -49,11 +89,27 @@
         
         isSaving = true;
         try {
-            const success = await storage.saveEntry(entry.id, content);
+            let contentToSave = content;
+            
+            // If encryption is enabled, encrypt the content before saving
+            if (isEncryptionEnabled && entryId) {
+                // Get the cached password for this entry
+                const { cache } = $passwordStore;
+                const password = cache[entryId];
+                
+                if (password) {
+                    contentToSave = await encrypt(content, password);
+                } else {
+                    alert('Cannot save encrypted entry without password');
+                    return;
+                }
+            }
+            
+            const success = await storage.saveEntry(entry.id, contentToSave);
             if (success) {
                 dispatch('saved', { id: entry.id });
-                // Update local entry
-                entry.content = content;
+                // Update local entry with the original content (not encrypted)
+                entry.content = contentToSave;
                 entry.modified_at = new Date().toISOString();
             } else {
                 alert('Failed to save entry');
@@ -70,7 +126,77 @@
         dispatch('close', {});
     }
 
+    async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
+        if (!entry || !entryId) return;
+        
+        const { password } = event.detail;
+        
+        try {
+            if (isEncrypted(entry.content)) {
+                // Existing encrypted entry - try to decrypt
+                const decryptedContent = await decrypt(entry.content, password);
+                content = decryptedContent;
+                
+                // Extract proper title from decrypted content
+                const firstLine = decryptedContent.split('\n')[0];
+                if (firstLine.startsWith('#')) {
+                    entry.title = firstLine.replace(/^#+\s*/, '').trim();
+                }
+            } else {
+                // Plain text entry being encrypted - just cache the password
+                // Content stays the same for now, will be encrypted on save
+            }
+            
+            // Success! Cache the password
+            passwordStore.cachePassword(entryId, password);
+            needsPassword = false;
+            passwordStore.endPrompting();
+            
+            // Update metadata cache with proper title and notify parent
+            if (isEncrypted(entry.content)) {
+                await storage.updateDecryptedTitle(entryId, content);
+                dispatch('decrypted', { id: entryId });
+            }
+        } catch (error) {
+            // Password is incorrect (only relevant for existing encrypted entries)
+            passwordStore.handleFailedAttempt();
+        }
+    }
+
+    function handlePasswordCancel() {
+        needsPassword = false;
+        passwordStore.endPrompting();
+        
+        // If we were enabling encryption and user canceled, revert the state
+        if (!isEncrypted(entry?.content || '')) {
+            isEncryptionEnabled = false;
+        }
+        
+        // Only close if this was for an existing encrypted entry
+        if (isEncrypted(entry?.content || '')) {
+            handleClose();
+        }
+    }
+
+    function toggleEncryption() {
+        if (!entry || !entryId) return;
+        
+        if (!isEncryptionEnabled) {
+            // Enabling encryption - need to prompt for password
+            isEncryptionEnabled = true;
+            needsPassword = true;
+            passwordStore.startPrompting(entryId);
+        } else {
+            // Disabling encryption - clear password and convert to plain text
+            isEncryptionEnabled = false;
+            passwordStore.clearPassword(entryId);
+        }
+    }
+
     function handleKeydown(event: KeyboardEvent) {
+        // Don't handle shortcuts when password modal is open
+        if (needsPassword) return;
+        
         // Cmd+S or Ctrl+S to save
         if ((event.metaKey || event.ctrlKey) && event.key === 's') {
             event.preventDefault();
@@ -91,15 +217,25 @@
             <h2 class="editor-title">{entry.title}</h2>
             <div class="editor-controls">
                 <button 
+                    class="btn btn-encryption"
+                    class:enabled={isEncryptionEnabled}
+                    onclick={toggleEncryption}
+                    title={isEncryptionEnabled ? 'Encryption enabled' : 'Enable encryption'}
+                    disabled={needsPassword}
+                >
+                    {isEncryptionEnabled ? '🔒' : '🔓'}
+                </button>
+                <button 
                     class="btn btn-secondary"
                     onclick={() => isPreview = !isPreview}
+                    disabled={needsPassword}
                 >
                     {isPreview ? 'Edit' : 'Preview'}
                 </button>
                 <button 
                     class="btn btn-primary"
                     onclick={handleSave}
-                    disabled={isSaving}
+                    disabled={isSaving || needsPassword}
                 >
                     {isSaving ? 'Saving...' : 'Save'}
                 </button>
@@ -114,6 +250,13 @@
 
         {#if isLoading}
             <div class="loading">Loading...</div>
+        {:else if needsPassword}
+            <div class="password-required">
+                <div class="password-message">
+                    <h3>🔒 Password Required</h3>
+                    <p>This entry is encrypted. Please enter your password to view and edit it.</p>
+                </div>
+            </div>
         {:else if isPreview}
             <div class="preview-container">
                 <SvelteMarkdown source={content} />
@@ -128,6 +271,13 @@
         {/if}
 
         <div class="editor-status">
+            <span class="encryption-status">
+                {#if isEncryptionEnabled}
+                    🔒 Encrypted
+                {:else}
+                    📝 Plain text
+                {/if}
+            </span>
             <span class="word-count">
                 {content.split(/\s+/).filter(w => w.length > 0).length} words
             </span>
@@ -143,6 +293,15 @@
         <p>Select an entry to start editing</p>
     </div>
 {/if}
+
+<!-- Password Prompt Modal -->
+<PasswordPrompt
+    entryTitle={entry?.title || ''}
+    lastAttemptFailed={$passwordStore.lastAttemptFailed}
+    isVisible={needsPassword}
+    on:submit={handlePasswordSubmit}
+    on:cancel={handlePasswordCancel}
+/>
 
 <style>
     .editor-container {
@@ -225,6 +384,29 @@
         color: #374151;
     }
 
+    .btn-encryption {
+        background: #f3f4f6;
+        color: #6b7280;
+        border-color: #d1d5db;
+        transition: all 0.2s ease;
+    }
+
+    .btn-encryption:hover {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    .btn-encryption.enabled {
+        background: #fef3c7;
+        color: #d97706;
+        border-color: #fcd34d;
+    }
+
+    .btn-encryption.enabled:hover {
+        background: #fde68a;
+        border-color: #f59e0b;
+    }
+
     .editor-textarea {
         flex: 1;
         padding: 1.5rem;
@@ -305,6 +487,30 @@
         padding: 0;
     }
 
+    .password-required {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .password-message {
+        text-align: center;
+        color: #6b7280;
+    }
+
+    .password-message h3 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.125rem;
+        color: #374151;
+    }
+
+    .password-message p {
+        margin: 0;
+        font-size: 0.875rem;
+    }
+
     .editor-status {
         display: flex;
         justify-content: space-between;
@@ -314,6 +520,14 @@
         background: #f9fafb;
         font-size: 0.75rem;
         color: #6b7280;
+        gap: 1rem;
+    }
+
+    .encryption-status {
+        font-weight: 500;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        background: #f3f4f6;
     }
 
     .loading,

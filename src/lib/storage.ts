@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { detectTauri } from './utils/tauri.js';
+import { isEncrypted } from './utils/crypto.js';
 
 export interface JournalEntry {
     id: string;
@@ -143,12 +144,27 @@ class StorageAdapter {
         const db = await this.initDB();
         const tx = db.transaction('metadata', 'readwrite');
         
+        // Get existing cached entries to preserve manually updated titles
+        const existingEntries = await db.getAll('metadata');
+        const existingMap = new Map(existingEntries.map(e => [e.id, e]));
+        
         // Clear existing metadata
         await tx.store.clear();
         
-        // Add new metadata
+        // Add new metadata, preserving decrypted titles
         for (const entry of entries) {
-            await tx.store.add(entry);
+            const existing = existingMap.get(entry.id);
+            let finalEntry = entry;
+            
+            // If we have a cached entry with a different title and the new entry appears encrypted
+            if (existing && existing.title !== entry.title && isEncrypted(entry.preview || '')) {
+                // Preserve the cached title if it looks like a proper decrypted title
+                if (!existing.title.match(/^[A-Za-z0-9+/=]{20,}/) && !existing.title.startsWith('🔒')) {
+                    finalEntry = { ...entry, title: existing.title };
+                }
+            }
+            
+            await tx.store.add(finalEntry);
         }
         
         await tx.done;
@@ -335,6 +351,11 @@ Try editing this entry to experiment with markdown!`,
 
     // Helper methods
     private extractTitleFromContent(content: string): string | null {
+        // Don't extract title from encrypted content
+        if (isEncrypted(content)) {
+            return null;
+        }
+        
         const firstLine = content.split('\n')[0];
         if (firstLine.startsWith('#')) {
             return firstLine.replace(/^#+\s*/, '').trim();
@@ -342,11 +363,27 @@ Try editing this entry to experiment with markdown!`,
         return null;
     }
 
+    private createFallbackTitle(entry: JournalEntry): string {
+        // For encrypted entries, use a readable filename-based title
+        if (isEncrypted(entry.content)) {
+            // If the current title looks like encrypted content, create a fallback
+            if (entry.title.length > 50 || /^[A-Za-z0-9+/=]{20,}/.test(entry.title)) {
+                // Extract a reasonable title from the ID or file path
+                const fileName = entry.file_path.split('/').pop()?.replace(/\.(md|txt)$/, '') || entry.id;
+                const cleanName = fileName.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `🔒 ${cleanName}`;
+            }
+        }
+        return entry.title;
+    }
+
     private async updateMetadataFromEntry(entry: JournalEntry): Promise<void> {
         const preview = this.createPreview(entry.content);
+        const displayTitle = this.createFallbackTitle(entry);
+        
         const metadata: JournalEntryMetadata = {
             id: entry.id,
-            title: entry.title,
+            title: displayTitle,
             created_at: entry.created_at,
             modified_at: entry.modified_at,
             file_path: entry.file_path,
@@ -360,6 +397,11 @@ Try editing this entry to experiment with markdown!`,
     }
 
     private createPreview(content: string): string {
+        // Check if content is encrypted
+        if (isEncrypted(content)) {
+            return '🔒 This entry is encrypted and requires a password to view';
+        }
+        
         // Remove title line and create preview
         const contentWithoutTitle = content.split('\n').slice(1).join('\n').trim();
         const preview = contentWithoutTitle.replace(/[#*_`]/g, '').substring(0, 150);
@@ -519,6 +561,35 @@ Try editing this entry to experiment with markdown!`,
         } else {
             const entry = await this.getCachedEntry(id);
             return entry !== null;
+        }
+    }
+
+    // Method to update metadata with decrypted title
+    async updateDecryptedTitle(id: string, decryptedContent: string): Promise<void> {
+        try {
+            const db = await this.initDB();
+            const metadata = await db.get('metadata', id);
+            if (!metadata) return;
+
+            // Extract title from decrypted content
+            const firstLine = decryptedContent.split('\n')[0];
+            let newTitle = metadata.title;
+            
+            if (firstLine.startsWith('#')) {
+                newTitle = firstLine.replace(/^#+\s*/, '').trim();
+            }
+
+            // Update metadata with real title
+            const updatedMetadata: JournalEntryMetadata = {
+                ...metadata,
+                title: newTitle
+            };
+
+            const tx = db.transaction('metadata', 'readwrite');
+            await tx.store.put(updatedMetadata);
+            await tx.done;
+        } catch (error) {
+            console.error('Failed to update decrypted title:', error);
         }
     }
 }
