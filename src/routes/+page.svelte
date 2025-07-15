@@ -483,9 +483,9 @@
           class="settings-btn"
           onclick={handleOpenBatchUnlock}
           aria-label="Batch unlock encrypted entries"
-          title="Batch Unlock"
+          title="Unlock All Encrypted Entries"
         >
-          🔓
+          <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
         </button>
         <button 
           class="settings-btn"
@@ -493,7 +493,7 @@
           aria-label="Open settings"
           title="Settings"
         >
-          ⚙️
+          <img src="/src/lib/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
         </button>
       </div>
     </div>
@@ -665,6 +665,12 @@
 
   .settings-btn:hover {
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  .settings-btn .icon {
+    width: 16px;
+    height: 16px;
+    filter: invert(1);
   }
 
   .new-entry {

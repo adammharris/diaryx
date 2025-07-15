@@ -54,14 +54,14 @@ export class CacheStorageAdapter implements ICacheStorage {
                 // Preserve the cached title if it looks like a proper decrypted title
                 if (existing.title !== entry.title && 
                     !existing.title.match(/^[A-Za-z0-9+/=]{20,}/) && 
-                    !existing.title.startsWith('🔒')) {
+                    !existing.title.startsWith('Encrypted')) {
                     preserveTitle = true;
                 }
                 
                 // Preserve the cached preview if it looks like decrypted content
                 // (i.e., it's not the standard encrypted preview text)
                 if (existing.preview !== entry.preview && 
-                    !existing.preview.includes('🔒') &&
+                    !existing.preview.includes('encrypted and requires a password') &&
                     !existing.preview.includes('encrypted') &&
                     existing.preview.length > 10) {
                     preservePreview = true;

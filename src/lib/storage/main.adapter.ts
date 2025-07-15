@@ -350,7 +350,7 @@ export class MainStorageAdapter implements IStorageAdapter {
         // If we have a password and existing metadata with non-encrypted preview, preserve it
         // BUT only if the new content is also encrypted (don't preserve when content becomes encrypted)
         if (hasPassword && existingMetadata && 
-            !existingMetadata.preview.includes('🔒') && 
+            !existingMetadata.preview.includes('encrypted and requires a password') && 
             !existingMetadata.preview.includes('encrypted') &&
             isEncrypted(entry.content)) {
             

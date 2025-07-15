@@ -23,7 +23,7 @@
     // Check if entry has encrypted preview (locked state)
     let hasEncryptedPreview = $derived(() => {
         const currentMeta = currentEntry();
-        return currentMeta.preview.includes('🔒') && currentMeta.preview.includes('encrypted');
+        return currentMeta.preview.includes('encrypted and requires a password');
     });
     
     // Check if we have a cached password for this entry
@@ -49,7 +49,7 @@
                     // Update the metadata to show proper encrypted preview
                     const updatedMetadata = {
                         ...currentMeta,
-                        preview: '🔒 This entry is encrypted and requires a password to view'
+                        preview: 'This entry is encrypted and requires a password to view'
                     };
                     
                     // Update the metadata store to reflect the change
@@ -114,11 +114,6 @@
 >
     <div class="entry-header">
         <h3 class="entry-title">
-            {#if encryptionState() === 'locked'}
-                <span class="encryption-indicator locked" title="This entry is encrypted and locked">🔒</span>
-            {:else if encryptionState() === 'unlocked'}
-                <span class="encryption-indicator unlocked" title="This entry is encrypted but unlocked">🔓</span>
-            {/if}
             {currentEntry().title}
         </h3>
         <button 
@@ -126,14 +121,21 @@
             onclick={handleDelete}
             aria-label="Delete entry"
         >
-            ✕
+            ×
         </button>
     </div>
     
     <p class="entry-preview" class:encrypted={encryptionState() === 'locked'}>{displayPreview}</p>
     
     <div class="entry-meta">
-        <span class="entry-date">{formatDate(currentEntry().modified_at)}</span>
+        <div class="entry-date-with-icon">
+            {#if encryptionState() === 'locked'}
+                <img src="/src/lib/icons/material-symbols--lock.svg" class="lock-icon locked" alt="Locked" title="This entry is encrypted and locked" />
+            {:else if encryptionState() === 'unlocked'}
+                <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="lock-icon unlocked" alt="Unlocked" title="This entry is encrypted but unlocked" />
+            {/if}
+            <span class="entry-date">{formatDate(currentEntry().modified_at)}</span>
+        </div>
     </div>
 </div>
 
@@ -212,22 +214,29 @@
         align-items: center;
     }
 
+    .entry-date-with-icon {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
     .entry-date {
         font-size: 0.75rem;
         color: var(--color-textSecondary, #9ca3af);
     }
 
-    .encryption-indicator {
-        margin-right: 0.5rem;
-        font-size: 0.875rem;
+    .lock-icon {
+        width: 12px;
+        height: 12px;
+        filter: invert(1) sepia(1) saturate(0) hue-rotate(0deg) brightness(0.5);
     }
     
-    .encryption-indicator.locked {
-        color: #dc2626; /* Red for locked */
+    .lock-icon.locked {
+        filter: invert(14%) sepia(95%) saturate(7462%) hue-rotate(7deg) brightness(92%) contrast(90%); /* Red for locked */
     }
     
-    .encryption-indicator.unlocked {
-        color: #16a34a; /* Green for unlocked */
+    .lock-icon.unlocked {
+        filter: invert(43%) sepia(96%) saturate(1352%) hue-rotate(87deg) brightness(119%) contrast(119%); /* Green for unlocked */
     }
 
     .entry-preview.encrypted {

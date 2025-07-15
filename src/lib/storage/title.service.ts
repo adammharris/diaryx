@@ -6,7 +6,7 @@ import { isEncrypted } from '../utils/crypto.js';
 import type { JournalEntry } from './types.js';
 
 export class TitleService {
-    private static readonly ENCRYPTED_TITLE_PREFIX = '🔒';
+    private static readonly ENCRYPTED_TITLE_PREFIX = '';
 
     /**
      * Creates a fallback title for encrypted entries

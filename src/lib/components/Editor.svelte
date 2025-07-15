@@ -241,7 +241,6 @@
                     bind:value={editableTitle}
                     onkeydown={handleTitleKeydown}
                     onblur={handleTitleSave}
-                    autofocus
                 />
             {:else}
                 <h2 
@@ -259,7 +258,11 @@
                     onclick={toggleEncryption}
                     title={isEncryptionEnabled ? 'Encryption enabled' : 'Enable encryption'}
                 >
-                    {isEncryptionEnabled ? '🔒' : '🔓'}
+                    {#if isEncryptionEnabled}
+                        <img src="/src/lib/icons/material-symbols--lock.svg" class="icon" alt="Encrypted" />
+                    {:else}
+                        <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Plain text" />
+                    {/if}
                 </button>
                 <button 
                     class="btn btn-secondary"
@@ -278,7 +281,7 @@
                     class="btn btn-ghost"
                     onclick={handleClose}
                 >
-                    ✕
+                    ×
                 </button>
             </div>
         </div>
@@ -301,9 +304,11 @@
         <div class="editor-status">
             <span class="encryption-status">
                 {#if isEncryptionEnabled}
-                    🔒 Encrypted
+                    <img src="/src/lib/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
+                    Encrypted
                 {:else}
-                    📝 Plain text
+                    <img src="/src/lib/icons/material-symbols--edit-note.svg" class="status-icon" alt="Plain text" />
+                    Plain text
                 {/if}
             </span>
             <span class="word-count">
@@ -547,6 +552,29 @@
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
         background: #f3f4f6;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .btn .icon {
+        width: 14px;
+        height: 14px;
+        filter: invert(1) sepia(1) saturate(0) hue-rotate(0deg) brightness(0.5);
+    }
+
+    .btn-encryption .icon {
+        filter: invert(42%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(119%) contrast(119%);
+    }
+
+    .btn-encryption.enabled .icon {
+        filter: invert(53%) sepia(93%) saturate(1352%) hue-rotate(28deg) brightness(119%) contrast(119%);
+    }
+
+    .status-icon {
+        width: 12px;
+        height: 12px;
+        filter: invert(1) sepia(1) saturate(0) hue-rotate(0deg) brightness(0.5);
     }
 
     .loading,

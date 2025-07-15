@@ -6,7 +6,7 @@ import { isEncrypted } from '../utils/crypto.js';
 
 export class PreviewService {
     private static readonly DEFAULT_PREVIEW_LENGTH = 150;
-    private static readonly ENCRYPTED_PREVIEW_TEXT = '🔒 This entry is encrypted and requires a password to view';
+    private static readonly ENCRYPTED_PREVIEW_TEXT = 'This entry is encrypted and requires a password to view';
 
     /**
      * Creates a preview text from entry content
@@ -54,7 +54,7 @@ export class PreviewService {
         const preview = this.createPreview(content);
         
         if (this.isEncryptedPreview(preview)) {
-            return '🔒 Encrypted';
+            return 'Encrypted';
         }
         
         const words = preview.split(/\s+/).slice(0, maxWords);
