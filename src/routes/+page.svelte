@@ -350,11 +350,8 @@
 
   function handleBatchUnlockSuccess(unlockedCount: number) {
     // No need to manually refresh - metadata store will update automatically
-    showDialog({
-      title: 'Batch Unlock Successful',
-      message: `Successfully unlocked ${unlockedCount} entries!`,
-      type: 'info'
-    });
+    // No need for additional dialog - BatchUnlock component already shows success
+    console.log(`Batch unlock completed: ${unlockedCount} entries unlocked`);
   }
 
   async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
