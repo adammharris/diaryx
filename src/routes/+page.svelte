@@ -10,6 +10,8 @@
   import { detectTauri } from '../lib/utils/tauri.js';
   import { isEncrypted } from '../lib/utils/crypto.js';
   import { passwordStore } from '../lib/stores/password.js';
+  import { PreviewService } from '../lib/storage/preview.service.js';
+  import { TitleService } from '../lib/storage/title.service.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let selectedEntryId: string | null = $state(null);
@@ -23,6 +25,7 @@
   let pendingEntryId: string | null = $state(null);
   let isTauri = $state(false);
   let reloadTimeout: number | null = null;
+  let suppressedFiles = $state(new Map<string, { metadata: boolean; data: boolean }>());
 
   // Dialog state
   let dialogState = $state({
@@ -52,41 +55,94 @@
     )
   );
 
-  // Load entries on mount and start file watching
+  // Load entries on mount
   $effect(() => {
     loadEntries();
+  });
+
+  // File watcher callback function (stable reference)
+  function handleFileChange(changedFiles?: string[], eventType?: string) {
+    console.log('File change detected, debouncing reload', changedFiles, 'type:', eventType);
     
-    // Start file watching in Tauri mode
-    if (isTauri) {
-      storage.startFileWatching(() => {
-        console.log('File change detected, debouncing reload');
+    // Clear existing timeout
+    if (reloadTimeout) {
+      clearTimeout(reloadTimeout);
+    }
+    
+    // Track event types for suppressed files
+    if (changedFiles && eventType) {
+      changedFiles.forEach(filePath => {
+        const fileName = filePath.split('/').pop() || '';
+        const entryId = fileName.replace('.md', '');
         
-        // Clear existing timeout
-        if (reloadTimeout) {
-          clearTimeout(reloadTimeout);
+        if (suppressedFiles.has(entryId)) {
+          const tracking = suppressedFiles.get(entryId)!;
+          if (eventType === 'metadata') {
+            tracking.metadata = true;
+          } else if (eventType === 'data') {
+            tracking.data = true;
+          }
         }
-        
-        // Debounce the reload to avoid excessive calls
-        reloadTimeout = setTimeout(() => {
-          console.log('Reloading entries due to file change');
-          loadEntries();
-          reloadTimeout = null;
-        }, 300);
       });
     }
     
-    // Cleanup function to stop watching when component is destroyed
-    return () => {
-      if (isTauri) {
-        storage.stopFileWatching();
+    // Debounce the reload to avoid excessive calls
+    reloadTimeout = setTimeout(() => {
+      // Check if any of the changed files are ones we should suppress
+      const hasUnsuppressedChanges = !changedFiles || changedFiles.some(filePath => {
+        const fileName = filePath.split('/').pop() || '';
+        const entryId = fileName.replace('.md', '');
+        return !suppressedFiles.has(entryId);
+      });
+      
+      if (!hasUnsuppressedChanges) {
+        const suppressedFileNames = changedFiles?.filter(filePath => {
+          const fileName = filePath.split('/').pop() || '';
+          const entryId = fileName.replace('.md', '');
+          return suppressedFiles.has(entryId);
+        }).map(filePath => filePath.split('/').pop()) || [];
+        
+        console.log('Suppressing file watcher reload for internal saves:', suppressedFileNames, 'event type:', eventType);
+        
+        // Only clear suppressed files if we've seen both metadata and data events
+        changedFiles?.forEach(filePath => {
+          const fileName = filePath.split('/').pop() || '';
+          const entryId = fileName.replace('.md', '');
+          const tracking = suppressedFiles.get(entryId);
+          
+          if (tracking && tracking.metadata && tracking.data) {
+            console.log('Clearing suppression for', entryId, '(seen both events)');
+            suppressedFiles.delete(entryId);
+          }
+        });
+        
+        reloadTimeout = null;
+        return;
       }
       
-      // Clear any pending timeout
-      if (reloadTimeout) {
-        clearTimeout(reloadTimeout);
-        reloadTimeout = null;
-      }
-    };
+      console.log('Reloading entries due to external file change');
+      loadEntries();
+      reloadTimeout = null;
+    }, 300);
+  }
+
+  // Start file watching once when in Tauri mode
+  $effect(() => {
+    if (isTauri) {
+      console.log('Setting up file watcher...');
+      storage.startFileWatching(handleFileChange);
+      
+      // Cleanup function to stop watching when component is destroyed
+      return () => {
+        storage.stopFileWatching();
+        
+        // Clear any pending timeout
+        if (reloadTimeout) {
+          clearTimeout(reloadTimeout);
+          reloadTimeout = null;
+        }
+      };
+    }
   });
 
   async function loadEntries() {
@@ -198,9 +254,30 @@
     selectedEntryId = null;
   }
 
-  function handleEntrySaved(data: { id: string }) {
-    // Refresh the entries list
-    loadEntries();
+  function handleEntrySaved(data: { id: string; content: string }) {
+    // Add this specific file to suppression list
+    suppressedFiles.set(data.id, { metadata: false, data: false });
+    
+    // Update the preview for this specific entry if it has a cached password (i.e., it's decrypted)
+    const entryIndex = entries.findIndex(e => e.id === data.id);
+    if (entryIndex >= 0 && passwordStore.hasCachedPassword(data.id)) {
+      // Generate new preview from the updated content
+      const newPreview = PreviewService.createPreview(data.content);
+      
+      // Update the entry with new preview (keep existing title since it's filename-based)
+      entries[entryIndex] = {
+        ...entries[entryIndex],
+        preview: newPreview,
+        modified_at: new Date().toISOString()
+      };
+      
+      // Trigger reactivity
+      entries = [...entries];
+      
+      console.log('Updated preview for encrypted entry:', data.id);
+    }
+    
+    console.log('Entry saved, suppression set for', data.id);
   }
 
 
@@ -209,6 +286,11 @@
     if (selectedEntryId === data.oldId) {
       selectedEntryId = data.newId;
     }
+    
+    // Add both old and new files to suppression list (rename involves file operations)
+    suppressedFiles.set(data.oldId, { metadata: false, data: false });
+    suppressedFiles.set(data.newId, { metadata: false, data: false });
+    
     // Refresh entries list to show new title
     await loadEntries();
   }

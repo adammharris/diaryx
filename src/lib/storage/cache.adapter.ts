@@ -41,16 +41,38 @@ export class CacheStorageAdapter implements ICacheStorage {
         // Clear existing metadata
         await tx.store.clear();
         
-        // Add new metadata, preserving decrypted titles
+        // Add new metadata, preserving decrypted titles and previews
         for (const entry of entries) {
             const existing = existingMap.get(entry.id);
             let finalEntry = entry;
             
-            // If we have a cached entry with a different title and the new entry appears encrypted
-            if (existing && existing.title !== entry.title && isEncrypted(entry.preview || '')) {
+            // If we have a cached entry and the new entry appears encrypted
+            if (existing && isEncrypted(entry.preview || '')) {
+                let preserveTitle = false;
+                let preservePreview = false;
+                
                 // Preserve the cached title if it looks like a proper decrypted title
-                if (!existing.title.match(/^[A-Za-z0-9+/=]{20,}/) && !existing.title.startsWith('🔒')) {
-                    finalEntry = { ...entry, title: existing.title };
+                if (existing.title !== entry.title && 
+                    !existing.title.match(/^[A-Za-z0-9+/=]{20,}/) && 
+                    !existing.title.startsWith('🔒')) {
+                    preserveTitle = true;
+                }
+                
+                // Preserve the cached preview if it looks like decrypted content
+                // (i.e., it's not the standard encrypted preview text)
+                if (existing.preview !== entry.preview && 
+                    !existing.preview.includes('🔒') &&
+                    !existing.preview.includes('encrypted') &&
+                    existing.preview.length > 10) {
+                    preservePreview = true;
+                }
+                
+                if (preserveTitle || preservePreview) {
+                    finalEntry = { 
+                        ...entry, 
+                        ...(preserveTitle && { title: existing.title }),
+                        ...(preservePreview && { preview: existing.preview })
+                    };
                 }
             }
             

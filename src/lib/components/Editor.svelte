@@ -7,7 +7,7 @@
     interface Props {
         entryId: string | null;
         onclose?: () => void;
-        onsaved?: (data: { id: string }) => void;
+        onsaved?: (data: { id: string; content: string }) => void;
         onrenamed?: (data: { oldId: string; newId: string }) => void;
         onencryptiontoggle?: (data: { entryId: string; enable: boolean }) => void;
         onerror?: (data: { title: string; message: string }) => void;
@@ -121,7 +121,7 @@
             
             const success = await storage.saveEntry(entry.id, contentToSave);
             if (success) {
-                onsaved?.({ id: entry.id });
+                onsaved?.({ id: entry.id, content: contentToSave });
                 // Update local entry with the original content (not encrypted)
                 entry.content = contentToSave;
                 entry.modified_at = new Date().toISOString();

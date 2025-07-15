@@ -19,7 +19,7 @@ export class TauriStorageAdapter implements IFileSystemStorage {
     private readonly fileExtension = '.md';
     private readonly journalFolder = 'Diaryx';
     private fileWatcher: (() => void) | null = null;
-    private onFileChange: (() => void) | null = null;
+    private onFileChange: ((changedFiles?: string[], eventType?: string) => void) | null = null;
 
     async getEntriesFromFS(): Promise<JournalEntryMetadata[]> {
         try {
@@ -301,8 +301,10 @@ export class TauriStorageAdapter implements IFileSystemStorage {
     /**
      * Start watching for file changes in the journal directory
      */
-    async startWatching(onChange: () => void): Promise<void> {
+    async startWatching(onChange: (changedFiles?: string[], eventType?: string) => void): Promise<void> {
         if (this.fileWatcher) {
+            console.log('File watcher already exists, updating callback');
+            this.onFileChange = onChange;
             return; // Already watching
         }
 
@@ -314,11 +316,17 @@ export class TauriStorageAdapter implements IFileSystemStorage {
                 [this.journalFolder],
                 (event) => {
                     console.log('File system event:', event);
-                    // Debounce the callback to avoid excessive calls
+                    // Extract file paths from the event
+                    const changedFiles = event.paths || [];
+                    // Extract event type (metadata or data)
+                    let eventType = 'unknown';
+                    if (event.type && typeof event.type === 'object' && 'modify' in event.type) {
+                        const modify = event.type.modify as any;
+                        eventType = modify?.kind || 'unknown';
+                    }
+                    // Call immediately - let the main page handle debouncing
                     if (this.onFileChange) {
-                        setTimeout(() => {
-                            this.onFileChange?.();
-                        }, 100);
+                        this.onFileChange(changedFiles, eventType);
                     }
                 },
                 { baseDir: this.baseDir }

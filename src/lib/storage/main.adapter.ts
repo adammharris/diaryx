@@ -436,7 +436,7 @@ export class MainStorageAdapter implements IStorageAdapter {
     /**
      * Start watching for file changes (Tauri only)
      */
-    async startFileWatching(onChange: () => void): Promise<void> {
+    async startFileWatching(onChange: (changedFiles?: string[], eventType?: string) => void): Promise<void> {
         if (this.environment === 'tauri' && this.tauriAdapter) {
             await this.tauriAdapter.startWatching(onChange);
         }
