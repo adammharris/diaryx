@@ -2,6 +2,7 @@
   import { passwordStore } from '../stores/password.js';
   import { storage } from '../storage/index.js';
   import type { JournalEntry } from '../storage/index.js';
+  import { isEncrypted } from '../utils/crypto.js';
 
   interface Props {
     isVisible: boolean;
@@ -44,10 +45,10 @@
       // Get the actual entry content for encrypted entries
       const encryptedEntries: JournalEntry[] = [];
       for (const meta of entries) {
-        // Only include entries that appear to be encrypted and aren't already unlocked
-        if (meta.preview.includes('🔒') && meta.preview.includes('encrypted') && !passwordStore.hasCachedPassword(meta.id)) {
+        // Only include entries that aren't already unlocked
+        if (!passwordStore.hasCachedPassword(meta.id)) {
           const entry = await storage.getEntry(meta.id);
-          if (entry) {
+          if (entry && isEncrypted(entry.content)) {
             encryptedEntries.push(entry);
           }
         }
