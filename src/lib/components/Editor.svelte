@@ -1,20 +1,19 @@
 <script lang="ts">
     import { storage, type JournalEntry } from '../storage/index';
     import SvelteMarkdown from 'svelte-markdown';
-    import PasswordPrompt from './PasswordPrompt.svelte';
     import { passwordStore } from '../stores/password.js';
-    import { isEncrypted, decrypt, encrypt } from '../utils/crypto.js';
+    import { isEncrypted, encrypt } from '../utils/crypto.js';
 
     interface Props {
         entryId: string | null;
         onclose?: () => void;
         onsaved?: (data: { id: string }) => void;
-        ondecrypted?: (data: { id: string }) => void;
         onrenamed?: (data: { oldId: string; newId: string }) => void;
+        onencryptiontoggle?: (data: { entryId: string; enable: boolean }) => void;
         onerror?: (data: { title: string; message: string }) => void;
     }
 
-    let { entryId, onclose, onsaved, ondecrypted, onrenamed, onerror }: Props = $props();
+    let { entryId, onclose, onsaved, onrenamed, onencryptiontoggle, onerror }: Props = $props();
 
 
     let entry: JournalEntry | null = $state(null);
@@ -24,7 +23,6 @@
     let isPreview = $state(false);
     let isSaving = $state(false);
     let isLoading = $state(false);
-    let needsPassword = $state(false);
     let isEncryptionEnabled = $state(false);
 
     // Load entry when entryId changes
@@ -35,7 +33,6 @@
             entry = null;
             content = '';
             editableTitle = '';
-            needsPassword = false;
             isEncryptionEnabled = false;
         }
     });
@@ -44,7 +41,6 @@
         if (!entryId) return;
         
         isLoading = true;
-        needsPassword = false;
         
         try {
             const rawEntry = await storage.getEntry(entryId);
@@ -57,17 +53,21 @@
             if (isEncrypted(rawEntry.content)) {
                 isEncryptionEnabled = true;
                 
-                // Try to decrypt with cached password first
+                // Try to decrypt with cached password
                 const decryptedEntry = await passwordStore.tryDecryptWithCache(rawEntry);
                 
                 if (decryptedEntry) {
                     // Successfully decrypted with cached password
                     content = decryptedEntry.content;
                 } else {
-                    // Need password from user
-                    content = '';
-                    needsPassword = true;
-                    passwordStore.startPrompting(entryId);
+                    // If we reach here, it means the main page should have handled password prompting
+                    // but somehow didn't. This shouldn't happen in normal flow.
+                    console.error('Editor received encrypted entry without cached password - this should not happen');
+                    onerror?.({
+                        title: 'Decryption Error',
+                        message: 'Unable to decrypt entry. Please try selecting it again.'
+                    });
+                    return;
                 }
             } else {
                 // Entry is not encrypted
@@ -183,52 +183,14 @@
         }
     }
 
-    async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
-        if (!entry || !entryId) return;
-        
-        const { password } = event.detail;
-        
-        try {
-            if (isEncrypted(entry.content)) {
-                // Existing encrypted entry - try to decrypt
-                const decryptedContent = await decrypt(entry.content, password);
-                content = decryptedContent;
-            } else {
-                // Plain text entry being encrypted - just cache the password
-                // Content stays the same for now, will be encrypted on save
-            }
-            
-            // Success! Cache the password with decrypted content for metadata update
-            const decryptedContent = isEncrypted(entry.content) ? content : undefined;
-            passwordStore.cachePassword(entryId, password, decryptedContent);
-            needsPassword = false;
-            passwordStore.endPrompting();
-            
-            // Update metadata cache with proper title and notify parent
-            if (isEncrypted(entry.content)) {
-                await storage.updateDecryptedTitle(entryId, content);
-                ondecrypted?.({ id: entryId });
-            }
-        } catch (error) {
-            // Password is incorrect (only relevant for existing encrypted entries)
-            passwordStore.handleFailedAttempt();
-        }
-    }
-
-    function handlePasswordCancel() {
-        needsPassword = false;
-        passwordStore.endPrompting();
-    }
 
 
     function toggleEncryption() {
         if (!entry || !entryId) return;
         
         if (!isEncryptionEnabled) {
-            // Enabling encryption - need to prompt for password
-            isEncryptionEnabled = true;
-            needsPassword = true;
-            passwordStore.startPrompting(entryId);
+            // Enabling encryption - delegate to main page
+            onencryptiontoggle?.({ entryId, enable: true });
         } else {
             // Disabling encryption - clear password and convert to plain text
             isEncryptionEnabled = false;
@@ -237,8 +199,7 @@
     }
 
     function handleKeydown(event: KeyboardEvent) {
-        // Don't handle shortcuts when password modal is open
-        if (needsPassword) return;
+        // Handle keyboard shortcuts
         
         // Cmd+S or Ctrl+S to save
         if ((event.metaKey || event.ctrlKey) && event.key === 's') {
@@ -280,21 +241,19 @@
                     class:enabled={isEncryptionEnabled}
                     onclick={toggleEncryption}
                     title={isEncryptionEnabled ? 'Encryption enabled' : 'Enable encryption'}
-                    disabled={needsPassword}
                 >
                     {isEncryptionEnabled ? '🔒' : '🔓'}
                 </button>
                 <button 
                     class="btn btn-secondary"
                     onclick={() => isPreview = !isPreview}
-                    disabled={needsPassword}
                 >
                     {isPreview ? 'Edit' : 'Preview'}
                 </button>
                 <button 
                     class="btn btn-primary"
                     onclick={handleSave}
-                    disabled={isSaving || needsPassword}
+                    disabled={isSaving}
                 >
                     {isSaving ? 'Saving...' : 'Save'}
                 </button>
@@ -309,13 +268,6 @@
 
         {#if isLoading}
             <div class="loading">Loading...</div>
-        {:else if needsPassword}
-            <div class="password-required">
-                <div class="password-message">
-                    <h3>🔒 Password Required</h3>
-                    <p>This entry is encrypted. Please enter your password to view and edit it.</p>
-                </div>
-            </div>
         {:else if isPreview}
             <div class="preview-container">
                 <SvelteMarkdown source={content} />
@@ -353,14 +305,6 @@
     </div>
 {/if}
 
-<!-- Password Prompt Modal -->
-<PasswordPrompt
-    entryTitle={entry?.title || ''}
-    lastAttemptFailed={$passwordStore.lastAttemptFailed}
-    isVisible={needsPassword}
-    on:submit={handlePasswordSubmit}
-    on:cancel={handlePasswordCancel}
-/>
 
 <style>
     .editor-container {
@@ -568,29 +512,6 @@
         padding: 0;
     }
 
-    .password-required {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 2rem;
-    }
-
-    .password-message {
-        text-align: center;
-        color: #6b7280;
-    }
-
-    .password-message h3 {
-        margin: 0 0 0.5rem 0;
-        font-size: 1.125rem;
-        color: #374151;
-    }
-
-    .password-message p {
-        margin: 0;
-        font-size: 0.875rem;
-    }
 
     .editor-status {
         display: flex;

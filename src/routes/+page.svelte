@@ -5,8 +5,11 @@
   import Settings from '../lib/components/Settings.svelte';
   import Dialog from '../lib/components/Dialog.svelte';
   import BatchUnlock from '../lib/components/BatchUnlock.svelte';
+  import PasswordPrompt from '../lib/components/PasswordPrompt.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
+  import { isEncrypted } from '../lib/utils/crypto.js';
+  import { passwordStore } from '../lib/stores/password.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let selectedEntryId: string | null = $state(null);
@@ -16,6 +19,8 @@
   let newEntryTitle = $state('');
   let showSettings = $state(false);
   let showBatchUnlock = $state(false);
+  let showPasswordPrompt = $state(false);
+  let pendingEntryId: string | null = $state(null);
   let isTauri = $state(false);
   let reloadTimeout: number | null = null;
 
@@ -102,8 +107,47 @@
   }
 
 
-  function handleSelectEntry(event: { id: string }) {
-    selectedEntryId = event.id;
+  async function handleSelectEntry(event: { id: string }) {
+    const entryId = event.id;
+    
+    try {
+      // Get the full entry to check if it's encrypted
+      const entry = await storage.getEntry(entryId);
+      if (!entry) {
+        showDialog({
+          title: 'Entry Not Found',
+          message: 'The selected entry could not be found.',
+          type: 'error'
+        });
+        return;
+      }
+
+      // Check if entry is encrypted
+      if (isEncrypted(entry.content)) {
+        // Try to decrypt with cached password first
+        const decryptedEntry = await passwordStore.tryDecryptWithCache(entry);
+        
+        if (decryptedEntry) {
+          // Successfully decrypted with cached password - open editor
+          selectedEntryId = entryId;
+        } else {
+          // Need password from user - show password prompt
+          pendingEntryId = entryId;
+          showPasswordPrompt = true;
+          passwordStore.startPrompting(entryId);
+        }
+      } else {
+        // Not encrypted - open editor directly
+        selectedEntryId = entryId;
+      }
+    } catch (error) {
+      console.error('Error selecting entry:', error);
+      showDialog({
+        title: 'Error',
+        message: 'Failed to open entry. Please try again.',
+        type: 'error'
+      });
+    }
   }
 
   async function handleDeleteEntry(event: { id: string }) {
@@ -159,11 +203,14 @@
     loadEntries();
   }
 
-  async function handleEntryDecrypted(data: { id: string }) {
-    // Small delay to ensure metadata update is complete
-    setTimeout(() => {
-      loadEntries();
-    }, 100);
+
+  async function handleEntryRenamed(data: { oldId: string; newId: string }) {
+    // Update the selected entry ID if it was the one renamed
+    if (selectedEntryId === data.oldId) {
+      selectedEntryId = data.newId;
+    }
+    // Refresh entries list to show new title
+    await loadEntries();
   }
 
   function handleEditorError(data: { title: string; message: string }) {
@@ -233,6 +280,80 @@
       message: `Successfully unlocked ${unlockedCount} entries!`,
       type: 'info'
     });
+  }
+
+  async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
+    if (!pendingEntryId) return;
+    
+    const { password } = event.detail;
+    
+    try {
+      const entry = await storage.getEntry(pendingEntryId);
+      if (!entry) {
+        showPasswordPromptError();
+        return;
+      }
+
+      if (isEncrypted(entry.content)) {
+        // Entry is encrypted - try to decrypt for viewing
+        const success = await passwordStore.submitPassword(pendingEntryId, password, entry.content);
+        
+        if (success) {
+          // Password correct - open editor and close prompt
+          selectedEntryId = pendingEntryId;
+          showPasswordPrompt = false;
+          pendingEntryId = null;
+          passwordStore.endPrompting();
+        } else {
+          // Password incorrect - just let the password prompt handle the retry
+          // (it will show the "last attempt failed" indicator)
+        }
+      } else {
+        // Entry is not encrypted - we're setting up encryption
+        // Just cache the password and close prompt
+        passwordStore.cachePassword(pendingEntryId, password);
+        showPasswordPrompt = false;
+        pendingEntryId = null;
+        passwordStore.endPrompting();
+        
+        // Note: The actual encryption will happen when the user saves the content
+        // The Editor will detect the cached password and encrypt on save
+      }
+    } catch (error) {
+      console.error('Password submission error:', error);
+      showPasswordPromptError();
+    }
+  }
+
+  function handlePasswordCancel() {
+    showPasswordPrompt = false;
+    pendingEntryId = null;
+    passwordStore.endPrompting();
+  }
+
+  function showPasswordPromptError() {
+    showPasswordPrompt = false;
+    pendingEntryId = null;
+    passwordStore.endPrompting();
+    showDialog({
+      title: 'Error',
+      message: 'Failed to decrypt entry. Please try again.',
+      type: 'error'
+    });
+  }
+
+  async function handleEncryptionToggle(event: { entryId: string; enable: boolean }) {
+    const { entryId, enable } = event;
+    
+    if (enable) {
+      // Enabling encryption - need password
+      pendingEntryId = entryId;
+      showPasswordPrompt = true;
+      passwordStore.startPrompting(entryId);
+    } else {
+      // Disabling encryption is handled directly in the Editor
+      // No need for additional handling here
+    }
   }
 
   function showDialog(options: {
@@ -338,7 +459,8 @@
       entryId={selectedEntryId}
       onclose={handleCloseEditor}
       onsaved={handleEntrySaved}
-      ondecrypted={handleEntryDecrypted}
+      onrenamed={handleEntryRenamed}
+      onencryptiontoggle={handleEncryptionToggle}
       onerror={handleEditorError}
     />
   </main>
@@ -353,6 +475,16 @@
     isVisible={showBatchUnlock}
     onclose={handleCloseBatchUnlock}
     onunlock={handleBatchUnlockSuccess}
+  />
+{/if}
+
+{#if showPasswordPrompt && pendingEntryId}
+  <PasswordPrompt
+    entryTitle={entries.find(e => e.id === pendingEntryId)?.title || 'Entry'}
+    lastAttemptFailed={$passwordStore.lastAttemptFailed}
+    isVisible={showPasswordPrompt}
+    on:submit={handlePasswordSubmit}
+    on:cancel={handlePasswordCancel}
   />
 {/if}
 
