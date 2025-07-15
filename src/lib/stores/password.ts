@@ -166,11 +166,10 @@ function createPasswordStore() {
 
     // Submit password and attempt decryption
     submitPassword: async (entryId: string, password: string, encryptedContent: string): Promise<boolean> => {
-      const isValid = await decrypt(encryptedContent, password)
-        .then(() => true)
-        .catch(() => false);
-
-      if (isValid) {
+      try {
+        const decryptedContent = await decrypt(encryptedContent, password);
+        
+        // Success - cache password and update metadata
         const now = Date.now();
         update(state => ({
           ...state,
@@ -186,8 +185,18 @@ function createPasswordStore() {
           promptingEntryId: null,
           lastAttemptFailed: false
         }));
+
+        // Update metadata with decrypted content for preview
+        try {
+          const { storage } = await import('../storage/index.js');
+          await storage.updateDecryptedTitle(entryId, decryptedContent);
+        } catch (error) {
+          console.error('Failed to update metadata for decrypted entry:', error);
+        }
+
         return true;
-      } else {
+      } catch {
+        // Failed to decrypt
         update(state => ({
           ...state,
           lastAttemptFailed: true
