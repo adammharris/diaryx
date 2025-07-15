@@ -166,15 +166,6 @@
     }, 100);
   }
 
-  async function handleEntryRenamed(data: { oldId: string; newId: string }) {
-    // Update the selected entry ID if it was the one renamed
-    if (selectedEntryId === data.oldId) {
-      selectedEntryId = data.newId;
-    }
-    // Refresh entries list to show new title
-    await loadEntries();
-  }
-
   function handleEditorError(data: { title: string; message: string }) {
     const { title, message } = data;
     showDialog({
@@ -348,7 +339,6 @@
       onclose={handleCloseEditor}
       onsaved={handleEntrySaved}
       ondecrypted={handleEntryDecrypted}
-      onrenamed={handleEntryRenamed}
       onerror={handleEditorError}
     />
   </main>
