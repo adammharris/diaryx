@@ -37,6 +37,20 @@
         }
     });
 
+    // Watch for password changes that might enable encryption
+    $effect(() => {
+        // Make this effect reactive to password store changes
+        const passwordStoreState = $passwordStore;
+        
+        if (entryId && entry && !isEncrypted(entry.content)) {
+            // For non-encrypted entries, check if encryption was just enabled
+            const hasPassword = passwordStoreState.cache[entryId] !== undefined;
+            if (hasPassword && !isEncryptionEnabled) {
+                isEncryptionEnabled = true;
+            }
+        }
+    });
+
     async function loadEntry() {
         if (!entryId) return;
         
@@ -70,8 +84,8 @@
                     return;
                 }
             } else {
-                // Entry is not encrypted
-                isEncryptionEnabled = false;
+                // Entry is not encrypted - check if we have a cached password (user might have enabled encryption)
+                isEncryptionEnabled = passwordStore.hasCachedPassword(entryId);
                 content = rawEntry.content;
             }
         } catch (error) {

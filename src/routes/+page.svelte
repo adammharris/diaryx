@@ -316,6 +316,8 @@
         pendingEntryId = null;
         passwordStore.endPrompting();
         
+        // The Editor will detect the cached password and enable encryption automatically
+        
         // Note: The actual encryption will happen when the user saves the content
         // The Editor will detect the cached password and encrypt on save
       }
@@ -355,6 +357,7 @@
       // No need for additional handling here
     }
   }
+
 
   function showDialog(options: {
     title: string;
