@@ -6,6 +6,8 @@
 
     interface Props {
         entryId: string | null;
+        preloadedEntry?: JournalEntry | null; // Pass pre-loaded entry to avoid double-loading
+        preloadedEntryIsDecrypted?: boolean; // Flag to indicate if preloaded entry is already decrypted
         onclose?: () => void;
         onsaved?: (data: { id: string; content: string }) => void;
         onrenamed?: (data: { oldId: string; newId: string }) => void;
@@ -13,7 +15,7 @@
         onerror?: (data: { title: string; message: string }) => void;
     }
 
-    let { entryId, onclose, onsaved, onrenamed, onencryptiontoggle, onerror }: Props = $props();
+    let { entryId, preloadedEntry, preloadedEntryIsDecrypted, onclose, onsaved, onrenamed, onencryptiontoggle, onerror }: Props = $props();
 
 
     let entry: JournalEntry | null = $state(null);
@@ -24,6 +26,8 @@
     let isSaving = $state(false);
     let isLoading = $state(false);
     let isEncryptionEnabled = $state(false);
+    
+    // Simplified: removed complex cache system
 
     // Load entry when entryId changes
     $effect(() => {
@@ -37,23 +41,23 @@
         }
     });
 
-    // Watch for password changes that might enable encryption
-    $effect(() => {
-        // Make this effect reactive to password store changes
-        const passwordStoreState = $passwordStore;
-        
-        if (entryId && entry && !isEncrypted(entry.content)) {
-            // For non-encrypted entries, check if encryption was just enabled
-            const hasPassword = passwordStoreState.cache[entryId] !== undefined;
-            if (hasPassword && !isEncryptionEnabled) {
-                isEncryptionEnabled = true;
-            }
-        }
-    });
+    // Removed reactive password store effect - encryption state is now handled in loadEntry()
+    // This eliminates unnecessary re-renders when password store changes
 
     async function loadEntry() {
         if (!entryId) return;
         
+        // Use preloaded entry if available (should be the common case)
+        if (preloadedEntry && preloadedEntry.id === entryId) {
+            entry = preloadedEntry;
+            editableTitle = preloadedEntry.title;
+            content = preloadedEntry.content;
+            isEncryptionEnabled = preloadedEntryIsDecrypted || passwordStore.hasCachedPassword(entryId);
+            isLoading = false;
+            return;
+        }
+        
+        // Fallback: load from storage if no preloaded entry
         isLoading = true;
         
         try {
@@ -63,36 +67,17 @@
             entry = rawEntry;
             editableTitle = rawEntry.title;
             
-            // Check if entry is encrypted
             if (isEncrypted(rawEntry.content)) {
                 isEncryptionEnabled = true;
-                
-                // First try to get cached decrypted content for instant loading
                 const cachedContent = passwordStore.getCachedDecryptedContent(entryId);
                 
                 if (cachedContent) {
-                    // Use cached decrypted content - instant loading!
-                    console.log('⚡ Using cached decrypted content for entry:', entryId);
                     content = cachedContent;
                 } else {
-                    // Try to decrypt with cached password
-                    console.log('🔓 Decrypting entry content for:', entryId);
-                    const startTime = performance.now();
                     const decryptedEntry = await passwordStore.tryDecryptWithCache(rawEntry);
-                    const decryptTime = performance.now() - startTime;
-                    
                     if (decryptedEntry) {
-                        // Successfully decrypted with cached password
-                        console.log('✅ Decryption completed in', Math.round(decryptTime), 'ms for entry:', entryId);
                         content = decryptedEntry.content;
-                        
-                        // Cache the decrypted content for next time
-                        passwordStore.cacheDecryptedContent(entryId, decryptedEntry.content);
-                        console.log('💾 Cached decrypted content for future access:', entryId);
                     } else {
-                        // If we reach here, it means the main page should have handled password prompting
-                        // but somehow didn't. This shouldn't happen in normal flow.
-                        console.error('Editor received encrypted entry without cached password - this should not happen');
                         onerror?.({
                             title: 'Decryption Error',
                             message: 'Unable to decrypt entry. Please try selecting it again.'
@@ -101,7 +86,6 @@
                     }
                 }
             } else {
-                // Entry is not encrypted - check if we have a cached password (user might have enabled encryption)
                 isEncryptionEnabled = passwordStore.hasCachedPassword(entryId);
                 content = rawEntry.content;
             }
@@ -142,6 +126,8 @@
                 // Update local entry with the original content (not encrypted)
                 entry.content = contentToSave;
                 entry.modified_at = new Date().toISOString();
+                
+                // Cache update removed for simplicity
             } else {
                 onerror?.({
                     title: 'Save Failed',

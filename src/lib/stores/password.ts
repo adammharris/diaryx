@@ -8,6 +8,8 @@ interface PasswordCache {
     cachedAt: number;
     lastUsed: number;
     decryptedContent?: string; // Cache decrypted content for performance
+    isEncrypted?: boolean; // Cache encryption status to avoid checking content
+    entryTitle?: string; // Cache entry title to avoid loading from storage
   };
 }
 
@@ -389,15 +391,23 @@ function createPasswordStore() {
       });
     },
 
-    // Get cached decrypted content if available
+    // Get cached decrypted content if available (optimized for performance)
     getCachedDecryptedContent: (entryId: string): string | null => {
       const state = get(store) as PasswordState;
       const cached = state.cache[entryId];
       
-      if (!cached) return null;
+      if (!cached || !cached.decryptedContent) return null;
+      
+      // Skip timeout check for ultra-fast path - assume recent access means valid cache
+      const now = Date.now();
+      const isRecent = (now - cached.lastUsed) < 300000; // 5 minutes
+      
+      if (isRecent) {
+        // Ultra-fast path: skip state update for very recent access
+        return cached.decryptedContent;
+      }
       
       // Check if cache is still valid
-      const now = Date.now();
       if (now - cached.cachedAt > state.sessionTimeout) {
         // Cache expired, remove it
         update(currentState => {
@@ -408,7 +418,7 @@ function createPasswordStore() {
         return null;
       }
       
-      // Update last used time
+      // Update last used time only if not recent
       update(currentState => ({
         ...currentState,
         cache: {
@@ -420,11 +430,11 @@ function createPasswordStore() {
         }
       }));
       
-      return cached.decryptedContent || null;
+      return cached.decryptedContent;
     },
 
-    // Cache decrypted content along with password
-    cacheDecryptedContent: (entryId: string, decryptedContent: string) => {
+    // Cache decrypted content along with password and metadata
+    cacheDecryptedContent: (entryId: string, decryptedContent: string, entryTitle?: string) => {
       update(state => {
         const existing = state.cache[entryId];
         if (!existing) return state; // No password cache, don't cache content
@@ -436,11 +446,28 @@ function createPasswordStore() {
             [entryId]: {
               ...existing,
               decryptedContent,
+              isEncrypted: true, // Mark as encrypted since we're caching decrypted content
+              entryTitle: entryTitle || existing.entryTitle, // Cache title if provided
               lastUsed: Date.now()
             }
           }
         };
       });
+    },
+
+    // Check if entry is known to be encrypted without loading it
+    isKnownEncrypted: (entryId: string): boolean | null => {
+      const state = get(store) as PasswordState;
+      const cached = state.cache[entryId];
+      return cached?.isEncrypted ?? null; // null = unknown, true/false = known
+    },
+
+    // Get cached title if available (optimized for performance)
+    getCachedTitle: (entryId: string): string | null => {
+      const state = get(store) as PasswordState;
+      const cached = state.cache[entryId];
+      // Skip validation for ultra-fast path - assume cache is valid if it exists
+      return cached?.entryTitle ?? null;
     }
   };
 }

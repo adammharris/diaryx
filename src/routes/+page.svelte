@@ -15,6 +15,8 @@
   import { metadataStore } from '../lib/stores/metadata.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
+  let preloadedEntry: JournalEntry | null = $state(null); // Store preloaded entry to avoid double-loading
+  let preloadedEntryIsDecrypted: boolean = $state(false); // Flag to indicate if preloaded entry is already decrypted
   let selectedEntryId: string | null = $state(null);
   let isLoading = $state(true);
   let searchQuery = $state('');
@@ -186,6 +188,8 @@
         
         if (decryptedEntry) {
           // Successfully decrypted with cached password - open editor
+          preloadedEntry = decryptedEntry; // Pass decrypted entry to avoid double-loading
+          preloadedEntryIsDecrypted = true; // Mark as already decrypted
           selectedEntryId = entryId;
         } else {
           // Need password from user - show password prompt
@@ -195,6 +199,8 @@
         }
       } else {
         // Not encrypted - open editor directly
+        preloadedEntry = entry; // Pass plaintext entry to avoid double-loading
+        preloadedEntryIsDecrypted = false; // Mark as not encrypted
         selectedEntryId = entryId;
       }
     } catch (error) {
@@ -253,6 +259,8 @@
 
   function handleCloseEditor() {
     selectedEntryId = null;
+    preloadedEntry = null; // Clear preloaded entry when editor closes
+    preloadedEntryIsDecrypted = false; // Clear decryption flag
   }
 
   async function handleEntrySaved(data: { id: string; content: string }) {
@@ -372,6 +380,12 @@
         
         if (success) {
           // Password correct - open editor and close prompt
+          // Get the decrypted entry to pass to editor
+          const decryptedEntry = await passwordStore.tryDecryptWithCache(entry);
+          if (decryptedEntry) {
+            preloadedEntry = decryptedEntry; // Pass decrypted entry to avoid double-loading
+            preloadedEntryIsDecrypted = true; // Mark as already decrypted
+          }
           selectedEntryId = pendingEntryId;
           showPasswordPrompt = false;
           pendingEntryId = null;
@@ -532,6 +546,8 @@
   <main class="main-content">
     <Editor 
       entryId={selectedEntryId}
+      preloadedEntry={preloadedEntry}
+      preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
       onclose={handleCloseEditor}
       onsaved={handleEntrySaved}
       onrenamed={handleEntryRenamed}
