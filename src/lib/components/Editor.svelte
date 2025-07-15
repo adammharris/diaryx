@@ -121,7 +121,7 @@
             
             const success = await storage.saveEntry(entry.id, contentToSave);
             if (success) {
-                onsaved?.({ id: entry.id, content: contentToSave });
+                onsaved?.({ id: entry.id, content: content }); // Pass original decrypted content
                 // Update local entry with the original content (not encrypted)
                 entry.content = contentToSave;
                 entry.modified_at = new Date().toISOString();

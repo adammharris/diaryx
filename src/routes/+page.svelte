@@ -12,6 +12,7 @@
   import { passwordStore } from '../lib/stores/password.js';
   import { PreviewService } from '../lib/storage/preview.service.js';
   import { TitleService } from '../lib/storage/title.service.js';
+  import { metadataStore } from '../lib/stores/metadata.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let selectedEntryId: string | null = $state(null);
@@ -254,27 +255,19 @@
     selectedEntryId = null;
   }
 
-  function handleEntrySaved(data: { id: string; content: string }) {
+  async function handleEntrySaved(data: { id: string; content: string }) {
     // Add this specific file to suppression list
     suppressedFiles.set(data.id, { metadata: false, data: false });
     
     // Update the preview for this specific entry if it has a cached password (i.e., it's decrypted)
-    const entryIndex = entries.findIndex(e => e.id === data.id);
-    if (entryIndex >= 0 && passwordStore.hasCachedPassword(data.id)) {
-      // Generate new preview from the updated content
-      const newPreview = PreviewService.createPreview(data.content);
-      
-      // Update the entry with new preview (keep existing title since it's filename-based)
-      entries[entryIndex] = {
-        ...entries[entryIndex],
-        preview: newPreview,
-        modified_at: new Date().toISOString()
-      };
-      
-      // Trigger reactivity
-      entries = [...entries];
-      
-      console.log('Updated preview for encrypted entry:', data.id);
+    if (passwordStore.hasCachedPassword(data.id)) {
+      // Call storage.updateDecryptedTitle with the NEW content to generate fresh metadata
+      try {
+        await storage.updateDecryptedTitle(data.id, data.content);
+        console.log('Updated storage metadata for encrypted entry:', data.id);
+      } catch (error) {
+        console.error('Failed to update storage metadata:', error);
+      }
     }
     
     console.log('Entry saved, suppression set for', data.id);
