@@ -1,5 +1,5 @@
 /**
- * Service for handling entry titles and title extraction
+ * Service for handling entry titles (filename-based)
  */
 
 import { isEncrypted } from '../utils/crypto.js';
@@ -7,48 +7,17 @@ import type { JournalEntry } from './types.js';
 
 export class TitleService {
     private static readonly ENCRYPTED_TITLE_PREFIX = '🔒';
-    private static readonly ENCRYPTED_CONTENT_PATTERN = /^[A-Za-z0-9+/=]{20,}/;
-    private static readonly LONG_TITLE_THRESHOLD = 50;
-
-    /**
-     * Extracts title from markdown content (first heading)
-     */
-    static extractTitleFromContent(content: string): string | null {
-        // Don't extract title from encrypted content
-        if (isEncrypted(content)) {
-            return null;
-        }
-        
-        const firstLine = content.split('\n')[0];
-        if (firstLine.startsWith('#')) {
-            return firstLine.replace(/^#+\s*/, '').trim();
-        }
-        return null;
-    }
 
     /**
      * Creates a fallback title for encrypted entries
      */
     static createFallbackTitle(entry: JournalEntry): string {
-        // For encrypted entries, use a readable filename-based title
-        if (isEncrypted(entry.content)) {
-            // If the current title looks like encrypted content, create a fallback
-            if (this.titleLooksEncrypted(entry.title)) {
-                const readableTitle = this.createReadableTitleFromPath(entry.file_path, entry.id);
-                return `${this.ENCRYPTED_TITLE_PREFIX} ${readableTitle}`;
-            }
+        // Since titles are now filename-based, just return the entry title
+        // Add encryption indicator if needed
+        if (isEncrypted(entry.content) && !entry.title.startsWith(this.ENCRYPTED_TITLE_PREFIX)) {
+            return `${this.ENCRYPTED_TITLE_PREFIX} ${entry.title}`;
         }
         return entry.title;
-    }
-
-    /**
-     * Checks if a title appears to be encrypted content
-     */
-    static titleLooksEncrypted(title: string): boolean {
-        return (
-            title.length > this.LONG_TITLE_THRESHOLD ||
-            this.ENCRYPTED_CONTENT_PATTERN.test(title)
-        );
     }
 
     /**
@@ -64,23 +33,6 @@ export class TitleService {
             .replace(/\b\w/g, letter => letter.toUpperCase());
     }
 
-    /**
-     * Updates title from decrypted content
-     */
-    static updateTitleFromDecryptedContent(currentTitle: string, decryptedContent: string): string {
-        const extractedTitle = this.extractTitleFromContent(decryptedContent);
-        return extractedTitle || currentTitle;
-    }
-
-    /**
-     * Checks if an entry has a proper title (not encrypted content)
-     */
-    static hasProperTitle(entry: JournalEntry): boolean {
-        if (isEncrypted(entry.content)) {
-            return !this.titleLooksEncrypted(entry.title);
-        }
-        return true;
-    }
 
     /**
      * Gets display title for UI (with encryption indicator)

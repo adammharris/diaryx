@@ -1,9 +1,13 @@
 import { writable } from 'svelte/store';
 import { decrypt, isEncrypted } from '../utils/crypto.js';
-import type { JournalEntry } from '../storage.js';
+import type { JournalEntry } from '../storage/index.js';
 
 interface PasswordCache {
-  [entryId: string]: string;
+  [entryId: string]: {
+    password: string;
+    cachedAt: number;
+    lastUsed: number;
+  };
 }
 
 interface PasswordState {
@@ -11,13 +15,20 @@ interface PasswordState {
   isPrompting: boolean;
   promptingEntryId: string | null;
   lastAttemptFailed: boolean;
+  sessionTimeout: number; // in milliseconds
+  cleanupInterval: number | null;
 }
+
+// Default session timeout: 2 hours
+const DEFAULT_SESSION_TIMEOUT = 2 * 60 * 60 * 1000;
 
 const initialState: PasswordState = {
   cache: {},
   isPrompting: false,
   promptingEntryId: null,
-  lastAttemptFailed: false
+  lastAttemptFailed: false,
+  sessionTimeout: DEFAULT_SESSION_TIMEOUT,
+  cleanupInterval: null
 };
 
 function createPasswordStore() {
@@ -26,11 +37,22 @@ function createPasswordStore() {
   return {
     subscribe,
     
-    // Check if we have a cached password for an entry
+    // Check if we have a cached password for an entry (and it hasn't expired)
     hasCachedPassword: (entryId: string): boolean => {
       let hasPassword = false;
       update(state => {
-        hasPassword = !!state.cache[entryId];
+        const cached = state.cache[entryId];
+        if (cached) {
+          const now = Date.now();
+          const isExpired = (now - cached.lastUsed) > state.sessionTimeout;
+          if (isExpired) {
+            // Remove expired password
+            delete state.cache[entryId];
+            hasPassword = false;
+          } else {
+            hasPassword = true;
+          }
+        }
         return state;
       });
       return hasPassword;
@@ -44,21 +66,31 @@ function createPasswordStore() {
 
       return new Promise<JournalEntry | null>((resolve) => {
         update(state => {
-          const cachedPassword = state.cache[entry.id];
-          if (cachedPassword) {
-            // Try to decrypt with cached password
-            decrypt(entry.content, cachedPassword)
-              .then(decryptedContent => {
-                resolve({
-                  ...entry,
-                  content: decryptedContent
+          const cached = state.cache[entry.id];
+          if (cached) {
+            const now = Date.now();
+            const isExpired = (now - cached.lastUsed) > state.sessionTimeout;
+            
+            if (isExpired) {
+              // Password expired, remove from cache
+              delete state.cache[entry.id];
+              resolve(null);
+            } else {
+              // Update last used time and try to decrypt
+              state.cache[entry.id].lastUsed = now;
+              decrypt(entry.content, cached.password)
+                .then(decryptedContent => {
+                  resolve({
+                    ...entry,
+                    content: decryptedContent
+                  });
+                })
+                .catch(() => {
+                  // Password is invalid, remove from cache
+                  delete state.cache[entry.id];
+                  resolve(null);
                 });
-              })
-              .catch(() => {
-                // Password is invalid, remove from cache
-                delete state.cache[entry.id];
-                resolve(null);
-              });
+            }
           } else {
             resolve(null);
           }
@@ -68,15 +100,30 @@ function createPasswordStore() {
     },
 
     // Cache a password for an entry after successful decryption
-    cachePassword: (entryId: string, password: string) => {
+    cachePassword: (entryId: string, password: string, decryptedContent?: string) => {
+      const now = Date.now();
       update(state => ({
         ...state,
         cache: {
           ...state.cache,
-          [entryId]: password
+          [entryId]: {
+            password,
+            cachedAt: now,
+            lastUsed: now
+          }
         },
         lastAttemptFailed: false
       }));
+
+      // If decrypted content is provided, update metadata
+      if (decryptedContent) {
+        // Import storage dynamically to avoid circular dependency
+        import('../storage/index.js').then(({ storage }) => {
+          storage.updateDecryptedTitle(entryId, decryptedContent);
+        }).catch(error => {
+          console.error('Failed to update metadata for individually decrypted entry:', error);
+        });
+      }
     },
 
     // Validate password against encrypted content
@@ -124,11 +171,16 @@ function createPasswordStore() {
         .catch(() => false);
 
       if (isValid) {
+        const now = Date.now();
         update(state => ({
           ...state,
           cache: {
             ...state.cache,
-            [entryId]: password
+            [entryId]: {
+              password,
+              cachedAt: now,
+              lastUsed: now
+            }
           },
           isPrompting: false,
           promptingEntryId: null,
@@ -179,8 +231,156 @@ function createPasswordStore() {
           return state;
         });
       });
+    },
+
+    // Batch unlock: try a password on all encrypted entries
+    batchUnlock: async (password: string, encryptedEntries: JournalEntry[]): Promise<{
+      successCount: number;
+      failedEntries: string[];
+      unlockedEntries: string[];
+    }> => {
+      const results = {
+        successCount: 0,
+        failedEntries: [] as string[],
+        unlockedEntries: [] as string[]
+      };
+
+      const now = Date.now();
+      const decryptedEntries: Array<{ entryId: string; decryptedContent: string }> = [];
+      
+      // Test password against all encrypted entries
+      for (const entry of encryptedEntries) {
+        try {
+          const decryptedContent = await decrypt(entry.content, password);
+          // Success - cache the password and store decrypted content for metadata update
+          results.successCount++;
+          results.unlockedEntries.push(entry.id);
+          decryptedEntries.push({ entryId: entry.id, decryptedContent });
+          
+          update(state => ({
+            ...state,
+            cache: {
+              ...state.cache,
+              [entry.id]: {
+                password,
+                cachedAt: now,
+                lastUsed: now
+              }
+            }
+          }));
+        } catch {
+          // Failed to decrypt with this password
+          results.failedEntries.push(entry.id);
+        }
+      }
+
+      // Update metadata for successfully decrypted entries
+      // Import storage dynamically to avoid circular dependency
+      if (decryptedEntries.length > 0) {
+        try {
+          const { storage } = await import('../storage/index.js');
+          for (const { entryId, decryptedContent } of decryptedEntries) {
+            await storage.updateDecryptedTitle(entryId, decryptedContent);
+          }
+        } catch (error) {
+          console.error('Failed to update metadata for decrypted entries:', error);
+        }
+      }
+
+      return results;
+    },
+
+    // Set session timeout (in milliseconds)
+    setSessionTimeout: (timeoutMs: number) => {
+      update(state => ({
+        ...state,
+        sessionTimeout: timeoutMs
+      }));
+    },
+
+    // Get current session timeout
+    getSessionTimeout: (): Promise<number> => {
+      return new Promise((resolve) => {
+        update(state => {
+          resolve(state.sessionTimeout);
+          return state;
+        });
+      });
+    },
+
+    // Start automatic cleanup of expired passwords
+    startCleanupTimer: () => {
+      update(state => {
+        // Clear existing timer if any
+        if (state.cleanupInterval) {
+          clearInterval(state.cleanupInterval);
+        }
+
+        // Set up new cleanup timer (run every 5 minutes)
+        const interval = setInterval(() => {
+          update(cleanupState => {
+            const now = Date.now();
+            const newCache = { ...cleanupState.cache };
+            let cleaned = false;
+
+            for (const [entryId, cached] of Object.entries(newCache)) {
+              if ((now - cached.lastUsed) > cleanupState.sessionTimeout) {
+                delete newCache[entryId];
+                cleaned = true;
+              }
+            }
+
+            return cleaned ? { ...cleanupState, cache: newCache } : cleanupState;
+          });
+        }, 5 * 60 * 1000); // 5 minutes
+
+        return {
+          ...state,
+          cleanupInterval: interval as any
+        };
+      });
+    },
+
+    // Stop automatic cleanup
+    stopCleanupTimer: () => {
+      update(state => {
+        if (state.cleanupInterval) {
+          clearInterval(state.cleanupInterval);
+        }
+        return {
+          ...state,
+          cleanupInterval: null
+        };
+      });
+    },
+
+    // Get cache statistics
+    getCacheStats: (): Promise<{
+      totalCached: number;
+      expiredCount: number;
+      oldestCacheTime: number | null;
+      newestCacheTime: number | null;
+    }> => {
+      return new Promise((resolve) => {
+        update(state => {
+          const now = Date.now();
+          const cached = Object.values(state.cache);
+          const expired = cached.filter(c => (now - c.lastUsed) > state.sessionTimeout);
+          
+          resolve({
+            totalCached: cached.length,
+            expiredCount: expired.length,
+            oldestCacheTime: cached.length > 0 ? Math.min(...cached.map(c => c.cachedAt)) : null,
+            newestCacheTime: cached.length > 0 ? Math.max(...cached.map(c => c.cachedAt)) : null
+          });
+          return state;
+        });
+      });
     }
   };
 }
 
 export const passwordStore = createPasswordStore();
+
+// Start cleanup timer when store is created
+passwordStore.startCleanupTimer();

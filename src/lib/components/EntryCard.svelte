@@ -1,6 +1,8 @@
 <script lang="ts">
     import type { JournalEntryMetadata } from '../storage/index.ts';
-    import { detectTauri } from '../utils/tauri.ts';
+    import { passwordStore } from '../stores/password.js';
+    import { metadataStore } from '../stores/metadata.js';
+    import { isEncrypted } from '../utils/crypto.js';
 
     interface Props {
         entry: JournalEntryMetadata;
@@ -10,11 +12,42 @@
 
     let { entry, onselect, ondelete }: Props = $props();
 
-    // Check if entry content appears to be encrypted by looking at the preview
-    let isEntryEncrypted = $derived(entry.preview.includes('🔒') && entry.preview.includes('encrypted'));
+    // Get reactive metadata from the store - this will update when metadata changes
+    let currentEntry = $derived(() => {
+        const storeEntry = $metadataStore.entries[entry.id];
+        // Use store entry if available, otherwise fall back to prop
+        return storeEntry || entry;
+    });
+
+    // Check if entry has encrypted preview (locked state)
+    let hasEncryptedPreview = $derived(() => {
+        const currentMeta = currentEntry();
+        return currentMeta.preview.includes('🔒') && currentMeta.preview.includes('encrypted');
+    });
     
-    // The preview is already handled by the storage layer
-    let displayPreview = $derived(entry.preview);
+    // Check if we have a cached password for this entry
+    let hasPassword = $derived(() => {
+        const cache = $passwordStore.cache;
+        const entryId = currentEntry().id;
+        return cache[entryId] !== undefined;
+    });
+    
+    // Determine the encryption state for display
+    let encryptionState = $derived(() => {
+        if (hasEncryptedPreview()) {
+            // Entry is locked (encrypted preview visible)
+            return 'locked';
+        } else if (hasPassword()) {
+            // Entry has a cached password but no encrypted preview = unlocked
+            return 'unlocked';
+        } else {
+            // No encryption
+            return 'none';
+        }
+    });
+    
+    // Display appropriate preview - use reactive metadata from store
+    let displayPreview = $derived(currentEntry().preview);
 
     function formatDate(dateString: string) {
         return new Date(dateString).toLocaleDateString('en-US', {
@@ -30,32 +63,9 @@
         onselect?.({ id: entry.id });
     }
 
-    async function handleDelete(event: Event) {
+    function handleDelete(event: Event) {
         event.stopPropagation();
-        
-        let userConfirmed = false;
-        
-        // Detect platform and use appropriate dialog
-        const isTauri = detectTauri();
-        
-        if (isTauri) {
-            try {
-                const { confirm } = await import('@tauri-apps/plugin-dialog');
-                userConfirmed = await confirm(
-                    `Are you sure you want to delete "${entry.title}"?`,
-                    { title: 'Delete Entry', kind: 'warning' }
-                );
-            } catch (error) {
-                console.error('Tauri dialog error:', error);
-                userConfirmed = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
-            }
-        } else {
-            userConfirmed = window.confirm(`Are you sure you want to delete "${entry.title}"?`);
-        }
-        
-        if (userConfirmed) {
-            ondelete?.({ id: entry.id });
-        }
+        ondelete?.({ id: entry.id });
     }
 </script>
 
@@ -68,10 +78,12 @@
 >
     <div class="entry-header">
         <h3 class="entry-title">
-            {#if isEntryEncrypted}
-                <span class="encryption-indicator" title="This entry is encrypted">🔒</span>
+            {#if encryptionState() === 'locked'}
+                <span class="encryption-indicator locked" title="This entry is encrypted and locked">🔒</span>
+            {:else if encryptionState() === 'unlocked'}
+                <span class="encryption-indicator unlocked" title="This entry is encrypted but unlocked">🔓</span>
             {/if}
-            {entry.title}
+            {currentEntry().title}
         </h3>
         <button 
             class="delete-btn" 
@@ -82,10 +94,10 @@
         </button>
     </div>
     
-    <p class="entry-preview" class:encrypted={isEntryEncrypted}>{displayPreview}</p>
+    <p class="entry-preview" class:encrypted={encryptionState() === 'locked'}>{displayPreview}</p>
     
     <div class="entry-meta">
-        <span class="entry-date">{formatDate(entry.modified_at)}</span>
+        <span class="entry-date">{formatDate(currentEntry().modified_at)}</span>
     </div>
 </div>
 
@@ -170,9 +182,16 @@
     }
 
     .encryption-indicator {
-        color: #f59e0b;
         margin-right: 0.5rem;
         font-size: 0.875rem;
+    }
+    
+    .encryption-indicator.locked {
+        color: #dc2626; /* Red for locked */
+    }
+    
+    .encryption-indicator.unlocked {
+        color: #16a34a; /* Green for unlocked */
     }
 
     .entry-preview.encrypted {

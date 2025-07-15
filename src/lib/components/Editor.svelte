@@ -1,6 +1,5 @@
 <script lang="ts">
-    import { storage, type JournalEntry } from '../storage/index.ts';
-    import { createEventDispatcher } from 'svelte';
+    import { storage, type JournalEntry } from '../storage/index';
     import SvelteMarkdown from 'svelte-markdown';
     import PasswordPrompt from './PasswordPrompt.svelte';
     import { passwordStore } from '../stores/password.js';
@@ -8,18 +7,20 @@
 
     interface Props {
         entryId: string | null;
+        onclose?: () => void;
+        onsaved?: (data: { id: string }) => void;
+        ondecrypted?: (data: { id: string }) => void;
+        onrenamed?: (data: { oldId: string; newId: string }) => void;
+        onerror?: (data: { title: string; message: string }) => void;
     }
 
-    let { entryId }: Props = $props();
+    let { entryId, onclose, onsaved, ondecrypted, onrenamed, onerror }: Props = $props();
 
-    const dispatch = createEventDispatcher<{
-        close: {};
-        saved: { id: string };
-        decrypted: { id: string };
-    }>();
 
     let entry: JournalEntry | null = $state(null);
     let content = $state('');
+    let editableTitle = $state('');
+    let isEditingTitle = $state(false);
     let isPreview = $state(false);
     let isSaving = $state(false);
     let isLoading = $state(false);
@@ -33,6 +34,7 @@
         } else {
             entry = null;
             content = '';
+            editableTitle = '';
             needsPassword = false;
             isEncryptionEnabled = false;
         }
@@ -49,6 +51,7 @@
             if (!rawEntry) return;
 
             entry = rawEntry;
+            editableTitle = rawEntry.title;
             
             // Check if entry is encrypted
             if (isEncrypted(rawEntry.content)) {
@@ -60,12 +63,6 @@
                 if (decryptedEntry) {
                     // Successfully decrypted with cached password
                     content = decryptedEntry.content;
-                    
-                    // Update title from decrypted content
-                    const firstLine = decryptedEntry.content.split('\n')[0];
-                    if (firstLine.startsWith('#')) {
-                        entry.title = firstLine.replace(/^#+\s*/, '').trim();
-                    }
                 } else {
                     // Need password from user
                     content = '';
@@ -95,35 +92,95 @@
             if (isEncryptionEnabled && entryId) {
                 // Get the cached password for this entry
                 const { cache } = $passwordStore;
-                const password = cache[entryId];
+                const passwordData = cache[entryId];
                 
-                if (password) {
-                    contentToSave = await encrypt(content, password);
+                if (passwordData) {
+                    contentToSave = await encrypt(content, passwordData.password);
                 } else {
-                    alert('Cannot save encrypted entry without password');
+                    onerror?.({
+                        title: 'Password Required',
+                        message: 'Cannot save encrypted entry without password. Please decrypt the entry first.'
+                    });
                     return;
                 }
             }
             
             const success = await storage.saveEntry(entry.id, contentToSave);
             if (success) {
-                dispatch('saved', { id: entry.id });
+                onsaved?.({ id: entry.id });
                 // Update local entry with the original content (not encrypted)
                 entry.content = contentToSave;
                 entry.modified_at = new Date().toISOString();
             } else {
-                alert('Failed to save entry');
+                onerror?.({
+                    title: 'Save Failed',
+                    message: 'Failed to save entry. Please try again.'
+                });
             }
         } catch (error) {
             console.error('Save error:', error);
-            alert('Failed to save entry');
+            onerror?.({
+                title: 'Save Failed',
+                message: 'Failed to save entry. Please try again.'
+            });
         } finally {
             isSaving = false;
         }
     }
 
     function handleClose() {
-        dispatch('close', {});
+        onclose?.();
+    }
+
+    async function handleTitleSave() {
+        if (!entry || !entryId || !editableTitle.trim()) {
+            isEditingTitle = false;
+            return;
+        }
+
+        // If title hasn't changed, just stop editing
+        if (editableTitle.trim() === entry.title) {
+            isEditingTitle = false;
+            return;
+        }
+
+        try {
+            const newId = await storage.renameEntry(entryId, editableTitle.trim());
+            if (newId) {
+                onrenamed?.({ oldId: entryId, newId });
+                isEditingTitle = false;
+            } else {
+                onerror?.({
+                    title: 'Rename Failed',
+                    message: 'Failed to rename entry. Please try again.'
+                });
+                editableTitle = entry.title; // Reset to original title
+                isEditingTitle = false;
+            }
+        } catch (error) {
+            console.error('Rename error:', error);
+            onerror?.({
+                title: 'Rename Failed',
+                message: 'Failed to rename entry. Please try again.'
+            });
+            editableTitle = entry.title; // Reset to original title
+            isEditingTitle = false;
+        }
+    }
+
+    function handleTitleCancel() {
+        editableTitle = entry?.title || '';
+        isEditingTitle = false;
+    }
+
+    function handleTitleKeydown(event: KeyboardEvent) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            handleTitleSave();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            handleTitleCancel();
+        }
     }
 
     async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
@@ -136,26 +193,21 @@
                 // Existing encrypted entry - try to decrypt
                 const decryptedContent = await decrypt(entry.content, password);
                 content = decryptedContent;
-                
-                // Extract proper title from decrypted content
-                const firstLine = decryptedContent.split('\n')[0];
-                if (firstLine.startsWith('#')) {
-                    entry.title = firstLine.replace(/^#+\s*/, '').trim();
-                }
             } else {
                 // Plain text entry being encrypted - just cache the password
                 // Content stays the same for now, will be encrypted on save
             }
             
-            // Success! Cache the password
-            passwordStore.cachePassword(entryId, password);
+            // Success! Cache the password with decrypted content for metadata update
+            const decryptedContent = isEncrypted(entry.content) ? content : undefined;
+            passwordStore.cachePassword(entryId, password, decryptedContent);
             needsPassword = false;
             passwordStore.endPrompting();
             
             // Update metadata cache with proper title and notify parent
             if (isEncrypted(entry.content)) {
                 await storage.updateDecryptedTitle(entryId, content);
-                dispatch('decrypted', { id: entryId });
+                ondecrypted?.({ id: entryId });
             }
         } catch (error) {
             // Password is incorrect (only relevant for existing encrypted entries)
@@ -166,17 +218,8 @@
     function handlePasswordCancel() {
         needsPassword = false;
         passwordStore.endPrompting();
-        
-        // If we were enabling encryption and user canceled, revert the state
-        if (!isEncrypted(entry?.content || '')) {
-            isEncryptionEnabled = false;
-        }
-        
-        // Only close if this was for an existing encrypted entry
-        if (isEncrypted(entry?.content || '')) {
-            handleClose();
-        }
     }
+
 
     function toggleEncryption() {
         if (!entry || !entryId) return;
@@ -214,7 +257,23 @@
 {#if entry}
     <div class="editor-container">
         <div class="editor-header">
-            <h2 class="editor-title">{entry.title}</h2>
+            {#if isEditingTitle}
+                <input 
+                    class="editor-title-input"
+                    bind:value={editableTitle}
+                    onkeydown={handleTitleKeydown}
+                    onblur={handleTitleSave}
+                    autofocus
+                />
+            {:else}
+                <h2 
+                    class="editor-title"
+                    onclick={() => isEditingTitle = true}
+                    title="Click to edit title"
+                >
+                    {entry.title}
+                </h2>
+            {/if}
             <div class="editor-controls">
                 <button 
                     class="btn btn-encryption"
@@ -328,6 +387,28 @@
         font-weight: 600;
         color: #1f2937;
         margin: 0;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
+    }
+
+    .editor-title:hover {
+        background-color: #f3f4f6;
+    }
+
+    .editor-title-input {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0;
+        padding: 0.25rem 0.5rem;
+        border: 2px solid #3b82f6;
+        border-radius: 4px;
+        background: white;
+        outline: none;
+        flex: 1;
+        margin-right: 0.5rem;
     }
 
     .editor-controls {

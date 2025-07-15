@@ -32,6 +32,7 @@ export interface IStorageAdapter {
     saveEntry(id: string, content: string): Promise<boolean>;
     createEntry(title: string): Promise<string | null>;
     deleteEntry(id: string): Promise<boolean>;
+    renameEntry(oldId: string, newTitle: string): Promise<string | null>;
     updateDecryptedTitle(id: string, decryptedContent: string): Promise<void>;
     entryExists(id: string): Promise<boolean>;
     clearCacheAndRefresh(): Promise<void>;
@@ -52,12 +53,14 @@ export interface IFileSystemStorage {
     saveEntryToFS(id: string, content: string): Promise<boolean>;
     createEntryInFS(title: string): Promise<string | null>;
     deleteEntryFromFS(id: string): Promise<boolean>;
+    renameEntryInFS(oldId: string, newTitle: string): Promise<string | null>;
 }
 
 export interface IWebStorage {
     createEntryInWeb(title: string): Promise<string>;
     saveEntryInWeb(id: string, content: string): Promise<boolean>;
     deleteEntryInWeb(id: string): Promise<boolean>;
+    renameEntryInWeb(oldId: string, newTitle: string): Promise<string | null>;
     createDefaultEntriesForWeb(): Promise<void>;
 }
 

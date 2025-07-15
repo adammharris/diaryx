@@ -17,17 +17,14 @@ export class PreviewService {
             return this.ENCRYPTED_PREVIEW_TEXT;
         }
         
-        // Remove title line and create preview from remaining content
-        const contentWithoutTitle = content.split('\n').slice(1).join('\n').trim();
-        
         // Remove markdown formatting characters for cleaner preview
-        const cleanContent = contentWithoutTitle.replace(/[#*_`]/g, '');
+        const cleanContent = content.replace(/[#*_`]/g, '').trim();
         
         // Truncate to desired length
         const preview = cleanContent.substring(0, maxLength);
         
         // Add ellipsis if content was truncated
-        return preview + (contentWithoutTitle.length > maxLength ? '...' : '');
+        return preview + (cleanContent.length > maxLength ? '...' : '');
     }
 
     /**

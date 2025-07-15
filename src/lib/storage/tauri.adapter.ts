@@ -13,7 +13,6 @@ import {
 } from '@tauri-apps/plugin-fs';
 import type { JournalEntry, JournalEntryMetadata, IFileSystemStorage } from './types.js';
 import { PreviewService } from './preview.service.js';
-import { TitleService } from './title.service.js';
 
 export class TauriStorageAdapter implements IFileSystemStorage {
     private readonly baseDir = BaseDirectory.Document;
@@ -61,9 +60,8 @@ export class TauriStorageAdapter implements IFileSystemStorage {
             // Read file content
             const content = await readTextFile(filePath, { baseDir: this.baseDir });
             
-            // Extract title from content
-            const extractedTitle = TitleService.extractTitleFromContent(content);
-            const title = extractedTitle || this.createTitleFromId(id);
+            // Title is derived from filename, not content
+            const title = this.createTitleFromId(id);
             
             // Get file stats for dates (approximate)
             const now = new Date().toISOString();
@@ -93,19 +91,62 @@ export class TauriStorageAdapter implements IFileSystemStorage {
         }
     }
 
+    /**
+     * Converts a title to a safe filename
+     */
+    private titleToSafeFilename(title: string): string {
+        return title
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
+            .replace(/\s+/g, '-') // Replace spaces with hyphens
+            .replace(/-+/g, '-') // Collapse multiple hyphens
+            .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+            .substring(0, 50); // Limit length
+    }
+
+    /**
+     * Generates a unique filename, handling duplicates
+     */
+    private async generateUniqueFilename(baseTitle: string): Promise<string> {
+        const safeTitle = this.titleToSafeFilename(baseTitle);
+        let filename = safeTitle;
+        let counter = 1;
+
+        // Keep checking until we find a unique filename
+        while (await this.fileExistsByFilename(filename)) {
+            filename = `${safeTitle}-${counter}`;
+            counter++;
+        }
+
+        return filename;
+    }
+
+    /**
+     * Checks if a file exists with the given filename (for duplicate checking)
+     */
+    private async fileExistsByFilename(filename: string): Promise<boolean> {
+        try {
+            const filePath = `${this.journalFolder}/${filename}${this.fileExtension}`;
+            return await exists(filePath, { baseDir: this.baseDir });
+        } catch {
+            return false;
+        }
+    }
+
     async createEntryInFS(title: string): Promise<string | null> {
         try {
-            // Generate unique ID from timestamp
-            const now = new Date();
-            const id = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            // Generate unique filename based on title
+            const filename = await this.generateUniqueFilename(title);
             
-            // Create initial content with title
-            const content = `# ${title}\n\n`;
+            // Create initial empty content
+            const content = '';
             
-            const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
+            const filePath = `${this.journalFolder}/${filename}${this.fileExtension}`;
             await writeTextFile(filePath, content, { baseDir: this.baseDir });
             
-            return id;
+            // Return the filename as the ID (without extension)
+            return filename;
         } catch (error) {
             console.error('Failed to create entry in filesystem:', error);
             return null;
@@ -138,6 +179,38 @@ export class TauriStorageAdapter implements IFileSystemStorage {
         }
     }
 
+    async renameEntryInFS(oldId: string, newTitle: string): Promise<string | null> {
+        try {
+            const oldFilePath = `${this.journalFolder}/${oldId}${this.fileExtension}`;
+            
+            // Check if old file exists
+            const fileExists = await exists(oldFilePath, { baseDir: this.baseDir });
+            if (!fileExists) {
+                console.error(`Cannot rename: file ${oldFilePath} does not exist`);
+                return null;
+            }
+
+            // Generate new unique filename based on the new title
+            const newId = await this.generateUniqueFilename(newTitle);
+            const newFilePath = `${this.journalFolder}/${newId}${this.fileExtension}`;
+
+            // Read the content from the old file
+            const content = await readTextFile(oldFilePath, { baseDir: this.baseDir });
+            
+            // Write to new file
+            await writeTextFile(newFilePath, content, { baseDir: this.baseDir });
+            
+            // Remove old file
+            await remove(oldFilePath, { baseDir: this.baseDir });
+            
+            console.log(`Renamed entry from ${oldId} to ${newId}`);
+            return newId;
+        } catch (error) {
+            console.error(`Failed to rename entry ${oldId}:`, error);
+            return null;
+        }
+    }
+
     /**
      * Checks if a file exists
      */
@@ -159,8 +232,8 @@ export class TauriStorageAdapter implements IFileSystemStorage {
             const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
             const content = await readTextFile(filePath, { baseDir: this.baseDir });
             
-            const extractedTitle = TitleService.extractTitleFromContent(content);
-            const title = extractedTitle || this.createTitleFromId(id);
+            // Title is derived from the filename (id), not from content
+            const title = this.createTitleFromId(id);
             const preview = PreviewService.createPreview(content);
             
             const now = new Date().toISOString();

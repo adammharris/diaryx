@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { storage, type JournalEntryMetadata } from '../lib/storage/index.ts';
+  import { storage, type JournalEntryMetadata } from '../lib/storage/index';
   import EntryCard from '../lib/components/EntryCard.svelte';
   import Editor from '../lib/components/Editor.svelte';
   import Settings from '../lib/components/Settings.svelte';
+  import Dialog from '../lib/components/Dialog.svelte';
+  import BatchUnlock from '../lib/components/BatchUnlock.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
 
@@ -13,8 +15,21 @@
   let isCreating = $state(false);
   let newEntryTitle = $state('');
   let showSettings = $state(false);
+  let showBatchUnlock = $state(false);
   let isTauri = $state(false);
   let reloadTimeout: number | null = null;
+
+  // Dialog state
+  let dialogState = $state({
+    isVisible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'info' | 'error' | 'warning' | 'confirm',
+    confirmText: 'OK',
+    cancelText: 'Cancel',
+    onconfirm: null as (() => void) | null,
+    oncancel: null as (() => void) | null
+  });
 
   // Initialize theme and detect environment
   $effect(() => {
@@ -76,7 +91,11 @@
     } catch (error) {
       console.error('Failed to load entries:', error);
       // Show error message to user
-      alert('Failed to load entries. Some files may have been deleted.');
+      showDialog({
+        title: 'Error Loading Entries',
+        message: 'Failed to load entries. Some files may have been deleted.',
+        type: 'error'
+      });
     } finally {
       isLoading = false;
     }
@@ -89,39 +108,80 @@
 
   async function handleDeleteEntry(event: { id: string }) {
     console.log('handleDeleteEntry called with id:', event.id);
-    try {
-      const success = await storage.deleteEntry(event.id);
-      console.log('Delete result:', success);
-      if (success) {
-        entries = entries.filter(e => e.id !== event.id);
-        if (selectedEntryId === event.id) {
-          selectedEntryId = null;
+    
+    // Find the entry to get its title for the confirmation dialog
+    const entry = entries.find(e => e.id === event.id);
+    const entryTitle = entry?.title || 'this entry';
+    
+    // Show confirmation dialog
+    showDialog({
+      title: 'Delete Entry',
+      message: `Are you sure you want to delete "${entryTitle}"? This action cannot be undone.`,
+      type: 'confirm',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      onconfirm: async () => {
+        try {
+          const success = await storage.deleteEntry(event.id);
+          console.log('Delete result:', success);
+          if (success) {
+            entries = entries.filter(e => e.id !== event.id);
+            if (selectedEntryId === event.id) {
+              selectedEntryId = null;
+            }
+            console.log('Entry deleted successfully');
+          } else {
+            console.log('Delete failed');
+            showDialog({
+              title: 'Delete Failed',
+              message: 'Failed to delete entry. Please try again.',
+              type: 'error'
+            });
+          }
+        } catch (error) {
+          console.error('Delete error:', error);
+          showDialog({
+            title: 'Delete Failed',
+            message: 'Failed to delete entry. Please try again.',
+            type: 'error'
+          });
         }
-        console.log('Entry deleted successfully');
-      } else {
-        console.log('Delete failed');
-        alert('Failed to delete entry');
       }
-    } catch (error) {
-      console.error('Delete error:', error);
-      alert('Failed to delete entry');
-    }
+    });
   }
 
   function handleCloseEditor() {
     selectedEntryId = null;
   }
 
-  function handleEntrySaved() {
+  function handleEntrySaved(data: { id: string }) {
     // Refresh the entries list
     loadEntries();
   }
 
-  async function handleEntryDecrypted() {
+  async function handleEntryDecrypted(data: { id: string }) {
     // Small delay to ensure metadata update is complete
     setTimeout(() => {
       loadEntries();
     }, 100);
+  }
+
+  async function handleEntryRenamed(data: { oldId: string; newId: string }) {
+    // Update the selected entry ID if it was the one renamed
+    if (selectedEntryId === data.oldId) {
+      selectedEntryId = data.newId;
+    }
+    // Refresh entries list to show new title
+    await loadEntries();
+  }
+
+  function handleEditorError(data: { title: string; message: string }) {
+    const { title, message } = data;
+    showDialog({
+      title,
+      message,
+      type: 'error'
+    });
   }
 
   async function handleCreateEntry() {
@@ -135,11 +195,19 @@
         await loadEntries();
         selectedEntryId = id;
       } else {
-        alert('Failed to create entry');
+        showDialog({
+          title: 'Creation Failed',
+          message: 'Failed to create entry. Please try again.',
+          type: 'error'
+        });
       }
     } catch (error) {
       console.error('Create error:', error);
-      alert('Failed to create entry');
+      showDialog({
+        title: 'Creation Failed',
+        message: 'Failed to create entry. Please try again.',
+        type: 'error'
+      });
     } finally {
       isCreating = false;
     }
@@ -158,6 +226,48 @@
   function handleCloseSettings() {
     showSettings = false;
   }
+
+  function handleOpenBatchUnlock() {
+    showBatchUnlock = true;
+  }
+
+  function handleCloseBatchUnlock() {
+    showBatchUnlock = false;
+  }
+
+  function handleBatchUnlockSuccess(unlockedCount: number) {
+    // No need to manually refresh - metadata store will update automatically
+    showDialog({
+      title: 'Batch Unlock Successful',
+      message: `Successfully unlocked ${unlockedCount} entries!`,
+      type: 'info'
+    });
+  }
+
+  function showDialog(options: {
+    title: string;
+    message: string;
+    type?: 'info' | 'error' | 'warning' | 'confirm';
+    confirmText?: string;
+    cancelText?: string;
+    onconfirm?: () => void;
+    oncancel?: () => void;
+  }) {
+    dialogState = {
+      isVisible: true,
+      title: options.title,
+      message: options.message,
+      type: options.type || 'info',
+      confirmText: options.confirmText || 'OK',
+      cancelText: options.cancelText || 'Cancel',
+      onconfirm: options.onconfirm || null,
+      oncancel: options.oncancel || null
+    };
+  }
+
+  function closeDialog() {
+    dialogState.isVisible = false;
+  }
 </script>
 
 <main class="app-container">
@@ -168,6 +278,14 @@
         <p class="app-subtitle">Personal Journal</p>
       </div>
       <div class="header-buttons">
+        <button 
+          class="settings-btn"
+          onclick={handleOpenBatchUnlock}
+          aria-label="Batch unlock encrypted entries"
+          title="Batch Unlock"
+        >
+          🔓
+        </button>
         <button 
           class="settings-btn"
           onclick={handleOpenSettings}
@@ -227,9 +345,11 @@
   <main class="main-content">
     <Editor 
       entryId={selectedEntryId}
-      on:close={handleCloseEditor}
-      on:saved={handleEntrySaved}
-      on:decrypted={handleEntryDecrypted}
+      onclose={handleCloseEditor}
+      onsaved={handleEntrySaved}
+      ondecrypted={handleEntryDecrypted}
+      onrenamed={handleEntryRenamed}
+      onerror={handleEditorError}
     />
   </main>
 </main>
@@ -237,6 +357,26 @@
 {#if showSettings}
   <Settings onclose={handleCloseSettings} />
 {/if}
+
+{#if showBatchUnlock}
+  <BatchUnlock 
+    isVisible={showBatchUnlock}
+    onclose={handleCloseBatchUnlock}
+    onunlock={handleBatchUnlockSuccess}
+  />
+{/if}
+
+<Dialog 
+  isVisible={dialogState.isVisible}
+  title={dialogState.title}
+  message={dialogState.message}
+  type={dialogState.type}
+  confirmText={dialogState.confirmText}
+  cancelText={dialogState.cancelText}
+  onconfirm={dialogState.onconfirm}
+  oncancel={dialogState.oncancel}
+  onclose={closeDialog}
+/>
 
 <style>
   :global(body) {

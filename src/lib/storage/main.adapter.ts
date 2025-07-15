@@ -9,6 +9,9 @@ import { TauriStorageAdapter } from './tauri.adapter.js';
 import { WebStorageAdapter } from './web.adapter.js';
 import { PreviewService } from './preview.service.js';
 import { TitleService } from './title.service.js';
+import { passwordStore } from '../stores/password.js';
+import { metadataStore } from '../stores/metadata.js';
+import { isEncrypted, decrypt } from '../utils/crypto.js';
 
 export class MainStorageAdapter implements IStorageAdapter {
     private cacheAdapter: CacheStorageAdapter;
@@ -71,6 +74,9 @@ export class MainStorageAdapter implements IStorageAdapter {
                 // Cache the results and preserve manually updated titles
                 await this.cacheAdapter.cacheEntries(entries);
                 
+                // Update metadata store with current entries
+                metadataStore.setAllEntries(entries);
+                
                 return entries;
             } catch (error) {
                 console.error('Failed to get entries from filesystem, trying cache:', error);
@@ -79,12 +85,17 @@ export class MainStorageAdapter implements IStorageAdapter {
                 if (cachedEntries.length > 0) {
                     console.warn('Using cached entries - data may be stale if files were deleted');
                 }
+                // Update metadata store with cached entries
+                metadataStore.setAllEntries(cachedEntries);
                 return cachedEntries;
             }
         } else {
             // Web mode - use IndexedDB and create default entries if needed
             await this.createDefaultEntriesForWeb();
-            return await this.cacheAdapter.getCachedEntries();
+            const webEntries = await this.cacheAdapter.getCachedEntries();
+            // Update metadata store with web entries
+            metadataStore.setAllEntries(webEntries);
+            return webEntries;
         }
     }
 
@@ -188,25 +199,67 @@ export class MainStorageAdapter implements IStorageAdapter {
         }
     }
 
-    async updateDecryptedTitle(id: string, decryptedContent: string): Promise<void> {
-        try {
-            const metadata = await this.cacheAdapter.getMetadata(id);
-            if (!metadata) return;
+    async renameEntry(oldId: string, newTitle: string): Promise<string | null> {
+        console.log('MainAdapter.renameEntry called with id:', oldId, 'newTitle:', newTitle);
+        
+        // During build/prerender, return null to avoid errors
+        if (this.environment === 'build') {
+            console.log('Build environment detected, returning null');
+            return null;
+        }
 
-            // Extract title from decrypted content
-            const newTitle = TitleService.updateTitleFromDecryptedContent(metadata.title, decryptedContent);
-
-            // Update metadata with real title
-            const updatedMetadata: JournalEntryMetadata = {
-                ...metadata,
-                title: newTitle
-            };
-
-            await this.cacheAdapter.updateMetadata(updatedMetadata);
-        } catch (error) {
-            console.error('Failed to update decrypted title:', error);
+        if (this.environment === 'tauri' && this.tauriAdapter) {
+            console.log('Using Tauri adapter for rename');
+            const newId = await this.tauriAdapter.renameEntryInFS(oldId, newTitle);
+            
+            if (newId) {
+                console.log('File renamed successfully, updating cache');
+                // Update cache with new ID
+                const oldEntry = await this.cacheAdapter.getCachedEntry(oldId);
+                if (oldEntry) {
+                    const updatedEntry = {
+                        ...oldEntry,
+                        id: newId,
+                        title: newTitle,
+                        modified_at: new Date().toISOString()
+                    };
+                    
+                    await this.cacheAdapter.cacheEntry(updatedEntry);
+                    await this.cacheAdapter.deleteCachedEntry(oldId);
+                    await this.updateMetadataFromEntry(updatedEntry);
+                }
+            }
+            
+            return newId;
+        } else {
+            console.log('Using web adapter for rename');
+            // Web mode - update in IndexedDB
+            if (!this.webAdapter) {
+                throw new Error('Web adapter not initialized');
+            }
+            
+            const newId = await this.webAdapter.renameEntryInWeb(oldId, newTitle);
+            if (newId) {
+                // Update cache with new ID
+                const oldEntry = await this.cacheAdapter.getCachedEntry(oldId);
+                if (oldEntry) {
+                    const updatedEntry = {
+                        ...oldEntry,
+                        id: newId,
+                        title: newTitle,
+                        modified_at: new Date().toISOString()
+                    };
+                    
+                    await this.cacheAdapter.cacheEntry(updatedEntry);
+                    await this.cacheAdapter.deleteCachedEntry(oldId);
+                    await this.updateMetadataFromEntry(updatedEntry);
+                }
+            }
+            
+            return newId;
         }
     }
+
 
     async entryExists(id: string): Promise<boolean> {
         if (this.environment === 'tauri' && this.tauriAdapter) {
@@ -290,6 +343,29 @@ export class MainStorageAdapter implements IStorageAdapter {
     }
 
     private async updateMetadataFromEntry(entry: JournalEntry): Promise<void> {
+        // Check if we have a cached password and existing decrypted metadata
+        const hasPassword = passwordStore.hasCachedPassword(entry.id);
+        const existingMetadata = await this.cacheAdapter.getMetadata(entry.id);
+        
+        // If we have a password and existing metadata with non-encrypted preview, preserve it
+        if (hasPassword && existingMetadata && 
+            !existingMetadata.preview.includes('🔒') && 
+            !existingMetadata.preview.includes('encrypted')) {
+            
+            // Only update the timestamps, preserve decrypted title and preview
+            const preservedMetadata: JournalEntryMetadata = {
+                ...existingMetadata,
+                modified_at: entry.modified_at,
+                file_path: entry.file_path
+            };
+            
+            await this.cacheAdapter.updateMetadata(preservedMetadata);
+            metadataStore.updateEntryMetadata(entry.id, preservedMetadata);
+            console.log('Preserved decrypted metadata for entry:', entry.id);
+            return;
+        }
+        
+        // Generate new metadata from encrypted content
         const preview = PreviewService.createPreview(entry.content);
         const displayTitle = TitleService.createFallbackTitle(entry);
         
@@ -303,6 +379,49 @@ export class MainStorageAdapter implements IStorageAdapter {
         };
 
         await this.cacheAdapter.updateMetadata(metadata);
+        metadataStore.updateEntryMetadata(entry.id, metadata);
+    }
+
+    // Method to update metadata for decrypted entries with proper previews
+    async updateDecryptedTitle(entryId: string, decryptedContent: string): Promise<void> {
+        try {
+            const metadata = await this.cacheAdapter.getMetadata(entryId);
+            if (!metadata) {
+                console.log('No metadata found for entry:', entryId);
+                return;
+            }
+
+            // Generate preview from decrypted content
+            const preview = PreviewService.createPreview(decryptedContent);
+            console.log('Generated new preview for unlocked entry:', entryId, preview.substring(0, 50) + '...');
+            
+            // Create a temporary entry object for title extraction
+            const tempEntry: JournalEntry = {
+                id: entryId,
+                title: metadata.title, // Use existing title initially
+                content: decryptedContent,
+                created_at: metadata.created_at,
+                modified_at: metadata.modified_at,
+                file_path: metadata.file_path
+            };
+            const displayTitle = TitleService.createFallbackTitle(tempEntry);
+
+            // Update metadata with decrypted preview and title
+            const updatedMetadata: JournalEntryMetadata = {
+                ...metadata,
+                title: displayTitle,
+                preview
+            };
+
+            await this.cacheAdapter.updateMetadata(updatedMetadata);
+            
+            // Notify metadata store of the update
+            metadataStore.updateEntryMetadata(entryId, updatedMetadata);
+            
+            console.log('Updated metadata for unlocked entry:', entryId);
+        } catch (error) {
+            console.error('Failed to update decrypted metadata:', error);
+        }
     }
 
     async cleanup(): Promise<void> {

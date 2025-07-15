@@ -3,15 +3,26 @@
  */
 
 import type { JournalEntry, IWebStorage } from './types.js';
-import { TitleService } from './title.service.js';
 import { PreviewService } from './preview.service.js';
 
 export class WebStorageAdapter implements IWebStorage {
+    /**
+     * Converts a title to a safe ID for web storage
+     */
+    private titleToSafeId(title: string): string {
+        return title
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
+            .replace(/\s+/g, '-') // Replace spaces with hyphens
+            .replace(/-+/g, '-') // Collapse multiple hyphens
+            .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+            .substring(0, 50); // Limit length
+    }
+
     async createEntryInWeb(title: string): Promise<string> {
-        const now = new Date();
-        const id = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        
-        return id;
+        // Use title-based ID for consistency with the new system
+        return this.titleToSafeId(title);
     }
 
     async saveEntryInWeb(id: string, content: string): Promise<boolean> {
@@ -36,6 +47,20 @@ export class WebStorageAdapter implements IWebStorage {
         }
     }
 
+    async renameEntryInWeb(oldId: string, newTitle: string): Promise<string | null> {
+        try {
+            // For web mode, create a new ID based on the title
+            const newId = this.titleToSafeId(newTitle);
+            
+            // In web mode, the actual rename logic is handled by the main adapter
+            // This method just generates and returns the new ID
+            return newId;
+        } catch (error) {
+            console.error('Failed to rename entry in web mode:', error);
+            return null;
+        }
+    }
+
     async createDefaultEntriesForWeb(): Promise<void> {
         // This method returns the default entries to be created
         // The actual creation is handled by the main adapter
@@ -51,7 +76,7 @@ export class WebStorageAdapter implements IWebStorage {
         return {
             id: entryId,
             title,
-            content: `# ${title}\n\n`,
+            content: '',
             created_at: now.toISOString(),
             modified_at: now.toISOString(),
             file_path: `web-entry-${entryId}.md`
@@ -66,8 +91,8 @@ export class WebStorageAdapter implements IWebStorage {
             ...entry,
             content,
             modified_at: new Date().toISOString(),
-            // Update title from first line if it's a heading
-            title: TitleService.extractTitleFromContent(content) || entry.title
+            // Title stays the same - no longer extracted from content
+            title: entry.title
         };
 
         return updatedEntry;
