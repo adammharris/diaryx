@@ -348,9 +348,11 @@ export class MainStorageAdapter implements IStorageAdapter {
         const existingMetadata = await this.cacheAdapter.getMetadata(entry.id);
         
         // If we have a password and existing metadata with non-encrypted preview, preserve it
+        // BUT only if the new content is also encrypted (don't preserve when content becomes encrypted)
         if (hasPassword && existingMetadata && 
             !existingMetadata.preview.includes('🔒') && 
-            !existingMetadata.preview.includes('encrypted')) {
+            !existingMetadata.preview.includes('encrypted') &&
+            isEncrypted(entry.content)) {
             
             // Only update the timestamps, preserve decrypted title and preview
             const preservedMetadata: JournalEntryMetadata = {

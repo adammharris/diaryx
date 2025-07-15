@@ -3,6 +3,7 @@
     import { passwordStore } from '../stores/password.js';
     import { metadataStore } from '../stores/metadata.js';
     import { isEncrypted } from '../utils/crypto.js';
+    import { storage } from '../storage/index.js';
 
     interface Props {
         entry: JournalEntryMetadata;
@@ -32,6 +33,38 @@
         return cache[entryId] !== undefined;
     });
     
+    // For web mode, check if content is encrypted when preview doesn't show encrypted state
+    let contentEncryptionState = $state<'unknown' | 'encrypted' | 'unencrypted'>('unknown');
+    
+    // Effect to check content encryption when needed
+    $effect(() => {
+        const currentMeta = currentEntry();
+        const needsContentCheck = !hasEncryptedPreview() && !hasPassword();
+        
+        if (needsContentCheck) {
+            storage.getEntry(currentMeta.id).then(fullEntry => {
+                if (fullEntry && isEncrypted(fullEntry.content)) {
+                    contentEncryptionState = 'encrypted';
+                    
+                    // Update the metadata to show proper encrypted preview
+                    const updatedMetadata = {
+                        ...currentMeta,
+                        preview: '🔒 This entry is encrypted and requires a password to view'
+                    };
+                    
+                    // Update the metadata store to reflect the change
+                    metadataStore.updateEntryMetadata(currentMeta.id, updatedMetadata);
+                } else {
+                    contentEncryptionState = 'unencrypted';
+                }
+            }).catch(() => {
+                contentEncryptionState = 'unencrypted';
+            });
+        } else {
+            contentEncryptionState = 'unknown';
+        }
+    });
+    
     // Determine the encryption state for display
     let encryptionState = $derived(() => {
         if (hasEncryptedPreview()) {
@@ -40,8 +73,11 @@
         } else if (hasPassword()) {
             // Entry has a cached password but no encrypted preview = unlocked
             return 'unlocked';
+        } else if (contentEncryptionState === 'encrypted') {
+            // Entry content is encrypted but no cached password = locked
+            return 'locked';
         } else {
-            // No encryption
+            // No encryption or still checking
             return 'none';
         }
     });
