@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { decrypt, isEncrypted } from '../utils/crypto.js';
 import type { JournalEntry } from '../storage/index.js';
 
@@ -7,6 +7,7 @@ interface PasswordCache {
     password: string;
     cachedAt: number;
     lastUsed: number;
+    decryptedContent?: string; // Cache decrypted content for performance
   };
 }
 
@@ -32,7 +33,8 @@ const initialState: PasswordState = {
 };
 
 function createPasswordStore() {
-  const { subscribe, set, update } = writable<PasswordState>(initialState);
+  const store = writable<PasswordState>(initialState);
+  const { subscribe, set, update } = store;
 
   return {
     subscribe,
@@ -384,6 +386,60 @@ function createPasswordStore() {
           });
           return state;
         });
+      });
+    },
+
+    // Get cached decrypted content if available
+    getCachedDecryptedContent: (entryId: string): string | null => {
+      const state = get(store) as PasswordState;
+      const cached = state.cache[entryId];
+      
+      if (!cached) return null;
+      
+      // Check if cache is still valid
+      const now = Date.now();
+      if (now - cached.cachedAt > state.sessionTimeout) {
+        // Cache expired, remove it
+        update(currentState => {
+          const newCache = { ...currentState.cache };
+          delete newCache[entryId];
+          return { ...currentState, cache: newCache };
+        });
+        return null;
+      }
+      
+      // Update last used time
+      update(currentState => ({
+        ...currentState,
+        cache: {
+          ...currentState.cache,
+          [entryId]: {
+            ...cached,
+            lastUsed: now
+          }
+        }
+      }));
+      
+      return cached.decryptedContent || null;
+    },
+
+    // Cache decrypted content along with password
+    cacheDecryptedContent: (entryId: string, decryptedContent: string) => {
+      update(state => {
+        const existing = state.cache[entryId];
+        if (!existing) return state; // No password cache, don't cache content
+        
+        return {
+          ...state,
+          cache: {
+            ...state.cache,
+            [entryId]: {
+              ...existing,
+              decryptedContent,
+              lastUsed: Date.now()
+            }
+          }
+        };
       });
     }
   };

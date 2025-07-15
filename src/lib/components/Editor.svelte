@@ -67,21 +67,38 @@
             if (isEncrypted(rawEntry.content)) {
                 isEncryptionEnabled = true;
                 
-                // Try to decrypt with cached password
-                const decryptedEntry = await passwordStore.tryDecryptWithCache(rawEntry);
+                // First try to get cached decrypted content for instant loading
+                const cachedContent = passwordStore.getCachedDecryptedContent(entryId);
                 
-                if (decryptedEntry) {
-                    // Successfully decrypted with cached password
-                    content = decryptedEntry.content;
+                if (cachedContent) {
+                    // Use cached decrypted content - instant loading!
+                    console.log('⚡ Using cached decrypted content for entry:', entryId);
+                    content = cachedContent;
                 } else {
-                    // If we reach here, it means the main page should have handled password prompting
-                    // but somehow didn't. This shouldn't happen in normal flow.
-                    console.error('Editor received encrypted entry without cached password - this should not happen');
-                    onerror?.({
-                        title: 'Decryption Error',
-                        message: 'Unable to decrypt entry. Please try selecting it again.'
-                    });
-                    return;
+                    // Try to decrypt with cached password
+                    console.log('🔓 Decrypting entry content for:', entryId);
+                    const startTime = performance.now();
+                    const decryptedEntry = await passwordStore.tryDecryptWithCache(rawEntry);
+                    const decryptTime = performance.now() - startTime;
+                    
+                    if (decryptedEntry) {
+                        // Successfully decrypted with cached password
+                        console.log('✅ Decryption completed in', Math.round(decryptTime), 'ms for entry:', entryId);
+                        content = decryptedEntry.content;
+                        
+                        // Cache the decrypted content for next time
+                        passwordStore.cacheDecryptedContent(entryId, decryptedEntry.content);
+                        console.log('💾 Cached decrypted content for future access:', entryId);
+                    } else {
+                        // If we reach here, it means the main page should have handled password prompting
+                        // but somehow didn't. This shouldn't happen in normal flow.
+                        console.error('Editor received encrypted entry without cached password - this should not happen');
+                        onerror?.({
+                            title: 'Decryption Error',
+                            message: 'Unable to decrypt entry. Please try selecting it again.'
+                        });
+                        return;
+                    }
                 }
             } else {
                 // Entry is not encrypted - check if we have a cached password (user might have enabled encryption)
