@@ -548,6 +548,7 @@
 {#if showBatchUnlock}
   <BatchUnlock 
     isVisible={showBatchUnlock}
+    entries={entries}
     onclose={handleCloseBatchUnlock}
     onunlock={handleBatchUnlockSuccess}
   />

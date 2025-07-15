@@ -1,16 +1,17 @@
 <script lang="ts">
   import { passwordStore } from '../stores/password.js';
   import { storage } from '../storage/index.js';
-  import type { JournalEntry } from '../storage/index.js';
+  import type { JournalEntry, JournalEntryMetadata } from '../storage/index.js';
   import { isEncrypted } from '../utils/crypto.js';
 
   interface Props {
     isVisible: boolean;
+    entries: JournalEntryMetadata[];
     onclose: () => void;
     onunlock?: (unlockedCount: number) => void;
   }
 
-  let { isVisible, onclose, onunlock }: Props = $props();
+  let { isVisible, entries, onclose, onunlock }: Props = $props();
 
   let password = $state('');
   let isUnlocking = $state(false);
@@ -39,9 +40,7 @@
     
     isUnlocking = true;
     try {
-      // Get all entries
-      const entries = await storage.getAllEntries();
-      
+      // Use the provided entries instead of fetching them
       // Get the actual entry content for encrypted entries
       const encryptedEntries: JournalEntry[] = [];
       for (const meta of entries) {
