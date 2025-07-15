@@ -243,13 +243,14 @@
                     onblur={handleTitleSave}
                 />
             {:else}
-                <h2 
+                <button 
                     class="editor-title"
                     onclick={() => isEditingTitle = true}
                     title="Click to edit title"
+                    type="button"
                 >
                     {entry.title}
-                </h2>
+                </button>
             {/if}
             <div class="editor-controls">
                 <button 
@@ -357,6 +358,10 @@
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
         transition: background-color 0.2s ease;
+        background: none;
+        border: none;
+        font-family: inherit;
+        text-align: left;
     }
 
     .editor-title:hover {
