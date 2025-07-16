@@ -8,6 +8,7 @@ import {
     remove, 
     exists, 
     readDir,
+    mkdir,
     watchImmediate,
     BaseDirectory 
 } from '@tauri-apps/plugin-fs';
@@ -23,6 +24,9 @@ export class TauriStorageAdapter implements IFileSystemStorage {
 
     async getEntriesFromFS(): Promise<JournalEntryMetadata[]> {
         try {
+            // Ensure the Diaryx folder exists
+            await this.ensureDirectoryExists();
+            
             // Read directory contents from Diaryx folder
             const entries = await readDir(this.journalFolder, { baseDir: this.baseDir });
             const journalEntries: JournalEntryMetadata[] = [];
@@ -82,6 +86,9 @@ export class TauriStorageAdapter implements IFileSystemStorage {
 
     async saveEntryToFS(id: string, content: string): Promise<boolean> {
         try {
+            // Ensure the Diaryx folder exists
+            await this.ensureDirectoryExists();
+            
             const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
             await writeTextFile(filePath, content, { baseDir: this.baseDir });
             return true;
@@ -136,6 +143,9 @@ export class TauriStorageAdapter implements IFileSystemStorage {
 
     async createEntryInFS(title: string): Promise<string | null> {
         try {
+            // Ensure the Diaryx folder exists
+            await this.ensureDirectoryExists();
+            
             // Generate unique filename based on title
             const filename = await this.generateUniqueFilename(title);
             
@@ -259,6 +269,23 @@ export class TauriStorageAdapter implements IFileSystemStorage {
         return id
             .replace(/[-_]/g, ' ')
             .replace(/\b\w/g, letter => letter.toUpperCase());
+    }
+
+    /**
+     * Ensures the Diaryx directory exists, creating it if necessary
+     */
+    private async ensureDirectoryExists(): Promise<void> {
+        try {
+            const dirExists = await exists(this.journalFolder, { baseDir: this.baseDir });
+            if (!dirExists) {
+                console.log('Creating Diaryx directory...');
+                await mkdir(this.journalFolder, { baseDir: this.baseDir, recursive: true });
+                console.log('Diaryx directory created successfully');
+            }
+        } catch (error) {
+            console.error('Failed to create Diaryx directory:', error);
+            throw error;
+        }
     }
 
     /**
