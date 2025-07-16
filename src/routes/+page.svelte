@@ -33,6 +33,37 @@
   // Mobile view state
   let isMobile = $state(false);
   let mobileView = $state<'list' | 'editor' | 'settings'>('list');
+  let innerHeight = $state(0);
+  let innerWidth = $state(0);
+  let keyboardVisible = $state(false);
+  
+  // Compute effective height based on keyboard visibility
+  let effectiveHeight = $derived(() => {
+    if (!isMobile) {
+      return innerHeight;
+    }
+    
+    let height = innerHeight;
+    
+    if (keyboardVisible && window.visualViewport) {
+      // Use visual viewport height when keyboard is visible
+      const visualHeight = window.visualViewport.height;
+      
+      // Only use visual viewport if it's significantly smaller than window height
+      // This prevents false positives
+      if (visualHeight < innerHeight * 0.8) {
+        height = visualHeight;
+        
+        // Ensure minimum height to prevent UI collapse
+        // Temporarily disable minHeight to debug the issue
+        // const minHeight = 380; 
+        // height = Math.max(height, minHeight);
+      }
+    }
+    
+    console.log('Effective height:', height, 'Keyboard visible:', keyboardVisible, 'Visual viewport:', window.visualViewport?.height);
+    return height;
+  });
 
   // Dialog state
   let dialogState = $state({
@@ -53,16 +84,16 @@
     // Detect if we're in Tauri using the proper utility
     isTauri = detectTauri();
     
-    // Detect mobile viewport
-    const checkMobile = () => {
-      isMobile = window.innerWidth <= 768;
-    };
+    // Detect mobile viewport (reactive to innerWidth changes)
+    isMobile = innerWidth <= 768;
     
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
+    // Debug: Log height changes to verify reactivity
+    console.log('Viewport dimensions:', innerWidth, 'x', innerHeight, 'Mobile:', isMobile);
+    console.log('Effective height:', effectiveHeight, 'Using innerHeight:', innerHeight);
     
+    // Keyboard detection will be handled by textarea focus/blur events
     return () => {
-      window.removeEventListener('resize', checkMobile);
+      // No cleanup needed for focus/blur approach
     };
   });
 
@@ -489,6 +520,11 @@
     }
   }
 
+  function handleKeyboardToggle(event: { visible: boolean }) {
+    keyboardVisible = event.visible;
+    console.log('Keyboard visibility via focus/blur:', event.visible);
+  }
+
 
   function showDialog(options: {
     title: string;
@@ -516,7 +552,9 @@
   }
 </script>
 
-<main class="app-container" class:mobile={isMobile}>
+<svelte:window bind:innerHeight bind:innerWidth />
+
+<main class="app-container" class:mobile={isMobile} style={isMobile ? `height: ${keyboardVisible && window.visualViewport ? Math.min(window.visualViewport.height, innerHeight) : innerHeight}px;` : ''}>
   <!-- Mobile: Show different views based on mobileView state -->
   {#if isMobile}
     {#if mobileView === 'list'}
@@ -601,6 +639,7 @@
           onrenamed={handleEntryRenamed}
           onencryptiontoggle={handleEncryptionToggle}
           onerror={handleEditorError}
+          onkeyboardtoggle={handleKeyboardToggle}
         />
       </div>
     {:else if mobileView === 'settings'}
@@ -691,6 +730,7 @@
         onrenamed={handleEntryRenamed}
         onencryptiontoggle={handleEncryptionToggle}
         onerror={handleEditorError}
+        onkeyboardtoggle={handleKeyboardToggle}
       />
     </main>
   {/if}
@@ -741,15 +781,18 @@
 
   .app-container {
     display: flex;
+    overflow: hidden;
+  }
+
+  /* Desktop fixed height */
+  .app-container:not(.mobile) {
     height: 100vh;
     max-height: 100vh;
-    overflow: hidden;
   }
 
   /* Mobile keyboard responsiveness */
   .app-container.mobile {
-    height: 100vh; /* Regular viewport height so keyboard shrinks the available space */
-    max-height: 100vh;
+    /* Height set dynamically via JavaScript for keyboard handling */
     min-height: 0; /* Allow container to shrink when keyboard appears */
   }
 
@@ -916,7 +959,7 @@
 
   .mobile-view {
     width: 100%;
-    height: 100vh; /* Use regular vh so keyboard shrinks the viewport */
+    height: 100%; /* Inherit height from app-container */
     min-height: 0; /* Allow view to shrink when keyboard appears */
     display: flex;
     flex-direction: column;

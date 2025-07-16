@@ -13,9 +13,10 @@
         onrenamed?: (data: { oldId: string; newId: string }) => void;
         onencryptiontoggle?: (data: { entryId: string; enable: boolean }) => void;
         onerror?: (data: { title: string; message: string }) => void;
+        onkeyboardtoggle?: (data: { visible: boolean }) => void;
     }
 
-    let { entryId, preloadedEntry, preloadedEntryIsDecrypted, onclose, onsaved, onrenamed, onencryptiontoggle, onerror }: Props = $props();
+    let { entryId, preloadedEntry, preloadedEntryIsDecrypted, onclose, onsaved, onrenamed, onencryptiontoggle, onerror, onkeyboardtoggle }: Props = $props();
 
 
     let entry: JournalEntry | null = $state(null);
@@ -243,6 +244,24 @@
             handleClose();
         }
     }
+
+    function handleTextareaFocus() {
+        if (isMobile) {
+            // Use a small delay to allow the keyboard to appear
+            setTimeout(() => {
+                onkeyboardtoggle?.({ visible: true });
+            }, 100);
+        }
+    }
+
+    function handleTextareaBlur() {
+        if (isMobile) {
+            // Use a small delay to allow the keyboard to disappear
+            setTimeout(() => {
+                onkeyboardtoggle?.({ visible: false });
+            }, 100);
+        }
+    }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -323,6 +342,8 @@
                     bind:value={content}
                     placeholder="Start writing your journal entry..."
                     spellcheck="true"
+                    onfocus={handleTextareaFocus}
+                    onblur={handleTextareaBlur}
                 ></textarea>
             {/if}
         </div>
@@ -643,8 +664,7 @@
     /* Mobile-specific styles */
     @media (max-width: 768px) {
         .editor-container {
-            height: 100vh; /* Use regular viewport height so keyboard shrinks the available space */
-            min-height: 0; /* Allow container to shrink when keyboard appears */
+            height: 100%; /* Inherit height from parent mobile-view */
             border-radius: 0;
             box-shadow: none;
             display: flex;
@@ -705,8 +725,8 @@
         }
 
         .editor-content-area {
-            flex: 1 1 0; /* Allow content to grow and shrink, taking up available space */
-            min-height: 0; /* Critical: allow content area to shrink below intrinsic height */
+            flex: 1; /* Take up all available space */
+            min-height: 0; /* Allow content area to shrink fully */
             overflow-y: auto; /* Make ONLY this area scrollable */
             -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
             /* When keyboard appears, this area will automatically shrink */
@@ -715,7 +735,6 @@
         .editor-textarea {
             width: 100%;
             height: 100%;
-            min-height: 200px; /* Minimum height to ensure usability when keyboard is up */
             padding: 1rem;
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
@@ -727,7 +746,6 @@
             resize: none;
             background: transparent;
             box-sizing: border-box;
-            /* Prevent textarea from expanding beyond its container */
             overflow-y: auto;
         }
 
@@ -737,7 +755,6 @@
             padding-right: calc(1rem + env(safe-area-inset-right));
             padding-bottom: 2rem; /* Extra bottom padding to ensure content isn't hidden */
             height: 100%;
-            min-height: 200px; /* Minimum height to ensure usability when keyboard is up */
             overflow-y: auto;
             box-sizing: border-box;
         }

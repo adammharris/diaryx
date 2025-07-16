@@ -8,7 +8,6 @@
     <style>
       :root {
         touch-action: pan-x pan-y;
-        height: 100%;
         --color-primary: #3b82f6;
         --color-primaryHover: #2563eb;
         --color-secondary: #6b7280;
@@ -29,6 +28,12 @@
       /* Prevent double-tap zoom */
       * {
         touch-action: manipulation;
+      }
+      
+      /* Ensure html and body don't interfere with mobile keyboard handling */
+      html, body {
+        height: auto !important;
+        overflow: hidden;
       }
     </style>
     %sveltekit.head%
