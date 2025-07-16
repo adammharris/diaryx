@@ -746,6 +746,13 @@
     overflow: hidden;
   }
 
+  /* Mobile keyboard responsiveness */
+  .app-container.mobile {
+    height: 100vh; /* Regular viewport height so keyboard shrinks the available space */
+    max-height: 100vh;
+    min-height: 0; /* Allow container to shrink when keyboard appears */
+  }
+
   .sidebar {
     width: 350px;
     background: var(--color-surface, white);
@@ -909,7 +916,8 @@
 
   .mobile-view {
     width: 100%;
-    height: 100vh;
+    height: 100vh; /* Use regular vh so keyboard shrinks the viewport */
+    min-height: 0; /* Allow view to shrink when keyboard appears */
     display: flex;
     flex-direction: column;
     overflow: hidden;

@@ -29,7 +29,6 @@
     
     // Mobile detection
     let isMobile = $state(false);
-    let keyboardHeight = $state(0);
     
     // Simplified: removed complex cache system
 
@@ -43,21 +42,6 @@
         checkMobile();
         window.addEventListener('resize', checkMobile);
         
-        // Keyboard height detection using Visual Viewport API
-        const handleViewportChange = () => {
-            if (window.visualViewport && isMobile) {
-                const viewport = window.visualViewport;
-                const windowHeight = window.innerHeight;
-                const viewportHeight = viewport.height;
-                keyboardHeight = Math.max(0, windowHeight - viewportHeight);
-            }
-        };
-        
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', handleViewportChange);
-            handleViewportChange(); // Initial check
-        }
-        
         if (entryId) {
             loadEntry();
         } else {
@@ -69,9 +53,6 @@
         
         return () => {
             window.removeEventListener('resize', checkMobile);
-            if (window.visualViewport) {
-                window.visualViewport.removeEventListener('resize', handleViewportChange);
-            }
         };
     });
 
@@ -329,7 +310,7 @@
             </div>
         </div>
 
-        <div class="editor-content-area" style="bottom: {isMobile ? (keyboardHeight > 0 ? keyboardHeight + 'px' : 'calc(4rem + env(safe-area-inset-bottom))') : 'auto'}">
+        <div class="editor-content-area">
             {#if isLoading}
                 <div class="loading">Loading...</div>
             {:else if isPreview}
@@ -346,7 +327,7 @@
             {/if}
         </div>
 
-        <div class="editor-status" style="bottom: {isMobile ? (keyboardHeight > 0 ? keyboardHeight + 'px' : 'env(safe-area-inset-bottom)') : '0'}; padding-bottom: {isMobile && keyboardHeight > 0 ? '0.75rem' : 'calc(0.75rem + env(safe-area-inset-bottom))'}">
+        <div class="editor-status">
             <span class="encryption-status">
                 {#if isEncryptionEnabled}
                     <img src="/src/lib/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
@@ -662,146 +643,125 @@
     /* Mobile-specific styles */
     @media (max-width: 768px) {
         .editor-container {
-            height: 100vh;
+            height: 100vh; /* Use regular viewport height so keyboard shrinks the available space */
+            min-height: 0; /* Allow container to shrink when keyboard appears */
             border-radius: 0;
             box-shadow: none;
             display: flex;
             flex-direction: column;
+            background: white;
+            overflow: hidden; /* Prevent the container itself from scrolling */
+            position: relative;
         }
 
         .editor-header {
-            padding: 1rem;
-            padding-top: calc(1.5rem + env(safe-area-inset-top));
+            flex-shrink: 0; /* Prevent header from shrinking */
+            padding: 0.75rem 1rem;
+            padding-top: calc(0.75rem + env(safe-area-inset-top));
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 10;
-            flex-shrink: 0;
             background: #f9fafb;
             border-bottom: 1px solid #e5e7eb;
+            display: flex;
             flex-direction: column;
             gap: 0.75rem;
-            touch-action: none;
-            overscroll-behavior: contain;
         }
 
         .editor-title-row {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
+            align-items: center;
             gap: 0.5rem;
-            margin: 0;
+            width: 100%;
         }
 
         .editor-title {
             flex: 1;
-            margin-right: 0.5rem;
             font-size: 1.125rem;
-            line-height: 1.3;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .editor-title-input {
+            font-size: 1.125rem;
         }
 
         .editor-controls {
-            gap: 0.25rem;
-            justify-content: flex-start;
+            display: flex;
+            gap: 0.5rem;
+            width: 100%;
         }
 
         .btn {
             padding: 0.5rem 0.75rem;
-            font-size: 0.8rem;
+            font-size: 0.875rem;
         }
 
-        /* Desktop styles for content area */
+        .btn-close-mobile {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
         .editor-content-area {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            width:100%;
-            height:100%;
-        }
-
-        .preview-container {
-            width: 100%;
-            height: 100%;
-            padding: 1.5rem;
-            overflow-y: auto;
-            line-height: 1.6;
-            color: #374151;
-            box-sizing: border-box;
-        }
-
-        .editor-status {
-            padding: 0.75rem 1rem;
-            padding-left: calc(1rem + env(safe-area-inset-left));
-            padding-right: calc(1rem + env(safe-area-inset-right));
-            font-size: 0.7rem;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 10;
-            flex-shrink: 0;
-            transition: bottom 0.3s ease;
-            background: #f9fafb;
-            border-top: 1px solid #e5e7eb;
-            touch-action: none;
-            overscroll-behavior: contain;
-        }
-
-        /* Mobile-specific content area positioning */
-        .editor-content-area {
-            position: fixed;
-            top: calc(7rem + env(safe-area-inset-top)); /* Below fixed header */
-            left: 0;
-            right: 0;
-            overflow-y: auto;
-            overflow-x: hidden;
-            overscroll-behavior: contain;
-            touch-action: pan-y;
-            transition: bottom 0.3s ease;
+            flex: 1 1 0; /* Allow content to grow and shrink, taking up available space */
+            min-height: 0; /* Critical: allow content area to shrink below intrinsic height */
+            overflow-y: auto; /* Make ONLY this area scrollable */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            /* When keyboard appears, this area will automatically shrink */
         }
 
         .editor-textarea {
             width: 100%;
             height: 100%;
+            min-height: 200px; /* Minimum height to ensure usability when keyboard is up */
             padding: 1rem;
-            padding-top: 1.5rem; /* Extra top margin to avoid title bar overlap */
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
+            padding-bottom: 2rem; /* Extra bottom padding to ensure content isn't hidden */
             font-size: 1rem;
+            line-height: 1.6;
             border: none;
             outline: none;
             resize: none;
             background: transparent;
             box-sizing: border-box;
+            /* Prevent textarea from expanding beyond its container */
+            overflow-y: auto;
         }
 
         .preview-container {
             padding: 1rem;
-            padding-top: 1.5rem; /* Extra top margin to avoid title bar overlap */
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
+            padding-bottom: 2rem; /* Extra bottom padding to ensure content isn't hidden */
             height: 100%;
+            min-height: 200px; /* Minimum height to ensure usability when keyboard is up */
             overflow-y: auto;
             box-sizing: border-box;
         }
 
+        .editor-status {
+            flex-shrink: 0; /* Prevent footer from shrinking */
+            padding: 0.5rem 1rem;
+            padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            font-size: 0.75rem;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
         .loading,
         .no-entry {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: #6b7280;
-            font-size: 1rem;
-            padding-top: 1.5rem; /* Extra top margin to avoid title bar overlap */
+            padding: 1rem;
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
         }
-
     }
 </style>
