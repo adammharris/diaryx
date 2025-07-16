@@ -10,17 +10,30 @@
 
     let selectedTheme = $state($currentTheme);
     let isTauri = $state(false);
+    let isMobile = $state(false);
 
     // Initialize detection when component mounts
     $effect(() => {
         // Get initial detection
         isTauri = storage.isRunningInTauri;
         
+        // Mobile detection
+        const checkMobile = () => {
+            isMobile = window.innerWidth <= 768;
+        };
+        
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        
         // Refresh detection after a short delay in case Tauri takes time to load
         setTimeout(() => {
             storage.refreshEnvironmentDetection();
             isTauri = storage.isRunningInTauri;
         }, 200);
+        
+        return () => {
+            window.removeEventListener('resize', checkMobile);
+        };
     });
 
     // Keep selectedTheme in sync with the store
@@ -48,11 +61,13 @@
 
 <div 
     class="settings-overlay" 
-    onclick={handleClose}
+    class:mobile={isMobile}
+    onclick={isMobile ? undefined : handleClose}
     role="presentation"
 >
     <div 
         class="settings-modal" 
+        class:mobile={isMobile}
         onclick={(e: Event) => e.stopPropagation()}
         onkeydown={(e: KeyboardEvent) => e.stopPropagation()}
         role="dialog"
@@ -62,8 +77,12 @@
     >
         <div class="settings-header">
             <h2 class="settings-title">Settings</h2>
-            <button class="close-btn" onclick={handleClose} aria-label="Close settings">
-                ✕
+            <button class="close-btn" class:mobile={isMobile} onclick={handleClose} aria-label="Close settings">
+                {#if isMobile}
+                    ← Back
+                {:else}
+                    ✕
+                {/if}
             </button>
         </div>
 
@@ -270,8 +289,56 @@
         margin: 0;
     }
 
+    /* Mobile-specific styles */
+    .settings-overlay.mobile {
+        align-items: flex-start;
+        justify-content: flex-start;
+        background: none;
+        backdrop-filter: none;
+    }
+
+    .settings-modal.mobile {
+        width: 100%;
+        max-width: none;
+        height: 100vh;
+        max-height: none;
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
+        overflow-y: auto;
+    }
+
+    .close-btn.mobile {
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+        background: none;
+        border: none;
+        color: var(--color-text, #1f2937);
+        cursor: pointer;
+        border-radius: 6px;
+        transition: background-color 0.2s ease;
+    }
+
+    .close-btn.mobile:hover {
+        background: var(--color-background, #f8fafc);
+    }
+
+    /* Mobile safe area adjustments */
+    .settings-modal.mobile .settings-header {
+        padding-top: calc(1.5rem + env(safe-area-inset-top));
+        padding-left: calc(1.5rem + env(safe-area-inset-left));
+        padding-right: calc(1.5rem + env(safe-area-inset-right));
+        border-radius: 0;
+    }
+
+    .settings-modal.mobile .settings-content {
+        padding-left: calc(1.5rem + env(safe-area-inset-left));
+        padding-right: calc(1.5rem + env(safe-area-inset-right));
+        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    }
+
     @media (max-width: 640px) {
-        .settings-modal {
+        .settings-modal:not(.mobile) {
             width: 95%;
             margin: 1rem;
         }

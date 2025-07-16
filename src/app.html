@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Diaryx - Personal Journal</title>
     <style>
       :root {
@@ -19,6 +19,16 @@
         --color-border: #e5e7eb;
         --color-accent: #10b981;
         --color-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+      
+      /* Prevent zoom on input focus (iOS Safari) */
+      input, textarea, select {
+        font-size: 16px !important;
+      }
+      
+      /* Prevent double-tap zoom */
+      * {
+        touch-action: manipulation;
       }
     </style>
     %sveltekit.head%

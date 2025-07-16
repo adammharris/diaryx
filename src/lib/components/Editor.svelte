@@ -27,10 +27,37 @@
     let isLoading = $state(false);
     let isEncryptionEnabled = $state(false);
     
+    // Mobile detection
+    let isMobile = $state(false);
+    let keyboardHeight = $state(0);
+    
     // Simplified: removed complex cache system
 
-    // Load entry when entryId changes
+    // Detect mobile and load entry when entryId changes
     $effect(() => {
+        // Mobile detection
+        const checkMobile = () => {
+            isMobile = window.innerWidth <= 768;
+        };
+        
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        
+        // Keyboard height detection using Visual Viewport API
+        const handleViewportChange = () => {
+            if (window.visualViewport && isMobile) {
+                const viewport = window.visualViewport;
+                const windowHeight = window.innerHeight;
+                const viewportHeight = viewport.height;
+                keyboardHeight = Math.max(0, windowHeight - viewportHeight);
+            }
+        };
+        
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', handleViewportChange);
+            handleViewportChange(); // Initial check
+        }
+        
         if (entryId) {
             loadEntry();
         } else {
@@ -39,6 +66,13 @@
             editableTitle = '';
             isEncryptionEnabled = false;
         }
+        
+        return () => {
+            window.removeEventListener('resize', checkMobile);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', handleViewportChange);
+            }
+        };
     });
 
     // Removed reactive password store effect - encryption state is now handled in loadEntry()
@@ -235,23 +269,37 @@
 {#if entry}
     <div class="editor-container">
         <div class="editor-header">
-            {#if isEditingTitle}
-                <input 
-                    class="editor-title-input"
-                    bind:value={editableTitle}
-                    onkeydown={handleTitleKeydown}
-                    onblur={handleTitleSave}
-                />
-            {:else}
+            <div class="editor-title-row">
+                {#if isEditingTitle}
+                    <input 
+                        class="editor-title-input"
+                        bind:value={editableTitle}
+                        onkeydown={handleTitleKeydown}
+                        onblur={handleTitleSave}
+                    />
+                {:else}
+                    <button 
+                        class="editor-title"
+                        onclick={() => isEditingTitle = true}
+                        title="Click to edit title"
+                        type="button"
+                    >
+                        {entry.title}
+                    </button>
+                {/if}
                 <button 
-                    class="editor-title"
-                    onclick={() => isEditingTitle = true}
-                    title="Click to edit title"
-                    type="button"
+                    class="btn btn-ghost btn-close-mobile"
+                    class:mobile-close={isMobile}
+                    onclick={handleClose}
+                    title={isMobile ? 'Back to entries' : 'Close'}
                 >
-                    {entry.title}
+                    {#if isMobile}
+                        ← Back
+                    {:else}
+                        ×
+                    {/if}
                 </button>
-            {/if}
+            </div>
             <div class="editor-controls">
                 <button 
                     class="btn btn-encryption"
@@ -278,31 +326,27 @@
                 >
                     {isSaving ? 'Saving...' : 'Save'}
                 </button>
-                <button 
-                    class="btn btn-ghost"
-                    onclick={handleClose}
-                >
-                    ×
-                </button>
             </div>
         </div>
 
-        {#if isLoading}
-            <div class="loading">Loading...</div>
-        {:else if isPreview}
-            <div class="preview-container">
-                <SvelteMarkdown source={content} />
-            </div>
-        {:else}
-            <textarea
-                class="editor-textarea"
-                bind:value={content}
-                placeholder="Start writing your journal entry..."
-                spellcheck="true"
-            ></textarea>
-        {/if}
+        <div class="editor-content-area" style="bottom: {isMobile ? (keyboardHeight > 0 ? keyboardHeight + 'px' : 'calc(4rem + env(safe-area-inset-bottom))') : 'auto'}">
+            {#if isLoading}
+                <div class="loading">Loading...</div>
+            {:else if isPreview}
+                <div class="preview-container">
+                    <SvelteMarkdown source={content} />
+                </div>
+            {:else}
+                <textarea
+                    class="editor-textarea"
+                    bind:value={content}
+                    placeholder="Start writing your journal entry..."
+                    spellcheck="true"
+                ></textarea>
+            {/if}
+        </div>
 
-        <div class="editor-status">
+        <div class="editor-status" style="bottom: {isMobile ? (keyboardHeight > 0 ? keyboardHeight + 'px' : 'env(safe-area-inset-bottom)') : '0'}; padding-bottom: {isMobile && keyboardHeight > 0 ? '0.75rem' : 'calc(0.75rem + env(safe-area-inset-bottom))'}">
             <span class="encryption-status">
                 {#if isEncryptionEnabled}
                     <img src="/src/lib/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
@@ -347,6 +391,7 @@
         padding: 1rem 1.5rem;
         border-bottom: 1px solid #e5e7eb;
         background: #f9fafb;
+        flex-shrink: 0;
     }
 
     .editor-title {
@@ -436,6 +481,18 @@
         color: #374151;
     }
 
+    .btn-ghost.mobile-close {
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+        min-width: auto;
+    }
+
+    .btn-close-mobile {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+    }
+
     .btn-encryption {
         background: #f3f4f6;
         color: #6b7280;
@@ -459,16 +516,24 @@
         border-color: #f59e0b;
     }
 
+    .editor-content-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
     .editor-textarea {
+        width: 100%;
         flex: 1;
         padding: 1.5rem;
         border: none;
         outline: none;
         resize: none;
-        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        font-family: 'SF Mono', 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace;
         font-size: 0.9rem;
         line-height: 1.6;
         color: #374151;
+        box-sizing: border-box;
     }
 
     .preview-container {
@@ -550,6 +615,7 @@
         font-size: 0.75rem;
         color: #6b7280;
         gap: 1rem;
+        flex-shrink: 0;
     }
 
     .encryption-status {
@@ -590,5 +656,152 @@
         height: 100%;
         color: #6b7280;
         font-size: 1rem;
+    }
+
+
+    /* Mobile-specific styles */
+    @media (max-width: 768px) {
+        .editor-container {
+            height: 100vh;
+            border-radius: 0;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-header {
+            padding: 1rem;
+            padding-top: calc(1.5rem + env(safe-area-inset-top));
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            flex-shrink: 0;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            flex-direction: column;
+            gap: 0.75rem;
+            touch-action: none;
+            overscroll-behavior: contain;
+        }
+
+        .editor-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.5rem;
+            margin: 0;
+        }
+
+        .editor-title {
+            flex: 1;
+            margin-right: 0.5rem;
+            font-size: 1.125rem;
+            line-height: 1.3;
+        }
+
+        .editor-controls {
+            gap: 0.25rem;
+            justify-content: flex-start;
+        }
+
+        .btn {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        /* Desktop styles for content area */
+        .editor-content-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            width:100%;
+            height:100%;
+        }
+
+        .preview-container {
+            width: 100%;
+            height: 100%;
+            padding: 1.5rem;
+            overflow-y: auto;
+            line-height: 1.6;
+            color: #374151;
+            box-sizing: border-box;
+        }
+
+        .editor-status {
+            padding: 0.75rem 1rem;
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            font-size: 0.7rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 10;
+            flex-shrink: 0;
+            transition: bottom 0.3s ease;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+            touch-action: none;
+            overscroll-behavior: contain;
+        }
+
+        /* Mobile-specific content area positioning */
+        .editor-content-area {
+            position: fixed;
+            top: calc(7rem + env(safe-area-inset-top)); /* Below fixed header */
+            left: 0;
+            right: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+            transition: bottom 0.3s ease;
+        }
+
+        .editor-textarea {
+            width: 100%;
+            height: 100%;
+            padding: 1rem;
+            padding-top: 1.5rem; /* Extra top margin to avoid title bar overlap */
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            font-size: 1rem;
+            border: none;
+            outline: none;
+            resize: none;
+            background: transparent;
+            box-sizing: border-box;
+        }
+
+        .preview-container {
+            padding: 1rem;
+            padding-top: 1.5rem; /* Extra top margin to avoid title bar overlap */
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            height: 100%;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        .loading,
+        .no-entry {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6b7280;
+            font-size: 1rem;
+            padding-top: 1.5rem; /* Extra top margin to avoid title bar overlap */
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+        }
+
     }
 </style>

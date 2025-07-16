@@ -29,6 +29,10 @@
   let isTauri = $state(false);
   let reloadTimeout: number | null = null;
   let suppressedFiles = $state(new Map<string, { metadata: boolean; data: boolean }>());
+  
+  // Mobile view state
+  let isMobile = $state(false);
+  let mobileView = $state<'list' | 'editor' | 'settings'>('list');
 
   // Dialog state
   let dialogState = $state({
@@ -48,6 +52,18 @@
     currentTheme.set($currentTheme);
     // Detect if we're in Tauri using the proper utility
     isTauri = detectTauri();
+    
+    // Detect mobile viewport
+    const checkMobile = () => {
+      isMobile = window.innerWidth <= 768;
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
   });
 
   // Filtered entries based on search
@@ -191,6 +207,11 @@
           preloadedEntry = decryptedEntry; // Pass decrypted entry to avoid double-loading
           preloadedEntryIsDecrypted = true; // Mark as already decrypted
           selectedEntryId = entryId;
+          
+          // On mobile, navigate to editor view
+          if (isMobile) {
+            mobileView = 'editor';
+          }
         } else {
           // Need password from user - show password prompt
           pendingEntryId = entryId;
@@ -202,6 +223,11 @@
         preloadedEntry = entry; // Pass plaintext entry to avoid double-loading
         preloadedEntryIsDecrypted = false; // Mark as not encrypted
         selectedEntryId = entryId;
+        
+        // On mobile, navigate to editor view
+        if (isMobile) {
+          mobileView = 'editor';
+        }
       }
     } catch (error) {
       console.error('Error selecting entry:', error);
@@ -261,6 +287,11 @@
     selectedEntryId = null;
     preloadedEntry = null; // Clear preloaded entry when editor closes
     preloadedEntryIsDecrypted = false; // Clear decryption flag
+    
+    // On mobile, navigate back to entry list
+    if (isMobile) {
+      mobileView = 'list';
+    }
   }
 
   async function handleEntrySaved(data: { id: string; content: string }) {
@@ -341,11 +372,20 @@
   }
 
   function handleOpenSettings() {
-    showSettings = true;
+    if (isMobile) {
+      mobileView = 'settings';
+    } else {
+      showSettings = true;
+    }
   }
 
   function handleCloseSettings() {
     showSettings = false;
+    
+    // On mobile, navigate back to entry list
+    if (isMobile) {
+      mobileView = 'list';
+    }
   }
 
   function handleOpenBatchUnlock() {
@@ -390,6 +430,11 @@
           showPasswordPrompt = false;
           pendingEntryId = null;
           passwordStore.endPrompting();
+          
+          // On mobile, navigate to editor view
+          if (isMobile) {
+            mobileView = 'editor';
+          }
         } else {
           // Password incorrect - just let the password prompt handle the retry
           // (it will show the "last attempt failed" indicator)
@@ -471,93 +516,187 @@
   }
 </script>
 
-<main class="app-container">
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="header-content">
-        <h1 class="app-title">Diaryx</h1>
-        <p class="app-subtitle">Personal Journal</p>
-      </div>
-      <div class="header-buttons">
-        <button 
-          class="settings-btn"
-          onclick={handleOpenBatchUnlock}
-          aria-label="Batch unlock encrypted entries"
-          title="Unlock All Encrypted Entries"
-        >
-          <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
-        </button>
-        <button 
-          class="settings-btn"
-          onclick={handleOpenSettings}
-          aria-label="Open settings"
-          title="Settings"
-        >
-          <img src="/src/lib/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
-        </button>
-      </div>
-    </div>
-
-    <div class="new-entry">
-      <input
-        type="text"
-        placeholder="New journal entry title..."
-        bind:value={newEntryTitle}
-        onkeydown={handleKeydownCreate}
-        class="new-entry-input"
-      />
-      <button
-        onclick={handleCreateEntry}
-        disabled={isCreating || !newEntryTitle.trim()}
-        class="new-entry-btn"
-      >
-        {isCreating ? '...' : '+'}
-      </button>
-    </div>
-
-    <div class="search-container">
-      <input
-        type="text"
-        placeholder="Search entries..."
-        bind:value={searchQuery}
-        class="search-input"
-      />
-    </div>
-
-    <div class="entries-container">
-      {#if isLoading}
-        <div class="loading">Loading entries...</div>
-      {:else if filteredEntries.length === 0}
-        <div class="no-entries">
-          {searchQuery ? 'No entries match your search' : 'No journal entries found. Create your first entry above!'}
+<main class="app-container" class:mobile={isMobile}>
+  <!-- Mobile: Show different views based on mobileView state -->
+  {#if isMobile}
+    {#if mobileView === 'list'}
+      <div class="mobile-view mobile-list">
+        <div class="sidebar-header">
+          <div class="header-content">
+            <h1 class="app-title">Diaryx</h1>
+            <p class="app-subtitle">Personal Journal</p>
+          </div>
+          <div class="header-buttons">
+            <button 
+              class="settings-btn"
+              onclick={handleOpenBatchUnlock}
+              aria-label="Batch unlock encrypted entries"
+              title="Unlock All Encrypted Entries"
+            >
+              <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
+            </button>
+            <button 
+              class="settings-btn"
+              onclick={handleOpenSettings}
+              aria-label="Open settings"
+              title="Settings"
+            >
+              <img src="/src/lib/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
+            </button>
+          </div>
         </div>
-      {:else}
-        {#each filteredEntries as entry (entry.id)}
-          <EntryCard 
-            {entry} 
-            onselect={handleSelectEntry}
-            ondelete={handleDeleteEntry}
-          />
-        {/each}
-      {/if}
-    </div>
-  </aside>
 
-  <main class="main-content">
-    <Editor 
-      entryId={selectedEntryId}
-      preloadedEntry={preloadedEntry}
-      preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
-      onclose={handleCloseEditor}
-      onsaved={handleEntrySaved}
-      onrenamed={handleEntryRenamed}
-      onencryptiontoggle={handleEncryptionToggle}
-      onerror={handleEditorError}
-    />
-  </main>
+        <div class="new-entry">
+          <input
+            type="text"
+            placeholder="New journal entry title..."
+            bind:value={newEntryTitle}
+            onkeydown={handleKeydownCreate}
+            class="new-entry-input"
+          />
+          <button
+            onclick={handleCreateEntry}
+            disabled={isCreating || !newEntryTitle.trim()}
+            class="new-entry-btn"
+          >
+            {isCreating ? '...' : '+'}
+          </button>
+        </div>
+
+        <div class="search-container">
+          <input
+            type="text"
+            placeholder="Search entries..."
+            bind:value={searchQuery}
+            class="search-input"
+          />
+        </div>
+
+        <div class="entries-container">
+          {#if isLoading}
+            <div class="loading">Loading entries...</div>
+          {:else if filteredEntries.length === 0}
+            <div class="no-entries">
+              {searchQuery ? 'No entries match your search' : 'No journal entries found. Create your first entry above!'}
+            </div>
+          {:else}
+            {#each filteredEntries as entry (entry.id)}
+              <EntryCard 
+                {entry} 
+                onselect={handleSelectEntry}
+                ondelete={handleDeleteEntry}
+              />
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {:else if mobileView === 'editor'}
+      <div class="mobile-view mobile-editor">
+        <Editor 
+          entryId={selectedEntryId}
+          preloadedEntry={preloadedEntry}
+          preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
+          onclose={handleCloseEditor}
+          onsaved={handleEntrySaved}
+          onrenamed={handleEntryRenamed}
+          onencryptiontoggle={handleEncryptionToggle}
+          onerror={handleEditorError}
+        />
+      </div>
+    {:else if mobileView === 'settings'}
+      <div class="mobile-view mobile-settings">
+        <Settings onclose={handleCloseSettings} />
+      </div>
+    {/if}
+  {:else}
+    <!-- Desktop: Show sidebar and main content side by side -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="header-content">
+          <h1 class="app-title">Diaryx</h1>
+          <p class="app-subtitle">Personal Journal</p>
+        </div>
+        <div class="header-buttons">
+          <button 
+            class="settings-btn"
+            onclick={handleOpenBatchUnlock}
+            aria-label="Batch unlock encrypted entries"
+            title="Unlock All Encrypted Entries"
+          >
+            <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
+          </button>
+          <button 
+            class="settings-btn"
+            onclick={handleOpenSettings}
+            aria-label="Open settings"
+            title="Settings"
+          >
+            <img src="/src/lib/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
+          </button>
+        </div>
+      </div>
+
+      <div class="new-entry">
+        <input
+          type="text"
+          placeholder="New journal entry title..."
+          bind:value={newEntryTitle}
+          onkeydown={handleKeydownCreate}
+          class="new-entry-input"
+        />
+        <button
+          onclick={handleCreateEntry}
+          disabled={isCreating || !newEntryTitle.trim()}
+          class="new-entry-btn"
+        >
+          {isCreating ? '...' : '+'}
+        </button>
+      </div>
+
+      <div class="search-container">
+        <input
+          type="text"
+          placeholder="Search entries..."
+          bind:value={searchQuery}
+          class="search-input"
+        />
+      </div>
+
+      <div class="entries-container">
+        {#if isLoading}
+          <div class="loading">Loading entries...</div>
+        {:else if filteredEntries.length === 0}
+          <div class="no-entries">
+            {searchQuery ? 'No entries match your search' : 'No journal entries found. Create your first entry above!'}
+          </div>
+        {:else}
+          {#each filteredEntries as entry (entry.id)}
+            <EntryCard 
+              {entry} 
+              onselect={handleSelectEntry}
+              ondelete={handleDeleteEntry}
+            />
+          {/each}
+        {/if}
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <Editor 
+        entryId={selectedEntryId}
+        preloadedEntry={preloadedEntry}
+        preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
+        onclose={handleCloseEditor}
+        onsaved={handleEntrySaved}
+        onrenamed={handleEntryRenamed}
+        onencryptiontoggle={handleEncryptionToggle}
+        onerror={handleEditorError}
+      />
+    </main>
+  {/if}
 </main>
 
-{#if showSettings}
+{#if showSettings && !isMobile}
   <Settings onclose={handleCloseSettings} />
 {/if}
 
@@ -763,18 +902,67 @@
     line-height: 1.5;
   }
 
-  /* Responsive design */
+  /* Mobile-specific styles */
+  .app-container.mobile {
+    flex-direction: column;
+  }
+
+  .mobile-view {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .mobile-list {
+    background: var(--color-surface, white);
+  }
+
+  .mobile-editor {
+    background: var(--color-background, #f8fafc);
+    padding: 0;
+  }
+
+  .mobile-settings {
+    background: var(--color-surface, white);
+  }
+
+  /* Mobile safe area adjustments */
+  .mobile-view .sidebar-header {
+    padding-top: calc(1.5rem + env(safe-area-inset-top));
+    padding-left: calc(1.5rem + env(safe-area-inset-left));
+    padding-right: calc(1.5rem + env(safe-area-inset-right));
+  }
+
+  .mobile-view .new-entry {
+    padding-left: calc(1rem + env(safe-area-inset-left));
+    padding-right: calc(1rem + env(safe-area-inset-right));
+  }
+
+  .mobile-view .search-container {
+    padding-left: calc(1rem + env(safe-area-inset-left));
+    padding-right: calc(1rem + env(safe-area-inset-right));
+  }
+
+  .mobile-view .entries-container {
+    padding-left: calc(1rem + env(safe-area-inset-left));
+    padding-right: calc(1rem + env(safe-area-inset-right));
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  /* Responsive design - fallback for older approach */
   @media (max-width: 768px) {
-    .app-container {
+    .app-container:not(.mobile) {
       flex-direction: column;
     }
 
-    .sidebar {
+    .app-container:not(.mobile) .sidebar {
       width: 100%;
       height: 50vh;
     }
 
-    .main-content {
+    .app-container:not(.mobile) .main-content {
       height: 50vh;
     }
   }
