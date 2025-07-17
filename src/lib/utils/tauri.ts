@@ -1,5 +1,5 @@
 // Utility for detecting Tauri environment consistently across the app
-
+import { platform } from '@tauri-apps/plugin-os';
 /**
  * Detects if the app is running in Tauri environment
  * Uses multiple detection methods for reliability
@@ -21,16 +21,6 @@ export function detectTauri(): boolean {
     };
 
     const isTauri = Object.values(checks).some(Boolean);
-    
-    // Debug logging (remove in production)
-    if (typeof console !== 'undefined') {
-        console.log('Tauri Detection:', {
-            ...checks,
-            result: isTauri,
-            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A',
-            protocol: typeof location !== 'undefined' ? location.protocol : 'N/A'
-        });
-    }
 
     return isTauri;
 }
@@ -56,4 +46,11 @@ export function createTauriDetector() {
     }
     
     return isTauri;
+}
+
+export function whichTauri(): string {
+    if (detectTauri()) {
+        return platform();
+    }
+    return 'web';
 }

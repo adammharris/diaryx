@@ -3,6 +3,7 @@
     import SvelteMarkdown from 'svelte-markdown';
     import { passwordStore } from '../stores/password.js';
     import { isEncrypted, encrypt } from '../utils/crypto.js';
+    import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
 
     interface Props {
         entryId: string | null;
@@ -30,6 +31,8 @@
     
     // Mobile detection
     let isMobile = $state(false);
+    let textareaFocused = $state(false);
+    let textareaElement: HTMLTextAreaElement | null = $state(null);
     
     // Simplified: removed complex cache system
 
@@ -55,6 +58,18 @@
         return () => {
             window.removeEventListener('resize', checkMobile);
         };
+    });
+    
+    // Watch for keyboard visibility changes when textarea is focused
+    $effect(() => {
+        if (isMobile && textareaFocused) {
+            onkeyboardtoggle?.({ visible: $isKeyboardVisible });
+            
+            // Auto-scroll when keyboard appears/disappears
+            if ($isKeyboardVisible) {
+                setTimeout(() => scrollToCursor(), 300); // Delay for keyboard animation
+            }
+        }
     });
 
     // Removed reactive password store effect - encryption state is now handled in loadEntry()
@@ -246,20 +261,72 @@
     }
 
     function handleTextareaFocus() {
-        if (isMobile) {
-            // Use a small delay to allow the keyboard to appear
-            setTimeout(() => {
-                onkeyboardtoggle?.({ visible: true });
-            }, 100);
+        textareaFocused = true;
+        // Notify parent component that keyboard might be visible
+        if (isMobile && $isKeyboardVisible) {
+            onkeyboardtoggle?.({ visible: true });
         }
     }
 
     function handleTextareaBlur() {
+        textareaFocused = false;
+        // Notify parent component that keyboard is no longer relevant
         if (isMobile) {
-            // Use a small delay to allow the keyboard to disappear
-            setTimeout(() => {
-                onkeyboardtoggle?.({ visible: false });
-            }, 100);
+            onkeyboardtoggle?.({ visible: false });
+        }
+    }
+
+    function scrollToCursor() {
+        if (!textareaElement || !isMobile) return;
+        
+        // Use requestAnimationFrame to ensure DOM is updated
+        requestAnimationFrame(() => {
+            if (!textareaElement) return;
+            
+            try {
+                const cursorPosition = textareaElement.selectionStart;
+                const textBeforeCursor = content.substring(0, cursorPosition);
+                const lines = textBeforeCursor.split('\n');
+                const currentLine = lines.length - 1;
+                
+                // Calculate approximate cursor position
+                const lineHeight = parseFloat(getComputedStyle(textareaElement).lineHeight) || 24;
+                const cursorTop = currentLine * lineHeight;
+                
+                // Get textarea container dimensions
+                const containerRect = textareaElement.getBoundingClientRect();
+                const scrollTop = textareaElement.scrollTop;
+                const containerHeight = containerRect.height;
+                
+                // Calculate if cursor is visible
+                const relativeTop = cursorTop - scrollTop;
+                const margin = lineHeight * 2; // Keep 2 lines margin
+                
+                if (relativeTop < margin) {
+                    // Cursor is too close to top, scroll up
+                    textareaElement.scrollTop = Math.max(0, cursorTop - margin);
+                } else if (relativeTop > containerHeight - margin) {
+                    // Cursor is too close to bottom, scroll down
+                    textareaElement.scrollTop = cursorTop - containerHeight + margin;
+                }
+                
+                console.log('Scrolled to cursor:', { cursorPosition, currentLine, cursorTop, scrollTop: textareaElement.scrollTop });
+            } catch (error) {
+                console.warn('Error scrolling to cursor:', error);
+            }
+        });
+    }
+
+    function handleTextareaInput() {
+        if (isMobile && textareaFocused) {
+            scrollToCursor();
+        }
+    }
+
+    function handleTextareaClick() {
+        if (isMobile) {
+            // Small delay to allow selection to update
+            setTimeout(() => scrollToCursor(), 50);
         }
     }
 </script>
@@ -338,17 +405,20 @@
                 </div>
             {:else}
                 <textarea
+                    bind:this={textareaElement}
                     class="editor-textarea"
                     bind:value={content}
                     placeholder="Start writing your journal entry..."
                     spellcheck="true"
                     onfocus={handleTextareaFocus}
                     onblur={handleTextareaBlur}
+                    oninput={handleTextareaInput}
+                    onclick={handleTextareaClick}
                 ></textarea>
             {/if}
         </div>
 
-        <div class="editor-status">
+        <div class="editor-status" style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
             <span class="encryption-status">
                 {#if isEncryptionEnabled}
                     <img src="/src/lib/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
@@ -762,7 +832,7 @@
         .editor-status {
             flex-shrink: 0; /* Prevent footer from shrinking */
             padding: 0.5rem 1rem;
-            padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+            padding-bottom: 0.5rem; /* Base padding, safe area handled dynamically */
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
             font-size: 0.75rem;

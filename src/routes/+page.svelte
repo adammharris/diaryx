@@ -13,6 +13,7 @@
   import { PreviewService } from '../lib/storage/preview.service.js';
   import { TitleService } from '../lib/storage/title.service.js';
   import { metadataStore } from '../lib/stores/metadata.js';
+  import { isKeyboardVisible, keyboardHeight } from '../lib/stores/keyboard.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let preloadedEntry: JournalEntry | null = $state(null); // Store preloaded entry to avoid double-loading
@@ -35,7 +36,6 @@
   let mobileView = $state<'list' | 'editor' | 'settings'>('list');
   let innerHeight = $state(0);
   let innerWidth = $state(0);
-  let keyboardVisible = $state(false);
   
   // Compute effective height based on keyboard visibility
   let effectiveHeight = $derived(() => {
@@ -45,23 +45,24 @@
     
     let height = innerHeight;
     
-    if (keyboardVisible && window.visualViewport) {
-      // Use visual viewport height when keyboard is visible
-      const visualHeight = window.visualViewport.height;
-      
-      // Only use visual viewport if it's significantly smaller than window height
-      // This prevents false positives
-      if (visualHeight < innerHeight * 0.8) {
-        height = visualHeight;
+    if ($isKeyboardVisible) {
+      // For iOS Tauri, use the keyboard height from the plugin
+      if ($keyboardHeight > 0) {
+        height = innerHeight - $keyboardHeight;
+        console.log('Using Tauri keyboard height:', $keyboardHeight, 'Adjusted height:', height);
+      }
+      // For other platforms, use visual viewport
+      else if (window.visualViewport) {
+        const visualHeight = window.visualViewport.height;
         
-        // Ensure minimum height to prevent UI collapse
-        // Temporarily disable minHeight to debug the issue
-        // const minHeight = 380; 
-        // height = Math.max(height, minHeight);
+        // Only use visual viewport if it's significantly smaller than window height
+        if (visualHeight < innerHeight * 0.8) {
+          height = visualHeight;
+        }
       }
     }
     
-    console.log('Effective height:', height, 'Keyboard visible:', keyboardVisible, 'Visual viewport:', window.visualViewport?.height);
+    console.log('Effective height:', height, 'Keyboard visible:', $isKeyboardVisible, 'Keyboard height:', $keyboardHeight);
     return height;
   });
 
@@ -91,9 +92,8 @@
     console.log('Viewport dimensions:', innerWidth, 'x', innerHeight, 'Mobile:', isMobile);
     console.log('Effective height:', effectiveHeight, 'Using innerHeight:', innerHeight);
     
-    // Keyboard detection will be handled by textarea focus/blur events
     return () => {
-      // No cleanup needed for focus/blur approach
+      // No cleanup needed
     };
   });
 
@@ -521,8 +521,9 @@
   }
 
   function handleKeyboardToggle(event: { visible: boolean }) {
-    keyboardVisible = event.visible;
-    console.log('Keyboard visibility via focus/blur:', event.visible);
+    // This function is now deprecated since we're using the keyboard store
+    // Keep for compatibility but don't use the event data
+    console.log('Keyboard toggle event (deprecated):', event.visible);
   }
 
 
@@ -554,7 +555,7 @@
 
 <svelte:window bind:innerHeight bind:innerWidth />
 
-<main class="app-container" class:mobile={isMobile} style={isMobile ? `height: ${keyboardVisible && window.visualViewport ? Math.min(window.visualViewport.height, innerHeight) : innerHeight}px;` : ''}>
+<main class="app-container" class:mobile={isMobile} style={isMobile ? `height: ${$isKeyboardVisible ? ($keyboardHeight > 0 ? innerHeight - $keyboardHeight : (window.visualViewport ? Math.min(window.visualViewport.height, innerHeight) : innerHeight)) : innerHeight}px;` : ''}>
   <!-- Mobile: Show different views based on mobileView state -->
   {#if isMobile}
     {#if mobileView === 'list'}

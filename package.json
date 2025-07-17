@@ -20,6 +20,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-fs": "^2.4.0",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "~2",
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "gray-matter": "^4.0.3",
@@ -27,7 +28,8 @@
     "js-yaml": "^4.1.0",
     "lucide-react": "^0.525.0",
     "marked": "^16.0.0",
-    "svelte-markdown": "^0.4.1"
+    "svelte-markdown": "^0.4.1",
+    "tauri-plugin-virtual-keyboard-api": "https://github.com/voxelbee/tauri-plugin-virtual-keyboard.git"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",
