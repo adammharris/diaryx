@@ -592,6 +592,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
+        min-height: 0; /* Allow flex item to shrink and enable child scrolling */
     }
 
     .editor-textarea {
@@ -614,6 +615,8 @@
         overflow-y: auto;
         line-height: 1.6;
         color: #374151;
+        height: 0; /* Allow flex item to shrink and enable scrolling */
+        box-sizing: border-box;
     }
 
     .preview-container :global(h1) {
