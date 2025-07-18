@@ -1,7 +1,6 @@
 <script lang="ts">
-    import { passwordStore } from '../stores/password.js';
+    import { encryptionService } from '../services/encryption.js';
   import type { JournalEntry, JournalEntryMetadata } from '../storage/types.js';
-  import { isEncrypted } from '../utils/crypto.js';
 
   interface Props {
     storageService: any; // The storage service instance
@@ -45,9 +44,9 @@
       const encryptedEntries: JournalEntry[] = [];
       for (const meta of entries) {
         // Only include entries that aren't already unlocked
-        if (!passwordStore.hasCachedPassword(meta.id)) {
+        if (!encryptionService.hasCachedPassword(meta.id)) {
           const entry = await storageService.getEntry(meta.id);
-          if (entry && isEncrypted(entry.content)) {
+          if (entry && encryptionService.isContentEncrypted(entry.content)) {
             encryptedEntries.push(entry);
           }
         }
@@ -63,7 +62,7 @@
       }
 
       // Attempt batch unlock
-      const result = await passwordStore.batchUnlock(password, encryptedEntries);
+      const result = await encryptionService.batchUnlock(password, encryptedEntries);
       
       unlockResult = {
         successCount: result.successCount,

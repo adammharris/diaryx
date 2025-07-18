@@ -1,8 +1,7 @@
 <script lang="ts">
     import type { JournalEntryMetadata } from '../storage/types.ts';
-    import { passwordStore } from '../stores/password.js';
+    import { encryptionService } from '../services/encryption.js';
     import { metadataStore } from '../stores/metadata.js';
-        import { isEncrypted } from '../utils/crypto.js';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -28,9 +27,8 @@
     
     // Check if we have a cached password for this entry
     let hasPassword = $derived(() => {
-        const cache = $passwordStore.cache;
         const entryId = currentEntry().id;
-        return cache[entryId] !== undefined;
+        return encryptionService.hasCachedPassword(entryId);
     });
     
     // For web mode, check if content is encrypted when preview doesn't show encrypted state
@@ -43,7 +41,7 @@
         
         if (needsContentCheck && storageService) {
             storageService.getEntry(currentMeta.id).then(fullEntry => {
-                if (fullEntry && isEncrypted(fullEntry.content)) {
+                if (fullEntry && encryptionService.isContentEncrypted(fullEntry.content)) {
                     contentEncryptionState = 'encrypted';
                     
                     // Update the metadata to show proper encrypted preview

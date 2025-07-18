@@ -9,8 +9,7 @@
   import PasswordPrompt from '../lib/components/PasswordPrompt.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
-  import { isEncrypted } from '../lib/utils/crypto.js';
-  import { passwordStore } from '../lib/stores/password.js';
+  import { encryptionService } from '../lib/services/encryption.js';
   import { isKeyboardVisible, keyboardHeight } from '../lib/stores/keyboard.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
@@ -97,7 +96,9 @@
         // This return is for the inner effect, not the outer one
         // The outer effect's cleanup is handled by its own return
         return () => {
-          storageService.stopFileWatching();
+          if (storageService) {
+            storageService.stopFileWatching();
+          }
           
           // Clear any pending timeout
           if (reloadTimeout) {
@@ -197,6 +198,11 @@
   
 
   async function loadEntries() {
+    if (!storageService) {
+      console.warn('Storage service not initialized yet');
+      return;
+    }
+    
     isLoading = true;
     try {
       entries = await storageService.getAllEntries();
@@ -230,9 +236,9 @@
       }
 
       // Check if entry is encrypted
-      if (isEncrypted(entry.content)) {
+      if (encryptionService.isContentEncrypted(entry.content)) {
         // Try to decrypt with cached password first
-        const decryptedEntry = await passwordStore.tryDecryptWithCache(entry);
+        const decryptedEntry = await encryptionService.tryDecryptEntry(entry);
         
         if (decryptedEntry) {
           // Successfully decrypted with cached password - open editor
@@ -248,7 +254,7 @@
           // Need password from user - show password prompt
           pendingEntryId = entryId;
           showPasswordPrompt = true;
-          passwordStore.startPrompting(entryId);
+          encryptionService.startPrompting(entryId);
         }
       } else {
         // Not encrypted - open editor directly
@@ -331,7 +337,7 @@
     suppressedFiles.set(data.id, { metadata: false, data: false });
     
     // Update the preview for this specific entry if it has a cached password (i.e., it's decrypted)
-    if (passwordStore.hasCachedPassword(data.id)) {
+    if (encryptionService.hasCachedPassword(data.id)) {
       // Call storage.updateDecryptedTitle with the NEW content to generate fresh metadata
       try {
         await storageService.updateDecryptedTitle(data.id, data.content);
@@ -446,14 +452,14 @@
         return;
       }
 
-      if (isEncrypted(entry.content)) {
+      if (encryptionService.isContentEncrypted(entry.content)) {
         // Entry is encrypted - try to decrypt for viewing
-        const success = await passwordStore.submitPassword(pendingEntryId, password, entry.content);
+        const success = await encryptionService.submitPassword(pendingEntryId, password, entry.content);
         
         if (success) {
           // Password correct - open editor and close prompt
           // Get the decrypted entry to pass to editor
-          const decryptedEntry = await passwordStore.tryDecryptWithCache(entry);
+          const decryptedEntry = await encryptionService.tryDecryptEntry(entry);
           if (decryptedEntry) {
             preloadedEntry = decryptedEntry; // Pass decrypted entry to avoid double-loading
             preloadedEntryIsDecrypted = true; // Mark as already decrypted
@@ -461,7 +467,7 @@
           selectedEntryId = pendingEntryId;
           showPasswordPrompt = false;
           pendingEntryId = null;
-          passwordStore.endPrompting();
+          encryptionService.endPrompting();
           
           // On mobile, navigate to editor view
           if (isMobile) {
@@ -474,10 +480,10 @@
       } else {
         // Entry is not encrypted - we're setting up encryption
         // Just cache the password and close prompt
-        passwordStore.cachePassword(pendingEntryId, password);
+        encryptionService.cachePassword(pendingEntryId, password);
         showPasswordPrompt = false;
         pendingEntryId = null;
-        passwordStore.endPrompting();
+        encryptionService.endPrompting();
         
         // The Editor will detect the cached password and enable encryption automatically
         
@@ -493,13 +499,13 @@
   function handlePasswordCancel() {
     showPasswordPrompt = false;
     pendingEntryId = null;
-    passwordStore.endPrompting();
+    encryptionService.endPrompting();
   }
 
   function showPasswordPromptError() {
     showPasswordPrompt = false;
     pendingEntryId = null;
-    passwordStore.endPrompting();
+    encryptionService.endPrompting();
     showDialog({
       title: 'Error',
       message: 'Failed to decrypt entry. Please try again.',
@@ -514,7 +520,7 @@
       // Enabling encryption - need password
       pendingEntryId = entryId;
       showPasswordPrompt = true;
-      passwordStore.startPrompting(entryId);
+      encryptionService.startPrompting(entryId);
     } else {
       // Disabling encryption is handled directly in the Editor
       // No need for additional handling here
@@ -766,7 +772,7 @@
 {#if showPasswordPrompt && pendingEntryId}
   <PasswordPrompt
     entryTitle={entries.find(e => e.id === pendingEntryId)?.title || 'Entry'}
-    lastAttemptFailed={$passwordStore.lastAttemptFailed}
+    lastAttemptFailed={encryptionService.lastAttemptFailed}
     isVisible={showPasswordPrompt}
     on:submit={handlePasswordSubmit}
     on:cancel={handlePasswordCancel}

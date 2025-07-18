@@ -1,8 +1,7 @@
 <script lang="ts">
         import SvelteMarkdown from 'svelte-markdown';
     import type { JournalEntry } from '../storage/types';
-    import { passwordStore } from '../stores/password.js';
-    import { isEncrypted, encrypt } from '../utils/crypto.js';
+    import { encryptionService } from '../services/encryption.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
     import InfoModal from './InfoModal.svelte';
 
@@ -86,7 +85,7 @@
             entry = preloadedEntry;
             editableTitle = preloadedEntry.title;
             content = preloadedEntry.content;
-            isEncryptionEnabled = preloadedEntryIsDecrypted || passwordStore.hasCachedPassword(entryId);
+            isEncryptionEnabled = preloadedEntryIsDecrypted || encryptionService.hasCachedPassword(entryId);
             isLoading = false;
             return;
         }
@@ -101,14 +100,14 @@
             entry = rawEntry;
             editableTitle = rawEntry.title;
             
-            if (isEncrypted(rawEntry.content)) {
+            if (encryptionService.isContentEncrypted(rawEntry.content)) {
                 isEncryptionEnabled = true;
-                const cachedContent = passwordStore.getCachedDecryptedContent(entryId);
+                const cachedContent = encryptionService.getCachedDecryptedContent(entryId);
                 
                 if (cachedContent) {
                     content = cachedContent;
                 } else {
-                    const decryptedEntry = await passwordStore.tryDecryptWithCache(rawEntry);
+                    const decryptedEntry = await encryptionService.tryDecryptEntry(rawEntry);
                     if (decryptedEntry) {
                         content = decryptedEntry.content;
                     } else {
@@ -120,7 +119,7 @@
                     }
                 }
             } else {
-                isEncryptionEnabled = passwordStore.hasCachedPassword(entryId);
+                isEncryptionEnabled = encryptionService.hasCachedPassword(entryId);
                 content = rawEntry.content;
             }
         } catch (error) {
@@ -139,13 +138,9 @@
             
             // If encryption is enabled, encrypt the content before saving
             if (isEncryptionEnabled && entryId) {
-                // Get the cached password for this entry
-                const { cache } = $passwordStore;
-                const passwordData = cache[entryId];
-                
-                if (passwordData) {
-                    contentToSave = await encrypt(content, passwordData.password);
-                } else {
+                try {
+                    contentToSave = await encryptionService.encryptEntry({ ...entry, content }, entryId);
+                } catch (error) {
                     onerror?.({
                         title: 'Password Required',
                         message: 'Cannot save encrypted entry without password. Please decrypt the entry first.'
@@ -245,7 +240,7 @@
         } else {
             // Disabling encryption - clear password and convert to plain text
             isEncryptionEnabled = false;
-            passwordStore.clearPassword(entryId);
+            encryptionService.clearPassword(entryId);
         }
     }
 

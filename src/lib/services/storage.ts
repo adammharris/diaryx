@@ -23,7 +23,7 @@ import type {
 import { PreviewService } from '../storage/preview.service';
 import { TitleService } from '../storage/title.service';
 import { isEncrypted } from '../utils/crypto';
-import { passwordStore } from '../stores/password';
+import { encryptionService } from './encryption';
 import { metadataStore } from '../stores/metadata';
 
 class StorageService {
@@ -41,6 +41,11 @@ class StorageService {
 		if (this.environment === 'web') {
 			this.initDB();
 		}
+		
+		// Set up encryption service callback to avoid circular dependency
+		encryptionService.setMetadataUpdateCallback((entryId: string, decryptedContent: string) => {
+			this.updateDecryptedTitle(entryId, decryptedContent);
+		});
 	}
 
 	private detectEnvironment(): StorageEnvironment {
@@ -407,37 +412,42 @@ class StorageService {
 			const existing = existingMap.get(entry.id);
 			let finalEntry = entry;
 
-			// If we have a cached entry and the new entry appears encrypted
-			if (existing && isEncrypted(entry.preview || '')) {
-				let preserveTitle = false;
-				let preservePreview = false;
+			// If we have a cached entry and the new entry has encrypted preview text
+			if (existing && entry.preview && entry.preview.includes('encrypted and requires a password')) {
+				// Check if we have a cached password for this entry
+				const hasPassword = encryptionService.hasCachedPassword(entry.id);
+				
+				if (hasPassword) {
+					// Preserve the decrypted metadata if it exists and looks valid
+					let preserveTitle = false;
+					let preservePreview = false;
 
-				// Preserve the cached title if it looks like a proper decrypted title
-				if (
-					existing.title !== entry.title &&
-					!existing.title.match(/^[A-Za-z0-9+/=]{20,}/) &&
-					!existing.title.startsWith('Encrypted')
-				) {
-					preserveTitle = true;
-				}
+					// Preserve the cached title if it looks like a proper decrypted title
+					if (
+						existing.title !== entry.title &&
+						!existing.title.match(/^[A-Za-z0-9+/=]{20,}/) &&
+						!existing.title.startsWith('Encrypted')
+					) {
+						preserveTitle = true;
+					}
 
-				// Preserve the cached preview if it looks like decrypted content
-				// (i.e., it's not the standard encrypted preview text)
-				if (
-					existing.preview !== entry.preview &&
-					!existing.preview.includes('encrypted and requires a password') &&
-					!existing.preview.includes('encrypted') &&
-					existing.preview.length > 10
-				) {
-					preservePreview = true;
-				}
+					// Preserve the cached preview if it looks like decrypted content
+					if (
+						existing.preview !== entry.preview &&
+						!existing.preview.includes('encrypted and requires a password') &&
+						!existing.preview.includes('encrypted') &&
+						existing.preview.length > 10
+					) {
+						preservePreview = true;
+					}
 
-				if (preserveTitle || preservePreview) {
-					finalEntry = {
-						...entry,
-						...(preserveTitle && { title: existing.title }),
-						...(preservePreview && { preview: existing.preview })
-					};
+					if (preserveTitle || preservePreview) {
+						finalEntry = {
+							...entry,
+							...(preserveTitle && { title: existing.title }),
+							...(preservePreview && { preview: existing.preview })
+						};
+					}
 				}
 			}
 			await store.put(finalEntry);
@@ -523,16 +533,16 @@ class StorageService {
 
 	// Utility methods
 	private async updateMetadataFromEntry(entry: JournalEntry): Promise<void> {
-		const hasPassword = passwordStore.hasCachedPassword(entry.id);
+		const hasPassword = encryptionService.hasCachedPassword(entry.id);
 		const db = await this.initDB();
 		const existingMetadata = await db.get('metadata', entry.id);
 
 		if (
 			hasPassword &&
 			existingMetadata &&
-			!existingMetadata.preview.includes('encrypted') &&
 			isEncrypted(entry.content)
 		) {
+			// For encrypted entries with cached passwords, preserve the decrypted metadata
 			const preservedMetadata: JournalEntryMetadata = {
 				...existingMetadata,
 				modified_at: entry.modified_at,
