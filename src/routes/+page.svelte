@@ -51,6 +51,11 @@
         height = innerHeight - $keyboardHeight;
         console.log('Using Tauri keyboard height:', $keyboardHeight, 'Adjusted height:', height);
       }
+      // For Android web, use VirtualKeyboard API height if available
+      else if (window.virtualKeyboardHeight > 0) {
+        height = innerHeight - window.virtualKeyboardHeight;
+        console.log('Using VirtualKeyboard API height:', window.virtualKeyboardHeight, 'Adjusted height:', height);
+      }
       // For other platforms, use visual viewport
       else if (window.visualViewport) {
         const visualHeight = window.visualViewport.height;
@@ -112,12 +117,7 @@
 
   // File watcher callback function (stable reference)
   function handleFileChange(changedFiles?: string[], eventType?: string) {
-    console.log('File change detected, debouncing reload', changedFiles, 'type:', eventType);
-    
-    // Clear existing timeout
-    if (reloadTimeout) {
-      clearTimeout(reloadTimeout);
-    }
+    console.log('File change detected (already debounced by watcher)', changedFiles, 'type:', eventType);
     
     // Track event types for suppressed files
     if (changedFiles && eventType) {
@@ -136,44 +136,40 @@
       });
     }
     
-    // Debounce the reload to avoid excessive calls
-    reloadTimeout = setTimeout(() => {
-      // Check if any of the changed files are ones we should suppress
-      const hasUnsuppressedChanges = !changedFiles || changedFiles.some(filePath => {
+    // File system watcher now has built-in debouncing (500ms), so we can process immediately
+    // Check if any of the changed files are ones we should suppress
+    const hasUnsuppressedChanges = !changedFiles || changedFiles.some(filePath => {
+      const fileName = filePath.split('/').pop() || '';
+      const entryId = fileName.replace('.md', '');
+      return !suppressedFiles.has(entryId);
+    });
+    
+    if (!hasUnsuppressedChanges) {
+      const suppressedFileNames = changedFiles?.filter(filePath => {
         const fileName = filePath.split('/').pop() || '';
         const entryId = fileName.replace('.md', '');
-        return !suppressedFiles.has(entryId);
+        return suppressedFiles.has(entryId);
+      }).map(filePath => filePath.split('/').pop()) || [];
+      
+      console.log('Suppressing file watcher reload for internal saves:', suppressedFileNames, 'event type:', eventType);
+      
+      // Only clear suppressed files if we've seen both metadata and data events
+      changedFiles?.forEach(filePath => {
+        const fileName = filePath.split('/').pop() || '';
+        const entryId = fileName.replace('.md', '');
+        const tracking = suppressedFiles.get(entryId);
+        
+        if (tracking && tracking.metadata && tracking.data) {
+          console.log('Clearing suppression for', entryId, '(seen both events)');
+          suppressedFiles.delete(entryId);
+        }
       });
       
-      if (!hasUnsuppressedChanges) {
-        const suppressedFileNames = changedFiles?.filter(filePath => {
-          const fileName = filePath.split('/').pop() || '';
-          const entryId = fileName.replace('.md', '');
-          return suppressedFiles.has(entryId);
-        }).map(filePath => filePath.split('/').pop()) || [];
-        
-        console.log('Suppressing file watcher reload for internal saves:', suppressedFileNames, 'event type:', eventType);
-        
-        // Only clear suppressed files if we've seen both metadata and data events
-        changedFiles?.forEach(filePath => {
-          const fileName = filePath.split('/').pop() || '';
-          const entryId = fileName.replace('.md', '');
-          const tracking = suppressedFiles.get(entryId);
-          
-          if (tracking && tracking.metadata && tracking.data) {
-            console.log('Clearing suppression for', entryId, '(seen both events)');
-            suppressedFiles.delete(entryId);
-          }
-        });
-        
-        reloadTimeout = null;
-        return;
-      }
-      
-      console.log('Reloading entries due to external file change');
-      loadEntries();
-      reloadTimeout = null;
-    }, 300);
+      return;
+    }
+    
+    console.log('Reloading entries due to external file change');
+    loadEntries();
   }
 
   // Start file watching once when in Tauri mode
@@ -555,7 +551,7 @@
 
 <svelte:window bind:innerHeight bind:innerWidth />
 
-<main class="app-container" class:mobile={isMobile} style={isMobile ? `height: ${$isKeyboardVisible ? ($keyboardHeight > 0 ? innerHeight - $keyboardHeight : (window.visualViewport ? Math.min(window.visualViewport.height, innerHeight) : innerHeight)) : innerHeight}px;` : ''}>
+<main class="app-container" class:mobile={isMobile} class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile ? `height: ${$isKeyboardVisible ? ($keyboardHeight > 0 ? innerHeight - $keyboardHeight : (window.virtualViewport ? Math.min(window.visualViewport.height, innerHeight) : innerHeight)) : innerHeight}px;` : ''}>
   <!-- Mobile: Show different views based on mobileView state -->
   {#if isMobile}
     {#if mobileView === 'list'}
@@ -795,6 +791,11 @@
   .app-container.mobile {
     /* Height set dynamically via JavaScript for keyboard handling */
     min-height: 0; /* Allow container to shrink when keyboard appears */
+  }
+  
+  /* Smooth keyboard animation for iOS Tauri */
+  .app-container.keyboard-animating {
+    transition: height var(--keyboard-animation-duration, 0.25s) cubic-bezier(0.36, 0.66, 0.04, 1);
   }
 
   .sidebar {

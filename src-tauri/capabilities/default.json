@@ -19,6 +19,8 @@
     "fs:allow-document-meta-recursive",
     "fs:allow-watch",
     "fs:allow-unwatch",
+    "os:default",
+    "os:default",
     "os:default"
   ]
 }

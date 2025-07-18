@@ -9,7 +9,7 @@ import {
     exists, 
     readDir,
     mkdir,
-    watchImmediate,
+    watch,
     BaseDirectory 
 } from '@tauri-apps/plugin-fs';
 import type { JournalEntry, JournalEntryMetadata, IFileSystemStorage } from './types.js';
@@ -339,24 +339,56 @@ export class TauriStorageAdapter implements IFileSystemStorage {
             console.log('Starting file system watcher for:', this.journalFolder);
             this.onFileChange = onChange;
             
-            this.fileWatcher = await watchImmediate(
+            this.fileWatcher = await watch(
                 [this.journalFolder],
                 (event) => {
                     console.log('File system event:', event);
+                    
+                    // Only process actual file modifications, not access events
+                    if (!event.type || typeof event.type !== 'object') {
+                        console.log('Ignoring event - no type info');
+                        return;
+                    }
+                    
+                    // Filter out access events (reads/opens) - only process writes/creates/deletes
+                    if ('access' in event.type) {
+                        console.log('Ignoring access event:', event.type.access);
+                        return;
+                    }
+                    
+                    // Check if this is a modification/create/remove event
+                    const hasModify = 'modify' in event.type;
+                    const hasCreate = 'create' in event.type;
+                    const hasRemove = 'remove' in event.type;
+                    
+                    if (!hasModify && !hasCreate && !hasRemove) {
+                        console.log('Ignoring non-modification event:', event.type);
+                        return;
+                    }
+                    
                     // Extract file paths from the event
                     const changedFiles = event.paths || [];
                     // Extract event type (metadata or data)
                     let eventType = 'unknown';
-                    if (event.type && typeof event.type === 'object' && 'modify' in event.type) {
+                    if (hasModify) {
                         const modify = event.type.modify as any;
-                        eventType = modify?.kind || 'unknown';
+                        eventType = modify?.kind || 'modify';
+                    } else if (hasCreate) {
+                        eventType = 'create';
+                    } else if (hasRemove) {
+                        eventType = 'remove';
                     }
-                    // Call immediately - let the main page handle debouncing
+                    
+                    console.log('Processing file change event:', eventType, changedFiles);
+                    // No need for additional debouncing - watch() handles it
                     if (this.onFileChange) {
                         this.onFileChange(changedFiles, eventType);
                     }
                 },
-                { baseDir: this.baseDir }
+                { 
+                    baseDir: this.baseDir,
+                    delayMs: 500  // Built-in debouncing: wait 500ms before emitting events
+                }
             );
             
             console.log('File system watcher started successfully');

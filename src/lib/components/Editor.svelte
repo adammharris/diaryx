@@ -418,7 +418,7 @@
             {/if}
         </div>
 
-        <div class="editor-status" style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
+        <div class="editor-status" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
             <span class="encryption-status">
                 {#if isEncryptionEnabled}
                     <img src="/src/lib/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
@@ -845,6 +845,11 @@
             flex-wrap: wrap;
             justify-content: space-between;
             gap: 0.5rem;
+        }
+        
+        /* Smooth keyboard animation for iOS Tauri footer */
+        .editor-status.keyboard-animating {
+            transition: padding-bottom var(--keyboard-animation-duration, 0.25s) cubic-bezier(0.36, 0.66, 0.04, 1);
         }
 
         .loading,
