@@ -18,6 +18,7 @@ Diaryx is a cross-platform personal journal application built with Tauri 2.0 and
 - **Styling**: Vanilla CSS with CSS custom properties for theming
 - **Encryption**: Noble crypto libraries (@noble/ciphers, @noble/hashes)
 - **Storage**: File system (Tauri) + IndexedDB cache, or IndexedDB only (web)
+- **Frontmatter**: YAML frontmatter parsing with js-yaml library
 
 ## Project Structure
 
@@ -28,6 +29,7 @@ src/
 │   │   ├── Editor.svelte    # Main editor with encryption support
 │   │   ├── EntryCard.svelte # Entry list item component
 │   │   ├── PasswordPrompt.svelte # Password input modal
+│   │   ├── InfoModal.svelte # Entry metadata and frontmatter display
 │   │   └── Settings.svelte  # Application settings
 │   ├── storage/             # Modular storage architecture
 │   │   ├── index.ts        # Storage factory and singleton
@@ -37,10 +39,12 @@ src/
 │   │   ├── cache.adapter.ts # IndexedDB cache layer
 │   │   ├── web.adapter.ts  # Web-only storage features
 │   │   ├── preview.service.ts # Content preview generation
-│   │   └── title.service.ts # Title extraction and fallback
+│   │   ├── title.service.ts # Title extraction and fallback
+│   │   └── frontmatter.service.ts # YAML frontmatter parsing
 │   ├── stores/             # Svelte stores
 │   │   ├── theme.js       # Theme management
-│   │   └── password.ts    # Password session management
+│   │   ├── password.ts    # Password session management
+│   │   └── keyboard.js    # Mobile keyboard detection
 │   └── utils/             # Utility functions
 │       ├── crypto.ts      # Encryption/decryption functions
 │       └── tauri.ts       # Tauri environment detection
@@ -81,12 +85,28 @@ The storage system uses a modular architecture with separation of concerns:
 - **Visual Indicators**: 🔒 icons for encrypted entries
 - **Graceful Degradation**: Fallback titles when content is encrypted
 
+### Frontmatter System
+- **Format**: YAML frontmatter in markdown files (industry standard)
+- **Parsing**: Browser-compatible js-yaml library (not gray-matter due to Buffer dependency)
+- **Storage**: Embedded in `.md` files between `---` delimiters
+- **Supported Fields**: tags, title, date, custom metadata
+- **Info Modal**: Displays parsed frontmatter, tags, and content statistics
+- **Example**:
+  ```yaml
+  ---
+  tags: [personal, work, important]
+  title: "Custom Title"
+  date: 2025-01-18
+  ---
+  ```
+
 ## Development Practices
 
 ### Svelte 5 Patterns
 - Use `$state()` for reactive variables
-- Use `$derived()` for computed values
-- Use `$effect()` instead of `onMount`
+- Use `$derived()` for computed values (avoid functions in templates)
+- Use `$derived.by()` for complex computed values that need functions
+- Use `$effect()` instead of `onMount` (avoid infinite loops by not mutating state)
 - Use callback props instead of `createEventDispatcher`
 - Proper TypeScript interfaces for component props
 
@@ -97,10 +117,11 @@ The storage system uses a modular architecture with separation of concerns:
 - User-friendly error messages
 
 ### Performance Optimizations
-- Debounced file system watching (300ms)
+- Debounced file system watching (500ms using `watch` instead of `watchImmediate`)
 - IndexedDB transaction optimization
 - Lazy loading of encryption utilities
 - Efficient preview generation
+- Mobile keyboard detection with VirtualKeyboard API and visual viewport fallbacks
 
 ## Build Commands
 
@@ -201,6 +222,14 @@ Required features in `src-tauri/Cargo.toml`:
 - Default demo entries
 - Client-side rendering
 
+### Mobile Platforms
+- **iOS Tauri**: Uses tauri-plugin-virtual-keyboard for precise keyboard detection
+- **Android Tauri**: Uses VirtualKeyboard API with `overlaysContent = true`
+- **iOS Web**: Falls back to visualViewport resize detection
+- **Android Web**: Uses VirtualKeyboard API or visualViewport fallback
+- **Keyboard Handling**: Dynamic viewport adjustment and textarea auto-scroll
+- **Safe Areas**: Proper handling of iOS safe area insets
+
 ## Security Considerations
 
 - Passwords are stored in memory only (session-based)
@@ -233,6 +262,10 @@ Required features in `src-tauri/Cargo.toml`:
 3. **Encryption failures**: Verify password and try again
 4. **Build failures**: Check Node.js/Bun and Rust versions
 5. **SSG build issues**: Verify adapter configuration
+6. **Android file system loops**: Use `watch` instead of `watchImmediate` for proper debouncing
+7. **Browser Buffer errors**: Use browser-compatible packages (js-yaml not gray-matter)
+8. **Svelte infinite loops**: Use `$derived.by()` instead of `$effect()` for computed values
+9. **Mobile keyboard detection**: Enable `navigator.virtualKeyboard.overlaysContent = true`
 
 ### Debug Tools
 - Browser DevTools for web debugging

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { storage, type JournalEntryMetadata } from '../lib/storage/index';
+  let storageService = $state();
+  let JournalEntryMetadata;
   import EntryCard from '../lib/components/EntryCard.svelte';
   import Editor from '../lib/components/Editor.svelte';
   import Settings from '../lib/components/Settings.svelte';
@@ -80,12 +81,38 @@
     oncancel: null as (() => void) | null
   });
 
-  // Initialize theme and detect environment
   $effect(() => {
+    // Dynamically import the storage service on the client-side
+    import('../lib/services/storage').then(module => {
+      storageService = module.storageService;
+      isTauri = storageService.environment === 'tauri'; // Set isTauri after storageService is available
+      loadEntries();
+
+      // Start file watching once when in Tauri mode
+      if (isTauri) {
+        console.log('Setting up file watcher...');
+        storageService.startFileWatching(handleFileChange);
+        
+        // Cleanup function to stop watching when component is destroyed
+        // This return is for the inner effect, not the outer one
+        // The outer effect's cleanup is handled by its own return
+        return () => {
+          storageService.stopFileWatching();
+          
+          // Clear any pending timeout
+          if (reloadTimeout) {
+            clearTimeout(reloadTimeout);
+            reloadTimeout = null;
+          }
+        };
+      }
+    }).catch(error => {
+      console.error('Failed to load storage service:', error);
+      // Optionally show an error message to the user
+    });
+
     // This will trigger the theme initialization
     currentTheme.set($currentTheme);
-    // Detect if we're in Tauri using the proper utility
-    isTauri = detectTauri();
     
     // Detect mobile viewport (reactive to innerWidth changes)
     isMobile = innerWidth <= 768;
@@ -94,8 +121,9 @@
     console.log('Viewport dimensions:', innerWidth, 'x', innerHeight, 'Mobile:', isMobile);
     console.log('Effective height:', effectiveHeight, 'Using innerHeight:', innerHeight);
     
+    // This return is for the outer effect
     return () => {
-      // No cleanup needed
+      // No cleanup needed for outer effect
     };
   });
 
@@ -107,10 +135,7 @@
     )
   );
 
-  // Load entries on mount
-  $effect(() => {
-    loadEntries();
-  });
+  
 
   // File watcher callback function (stable reference)
   function handleFileChange(changedFiles?: string[], eventType?: string) {
@@ -169,29 +194,12 @@
     loadEntries();
   }
 
-  // Start file watching once when in Tauri mode
-  $effect(() => {
-    if (isTauri) {
-      console.log('Setting up file watcher...');
-      storage.startFileWatching(handleFileChange);
-      
-      // Cleanup function to stop watching when component is destroyed
-      return () => {
-        storage.stopFileWatching();
-        
-        // Clear any pending timeout
-        if (reloadTimeout) {
-          clearTimeout(reloadTimeout);
-          reloadTimeout = null;
-        }
-      };
-    }
-  });
+  
 
   async function loadEntries() {
     isLoading = true;
     try {
-      entries = await storage.getAllEntries();
+      entries = await storageService.getAllEntries();
     } catch (error) {
       console.error('Failed to load entries:', error);
       // Show error message to user
@@ -211,7 +219,7 @@
     
     try {
       // Get the full entry to check if it's encrypted
-      const entry = await storage.getEntry(entryId);
+      const entry = await storageService.getEntry(entryId);
       if (!entry) {
         showDialog({
           title: 'Entry Not Found',
@@ -279,7 +287,7 @@
       cancelText: 'Cancel',
       onconfirm: async () => {
         try {
-          const success = await storage.deleteEntry(event.id);
+          const success = await storageService.deleteEntry(event.id);
           console.log('Delete result:', success);
           if (success) {
             entries = entries.filter(e => e.id !== event.id);
@@ -326,7 +334,7 @@
     if (passwordStore.hasCachedPassword(data.id)) {
       // Call storage.updateDecryptedTitle with the NEW content to generate fresh metadata
       try {
-        await storage.updateDecryptedTitle(data.id, data.content);
+        await storageService.updateDecryptedTitle(data.id, data.content);
         console.log('Updated storage metadata for encrypted entry:', data.id);
       } catch (error) {
         console.error('Failed to update storage metadata:', error);
@@ -365,7 +373,7 @@
     
     isCreating = true;
     try {
-      const id = await storage.createEntry(newEntryTitle);
+      const id = await storageService.createEntry(newEntryTitle);
       if (id) {
         newEntryTitle = '';
         await loadEntries();
@@ -432,7 +440,7 @@
     const { password } = event.detail;
     
     try {
-      const entry = await storage.getEntry(pendingEntryId);
+      const entry = await storageService.getEntry(pendingEntryId);
       if (!entry) {
         showPasswordPromptError();
         return;
@@ -614,6 +622,7 @@
           {:else}
             {#each filteredEntries as entry (entry.id)}
               <EntryCard 
+                {storageService}
                 {entry} 
                 onselect={handleSelectEntry}
                 ondelete={handleDeleteEntry}
@@ -624,21 +633,26 @@
       </div>
     {:else if mobileView === 'editor'}
       <div class="mobile-view mobile-editor">
-        <Editor 
-          entryId={selectedEntryId}
-          preloadedEntry={preloadedEntry}
-          preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
-          onclose={handleCloseEditor}
-          onsaved={handleEntrySaved}
-          onrenamed={handleEntryRenamed}
-          onencryptiontoggle={handleEncryptionToggle}
-          onerror={handleEditorError}
-          onkeyboardtoggle={handleKeyboardToggle}
-        />
+        {#if storageService}
+          <Editor 
+            {storageService}
+            entryId={selectedEntryId}
+            preloadedEntry={preloadedEntry}
+            preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
+            onclose={handleCloseEditor}
+            onsaved={handleEntrySaved}
+            onrenamed={handleEntryRenamed}
+            onencryptiontoggle={handleEncryptionToggle}
+            onerror={handleEditorError}
+            onkeyboardtoggle={handleKeyboardToggle}
+          />
+        {:else}
+          <div class="loading">Loading storage service...</div>
+        {/if}
       </div>
     {:else if mobileView === 'settings'}
       <div class="mobile-view mobile-settings">
-        <Settings onclose={handleCloseSettings} />
+        <Settings {storageService} onclose={handleCloseSettings} />
       </div>
     {/if}
   {:else}
@@ -715,27 +729,33 @@
     </aside>
 
     <main class="main-content">
-      <Editor 
-        entryId={selectedEntryId}
-        preloadedEntry={preloadedEntry}
-        preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
-        onclose={handleCloseEditor}
-        onsaved={handleEntrySaved}
-        onrenamed={handleEntryRenamed}
-        onencryptiontoggle={handleEncryptionToggle}
-        onerror={handleEditorError}
-        onkeyboardtoggle={handleKeyboardToggle}
-      />
+      {#if storageService}
+        <Editor 
+          {storageService}
+          entryId={selectedEntryId}
+          preloadedEntry={preloadedEntry}
+          preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
+          onclose={handleCloseEditor}
+          onsaved={handleEntrySaved}
+          onrenamed={handleEntryRenamed}
+          onencryptiontoggle={handleEncryptionToggle}
+          onerror={handleEditorError}
+          onkeyboardtoggle={handleKeyboardToggle}
+        />
+      {:else}
+        <div class="loading">Loading storage service...</div>
+      {/if}
     </main>
   {/if}
 </main>
 
 {#if showSettings && !isMobile}
-  <Settings onclose={handleCloseSettings} />
+  <Settings {storageService} onclose={handleCloseSettings} />
 {/if}
 
 {#if showBatchUnlock}
   <BatchUnlock 
+    {storageService}
     isVisible={showBatchUnlock}
     entries={entries}
     onclose={handleCloseBatchUnlock}

@@ -7,7 +7,7 @@ import { gcm } from '@noble/ciphers/aes';
 import { randomBytes } from '@noble/ciphers/webcrypto';
 import { pbkdf2 } from '@noble/hashes/pbkdf2';
 import { sha256 } from '@noble/hashes/sha256';
-import type { JournalEntry } from '../storage.js';
+import type { JournalEntry } from '../storage/types.js';
 
 // Constants for encryption
 const SALT_LENGTH = 32;

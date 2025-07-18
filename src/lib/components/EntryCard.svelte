@@ -1,17 +1,17 @@
 <script lang="ts">
-    import type { JournalEntryMetadata } from '../storage/index.ts';
+    import type { JournalEntryMetadata } from '../storage/types.ts';
     import { passwordStore } from '../stores/password.js';
     import { metadataStore } from '../stores/metadata.js';
-    import { isEncrypted } from '../utils/crypto.js';
-    import { storage } from '../storage/index.js';
+        import { isEncrypted } from '../utils/crypto.js';
 
     interface Props {
+        storageService: any; // The storage service instance
         entry: JournalEntryMetadata;
         onselect?: (event: { id: string }) => void;
         ondelete?: (event: { id: string }) => void;
     }
 
-    let { entry, onselect, ondelete }: Props = $props();
+    let { storageService, entry, onselect, ondelete }: Props = $props();
 
     // Get reactive metadata from the store - this will update when metadata changes
     let currentEntry = $derived(() => {
@@ -41,8 +41,8 @@
         const currentMeta = currentEntry();
         const needsContentCheck = !hasEncryptedPreview() && !hasPassword();
         
-        if (needsContentCheck) {
-            storage.getEntry(currentMeta.id).then(fullEntry => {
+        if (needsContentCheck && storageService) {
+            storageService.getEntry(currentMeta.id).then(fullEntry => {
                 if (fullEntry && isEncrypted(fullEntry.content)) {
                     contentEncryptionState = 'encrypted';
                     

@@ -1,12 +1,13 @@
 <script lang="ts">
-    import { storage, type JournalEntry } from '../storage/index';
-    import SvelteMarkdown from 'svelte-markdown';
+        import SvelteMarkdown from 'svelte-markdown';
+    import type { JournalEntry } from '../storage/types';
     import { passwordStore } from '../stores/password.js';
     import { isEncrypted, encrypt } from '../utils/crypto.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
     import InfoModal from './InfoModal.svelte';
 
     interface Props {
+        storageService: any; // The storage service instance
         entryId: string | null;
         preloadedEntry?: JournalEntry | null; // Pass pre-loaded entry to avoid double-loading
         preloadedEntryIsDecrypted?: boolean; // Flag to indicate if preloaded entry is already decrypted
@@ -18,7 +19,7 @@
         onkeyboardtoggle?: (data: { visible: boolean }) => void;
     }
 
-    let { entryId, preloadedEntry, preloadedEntryIsDecrypted, onclose, onsaved, onrenamed, onencryptiontoggle, onerror, onkeyboardtoggle }: Props = $props();
+    let { storageService, entryId, preloadedEntry, preloadedEntryIsDecrypted, onclose, onsaved, onrenamed, onencryptiontoggle, onerror, onkeyboardtoggle }: Props = $props();
 
 
     let entry: JournalEntry | null = $state(null);
@@ -38,7 +39,7 @@
     
     // Simplified: removed complex cache system
 
-    // Detect mobile and load entry when entryId changes
+    // Detect mobile and load entry when entryId or storageService changes
     $effect(() => {
         // Mobile detection
         const checkMobile = () => {
@@ -48,7 +49,7 @@
         checkMobile();
         window.addEventListener('resize', checkMobile);
         
-        if (entryId) {
+        if (entryId && storageService) {
             loadEntry();
         } else {
             entry = null;
@@ -78,7 +79,7 @@
     // This eliminates unnecessary re-renders when password store changes
 
     async function loadEntry() {
-        if (!entryId) return;
+        if (!entryId || !storageService) return;
         
         // Use preloaded entry if available (should be the common case)
         if (preloadedEntry && preloadedEntry.id === entryId) {
@@ -94,7 +95,7 @@
         isLoading = true;
         
         try {
-            const rawEntry = await storage.getEntry(entryId);
+            const rawEntry = await storageService.getEntry(entryId);
             if (!rawEntry) return;
 
             entry = rawEntry;
@@ -130,7 +131,7 @@
     }
 
     async function handleSave() {
-        if (!entry) return;
+        if (!entry || !storageService) return; // Ensure storageService is defined
         
         isSaving = true;
         try {
@@ -153,11 +154,11 @@
                 }
             }
             
-            const success = await storage.saveEntry(entry.id, contentToSave);
+            const success = await storageService.saveEntry(entry.id, contentToSave);
             if (success) {
                 onsaved?.({ id: entry.id, content: content }); // Pass original decrypted content
                 // Update local entry with the original content (not encrypted)
-                entry.content = contentToSave;
+                entry.content = content; // Keep the decrypted content for display
                 entry.modified_at = new Date().toISOString();
                 
                 // Cache update removed for simplicity
@@ -195,7 +196,7 @@
         }
 
         try {
-            const newId = await storage.renameEntry(entryId, editableTitle.trim());
+            const newId = await storageService.renameEntry(entryId, editableTitle.trim());
             if (newId) {
                 onrenamed?.({ oldId: entryId, newId });
                 isEditingTitle = false;

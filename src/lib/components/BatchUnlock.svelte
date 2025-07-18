@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { passwordStore } from '../stores/password.js';
-  import { storage } from '../storage/index.js';
-  import type { JournalEntry, JournalEntryMetadata } from '../storage/index.js';
+    import { passwordStore } from '../stores/password.js';
+  import type { JournalEntry, JournalEntryMetadata } from '../storage/types.js';
   import { isEncrypted } from '../utils/crypto.js';
 
   interface Props {
+    storageService: any; // The storage service instance
     isVisible: boolean;
     entries: JournalEntryMetadata[];
     onclose: () => void;
     onunlock?: (unlockedCount: number) => void;
   }
 
-  let { isVisible, entries, onclose, onunlock }: Props = $props();
+  let { storageService, isVisible, entries, onclose, onunlock }: Props = $props();
 
   let password = $state('');
   let isUnlocking = $state(false);
@@ -46,7 +46,7 @@
       for (const meta of entries) {
         // Only include entries that aren't already unlocked
         if (!passwordStore.hasCachedPassword(meta.id)) {
-          const entry = await storage.getEntry(meta.id);
+          const entry = await storageService.getEntry(meta.id);
           if (entry && isEncrypted(entry.content)) {
             encryptedEntries.push(entry);
           }

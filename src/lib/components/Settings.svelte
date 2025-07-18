@@ -1,12 +1,13 @@
 <script lang="ts">
     import { currentTheme, themes, setTheme } from '../stores/theme.js';
-    import { storage } from '../storage/index.js';
+    
 
     interface Props {
-        onclose?: () => void;
-    }
+    storageService: any; // The storage service instance
+    onclose: () => void;
+  }
 
-    let { onclose }: Props = $props();
+    let { storageService, onclose }: Props = $props();
 
     let selectedTheme = $state($currentTheme);
     let isTauri = $state(false);
@@ -15,7 +16,7 @@
     // Initialize detection when component mounts
     $effect(() => {
         // Get initial detection
-        isTauri = storage.isRunningInTauri;
+        isTauri = storageService.isRunningInTauri;
         
         // Mobile detection
         const checkMobile = () => {
@@ -24,12 +25,6 @@
         
         checkMobile();
         window.addEventListener('resize', checkMobile);
-        
-        // Refresh detection after a short delay in case Tauri takes time to load
-        setTimeout(() => {
-            storage.refreshEnvironmentDetection();
-            isTauri = storage.isRunningInTauri;
-        }, 200);
         
         return () => {
             window.removeEventListener('resize', checkMobile);

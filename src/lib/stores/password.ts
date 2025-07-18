@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { decrypt, isEncrypted } from '../utils/crypto.js';
-import type { JournalEntry } from '../storage/index.js';
+import type { JournalEntry } from '../storage/types.js';
 
 interface PasswordCache {
   [entryId: string]: {
@@ -122,8 +122,8 @@ function createPasswordStore() {
       // If decrypted content is provided, update metadata
       if (decryptedContent) {
         // Import storage dynamically to avoid circular dependency
-        import('../storage/index.js').then(({ storage }) => {
-          storage.updateDecryptedTitle(entryId, decryptedContent);
+        import('../storage/index.js').then(({ storageService }) => {
+          storageService.updateDecryptedTitle(entryId, decryptedContent);
         }).catch(error => {
           console.error('Failed to update metadata for individually decrypted entry:', error);
         });
@@ -192,8 +192,8 @@ function createPasswordStore() {
 
         // Update metadata with decrypted content for preview
         try {
-          const { storage } = await import('../storage/index.js');
-          await storage.updateDecryptedTitle(entryId, decryptedContent);
+          const { storageService } = await import('../storage/index.js');
+          await storageService.updateDecryptedTitle(entryId, decryptedContent);
         } catch (error) {
           console.error('Failed to update metadata for decrypted entry:', error);
         }
@@ -291,9 +291,9 @@ function createPasswordStore() {
       // Import storage dynamically to avoid circular dependency
       if (decryptedEntries.length > 0) {
         try {
-          const { storage } = await import('../storage/index.js');
+          const { storageService } = await import('../storage/index.js');
           for (const { entryId, decryptedContent } of decryptedEntries) {
-            await storage.updateDecryptedTitle(entryId, decryptedContent);
+            await storageService.updateDecryptedTitle(entryId, decryptedContent);
           }
         } catch (error) {
           console.error('Failed to update metadata for decrypted entries:', error);
