@@ -28,6 +28,10 @@
     let isPreview = $state(false);
     let isSaving = $state(false);
     let isLoading = $state(false);
+    let lastSavedContent = $state('');
+    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+    let saveStatus: 'idle' | 'saving' | 'saved' | 'error' = $state('idle');
+    const AUTOSAVE_DELAY = 1500; // 1.5 seconds
     let isEncryptionEnabled = $state(false);
     let showInfo = $state(false);
     
@@ -76,6 +80,19 @@
 
     // Removed reactive password store effect - encryption state is now handled in loadEntry()
     // This eliminates unnecessary re-renders when password store changes
+
+    // Autosave effect
+    $effect(() => {
+        if (content && content !== lastSavedContent && !isLoading) {
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
+            }
+            saveStatus = 'idle';
+            saveTimeout = setTimeout(() => {
+                handleAutosave();
+            }, AUTOSAVE_DELAY);
+        }
+    });
 
     async function loadEntry() {
         if (!entryId || !storageService) return;
@@ -129,10 +146,10 @@
         }
     }
 
-    async function handleSave() {
-        if (!entry || !storageService) return; // Ensure storageService is defined
+    async function saveEntryContent() {
+        if (!entry || !storageService) return false; // Ensure storageService is defined
         
-        isSaving = true;
+        saveStatus = 'saving';
         try {
             let contentToSave = content;
             
@@ -145,7 +162,8 @@
                         title: 'Password Required',
                         message: 'Cannot save encrypted entry without password. Please decrypt the entry first.'
                     });
-                    return;
+                    saveStatus = 'error';
+                    return false;
                 }
             }
             
@@ -155,13 +173,16 @@
                 // Update local entry with the original content (not encrypted)
                 entry.content = content; // Keep the decrypted content for display
                 entry.modified_at = new Date().toISOString();
-                
-                // Cache update removed for simplicity
+                lastSavedContent = content;
+                saveStatus = 'saved';
+                return true;
             } else {
                 onerror?.({
                     title: 'Save Failed',
                     message: 'Failed to save entry. Please try again.'
                 });
+                saveStatus = 'error';
+                return false;
             }
         } catch (error) {
             console.error('Save error:', error);
@@ -169,9 +190,17 @@
                 title: 'Save Failed',
                 message: 'Failed to save entry. Please try again.'
             });
-        } finally {
-            isSaving = false;
+            saveStatus = 'error';
+            return false;
         }
+    }
+
+    async function handleAutosave() {
+        if (content === lastSavedContent) {
+            saveStatus = 'idle';
+            return;
+        }
+        await saveEntryContent();
     }
 
     function handleClose() {
@@ -247,11 +276,7 @@
     function handleKeydown(event: KeyboardEvent) {
         // Handle keyboard shortcuts
         
-        // Cmd+S or Ctrl+S to save
-        if ((event.metaKey || event.ctrlKey) && event.key === 's') {
-            event.preventDefault();
-            handleSave();
-        }
+        
         // Escape to close
         if (event.key === 'Escape') {
             handleClose();
@@ -399,13 +424,7 @@
                 >
                     {isPreview ? 'Edit' : 'Preview'}
                 </button>
-                <button 
-                    class="btn btn-primary"
-                    onclick={handleSave}
-                    disabled={isSaving}
-                >
-                    {isSaving ? 'Saving...' : 'Save'}
-                </button>
+                
             </div>
         </div>
 
@@ -446,6 +465,15 @@
             </span>
             <span class="last-modified">
                 Last modified: {new Date(entry.modified_at).toLocaleString()}
+            </span>
+            <span class="autosave-status">
+                {#if saveStatus === 'saving'}
+                    Saving...
+                {:else if saveStatus === 'saved'}
+                    Saved
+                {:else if saveStatus === 'error'}
+                    Save Error!
+                {/if}
             </span>
         </div>
     </div>
@@ -535,21 +563,7 @@
         border: 1px solid transparent;
     }
 
-    .btn-primary {
-        background: #3b82f6;
-        color: white;
-        border-color: #3b82f6;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-        background: #2563eb;
-        border-color: #2563eb;
-    }
-
-    .btn-primary:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
+    
 
     .btn-secondary {
         background: white;

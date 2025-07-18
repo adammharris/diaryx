@@ -59,7 +59,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if isVisible && entry}
-    <div class="modal-backdrop" onclick={handleBackdropClick}>
+    <div class="modal-backdrop" role="button" tabindex="0" onclick={handleBackdropClick} onkeydown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') handleBackdropClick(); }}>
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title">Entry Information</h2>

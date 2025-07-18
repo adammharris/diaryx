@@ -28,6 +28,7 @@
   let reloadTimeout: number | null = null;
   let suppressedFiles = $state(new Map<string, { metadata: boolean; data: boolean }>());
   
+  
   // Mobile view state
   let isMobile = $state(false);
   let mobileView = $state<'list' | 'editor' | 'settings'>('list');
@@ -646,6 +647,7 @@
             preloadedEntry={preloadedEntry}
             preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
             onclose={handleCloseEditor}
+
             onsaved={handleEntrySaved}
             onrenamed={handleEntryRenamed}
             onencryptiontoggle={handleEncryptionToggle}

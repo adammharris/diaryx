@@ -30,21 +30,23 @@ src/
 │   │   ├── EntryCard.svelte # Entry list item component
 │   │   ├── PasswordPrompt.svelte # Password input modal
 │   │   ├── InfoModal.svelte # Entry metadata and frontmatter display
-│   │   └── Settings.svelte  # Application settings
-│   ├── storage/             # Modular storage architecture
-│   │   ├── index.ts        # Storage factory and singleton
+│   │   ├── Settings.svelte  # Application settings
+│   │   ├── BatchUnlock.svelte # Batch password unlock component
+│   │   └── Dialog.svelte    # General purpose dialog component
+│   ├── services/            # Business logic services
+│   │   ├── encryption.ts   # Centralized encryption service with session management
+│   │   └── storage.ts      # Unified storage service with platform detection
+│   ├── storage/             # Storage type definitions and utilities
+│   │   ├── index.ts        # Storage exports and types
 │   │   ├── types.ts        # TypeScript interfaces
-│   │   ├── main.adapter.ts # Main coordinating adapter
-│   │   ├── tauri.adapter.ts # Tauri file system operations
-│   │   ├── cache.adapter.ts # IndexedDB cache layer
-│   │   ├── web.adapter.ts  # Web-only storage features
 │   │   ├── preview.service.ts # Content preview generation
 │   │   ├── title.service.ts # Title extraction and fallback
 │   │   └── frontmatter.service.ts # YAML frontmatter parsing
 │   ├── stores/             # Svelte stores
-│   │   ├── theme.js       # Theme management
-│   │   ├── password.ts    # Password session management
-│   │   └── keyboard.js    # Mobile keyboard detection
+│   │   ├── theme.ts        # Theme management
+│   │   ├── password.ts     # Legacy password store (delegates to encryption service)
+│   │   ├── metadata.ts     # Entry metadata store
+│   │   └── keyboard.js     # Mobile keyboard detection
 │   └── utils/             # Utility functions
 │       ├── crypto.ts      # Encryption/decryption functions
 │       └── tauri.ts       # Tauri environment detection
@@ -64,26 +66,29 @@ src-tauri/
 ## Key Components
 
 ### Storage Architecture
-The storage system uses a modular architecture with separation of concerns:
+The storage system uses a unified service architecture with platform detection:
 
-- **MainStorageAdapter**: Coordinates between platform-specific adapters
-- **TauriStorageAdapter**: Handles file system operations using Tauri FS plugin
-- **CacheStorageAdapter**: Manages IndexedDB caching and transactions
-- **WebStorageAdapter**: Provides web-only storage features
+- **StorageService**: Main unified storage service with automatic platform detection
+- **IndexedDB Integration**: Handles caching and transactions for both web and Tauri modes
+- **File System Operations**: Direct Tauri FS plugin integration for desktop
 - **PreviewService**: Generates content previews from markdown
 - **TitleService**: Extracts and generates entry titles
+- **MetadataStore**: Centralized metadata management with reactive updates
 
 ### File System Integration
 - **Location**: `~/Documents/Diaryx/` (BaseDirectory.Document)
 - **Format**: Markdown files with `.md` extension
 - **Naming**: ISO datetime format (e.g., `2025-01-15T10-30-45.md`)
-- **Watching**: Automatic file change detection using `watchImmediate`
+- **Watching**: Automatic file change detection with event filtering (ignores read-only access events)
 
 ### Encryption System
 - **Algorithm**: AES-GCM with PBKDF2 key derivation
-- **Session Management**: Password caching per entry ID
-- **Visual Indicators**: 🔒 icons for encrypted entries
+- **Centralized Service**: `EncryptionService` with reactive state management
+- **Session Management**: Password caching per entry ID with automatic cleanup
+- **Visual Indicators**: 🔒 (locked) and 🔓 (unlocked) icons for entry states
+- **Batch Operations**: Bulk password unlocking across multiple entries
 - **Graceful Degradation**: Fallback titles when content is encrypted
+- **Metadata Preservation**: Maintains decrypted previews and titles for unlocked entries
 
 ### Frontmatter System
 - **Format**: YAML frontmatter in markdown files (industry standard)
@@ -103,12 +108,13 @@ The storage system uses a modular architecture with separation of concerns:
 ## Development Practices
 
 ### Svelte 5 Patterns
-- Use `$state()` for reactive variables
+- Use `$state()` for reactive variables (only in components, not services)
 - Use `$derived()` for computed values (avoid functions in templates)
 - Use `$derived.by()` for complex computed values that need functions
 - Use `$effect()` instead of `onMount` (avoid infinite loops by not mutating state)
 - Use callback props instead of `createEventDispatcher`
 - Proper TypeScript interfaces for component props
+- For services, use traditional Svelte stores with `writable()` for reactivity
 
 ### Error Handling
 - Comprehensive try-catch blocks in async operations
@@ -266,12 +272,29 @@ Required features in `src-tauri/Cargo.toml`:
 7. **Browser Buffer errors**: Use browser-compatible packages (js-yaml not gray-matter)
 8. **Svelte infinite loops**: Use `$derived.by()` instead of `$effect()` for computed values
 9. **Mobile keyboard detection**: Enable `navigator.virtualKeyboard.overlaysContent = true`
+10. **Uninitialized variable errors**: Don't use `$state()` runes outside component context - use Svelte stores instead
 
 ### Debug Tools
 - Browser DevTools for web debugging
 - Tauri DevTools for desktop debugging
 - Console logging throughout the application
 - File system monitoring tools
+
+## Recent Architectural Improvements
+
+### Encryption Service Refactoring (2025-01-18)
+- **Centralized Encryption Logic**: Extracted encryption/decryption from components into `EncryptionService`
+- **Reduced Code Complexity**: Decreased password store from 477 lines to 65 lines (-86%)
+- **Fixed Circular Dependencies**: Eliminated dynamic imports with callback pattern
+- **Improved Reactivity**: Replaced problematic `$state()` runes with Svelte stores in services
+- **Enhanced UI**: Fixed EntryCard lock/unlock icons and metadata flashing issues
+- **Better Performance**: Optimized file watcher to filter out read-only access events
+
+### Code Organization Benefits
+- **Separation of Concerns**: Business logic moved from UI components to dedicated services
+- **Maintainability**: Easier to test and modify encryption behavior
+- **Reusability**: Encryption service can be used across different components
+- **Type Safety**: Better TypeScript interfaces and error handling
 
 ## Contributing Guidelines
 
