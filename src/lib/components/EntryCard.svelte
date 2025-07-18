@@ -147,12 +147,15 @@
         cursor: pointer;
         transition: all 0.2s ease;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        touch-action: manipulation;
     }
 
-    .entry-card:hover {
-        border-color: var(--color-primary, #3b82f6);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        transform: translateY(-1px);
+    @media (hover: hover) {
+        .entry-card:hover {
+            border-color: var(--color-primary, #3b82f6);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+        }
     }
 
     .entry-header {
@@ -185,13 +188,17 @@
         line-height: 1;
     }
 
-    .entry-card:hover .delete-btn {
-        opacity: 1;
+    @media (hover: hover) {
+        .entry-card:hover .delete-btn {
+            opacity: 1;
+        }
     }
 
-    .delete-btn:hover {
-        background: #fee2e2;
-        color: #dc2626;
+    @media (hover: hover) {
+        .delete-btn:hover {
+            background: #fee2e2;
+            color: #dc2626;
+        }
     }
 
     .entry-preview {

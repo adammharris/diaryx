@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { currentTheme, themes, setTheme } from '../stores/theme.js';
+    import { currentTheme, themes, setTheme, colorMode } from '../stores/theme.js';
     import { whichTauri } from '../utils/tauri.js';
 
     interface Props {
@@ -94,20 +94,20 @@
                         >
                             <div 
                                 class="theme-preview" 
-                                style="background: {theme.colors.gradient}"
+                                style="background: {($colorMode === 'light' ? theme.lightColors.gradient : theme.darkColors.gradient)}"
                             ></div>
                             <div class="theme-colors">
                                 <div 
                                     class="color-dot" 
-                                    style="background-color: {theme.colors.primary}"
+                                    style="background-color: {($colorMode === 'light' ? theme.lightColors.primary : theme.darkColors.primary)}"
                                 ></div>
                                 <div 
                                     class="color-dot" 
-                                    style="background-color: {theme.colors.accent}"
+                                    style="background-color: {($colorMode === 'light' ? theme.lightColors.accent : theme.darkColors.accent)}"
                                 ></div>
                                 <div 
                                     class="color-dot" 
-                                    style="background-color: {theme.colors.surface}"
+                                    style="background-color: {($colorMode === 'light' ? theme.lightColors.surface : theme.darkColors.surface)}"
                                 ></div>
                             </div>
                             <span class="theme-name">{theme.name}</span>
@@ -167,9 +167,10 @@
         width: 90%;
         max-width: 600px;
         max-height: 80vh;
-        overflow-y: auto;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         border: 1px solid var(--color-border, #e5e7eb);
+        display: flex;
+        flex-direction: column;
     }
 
     .settings-header {
@@ -199,14 +200,19 @@
         border-radius: 6px;
         transition: background-color 0.2s ease;
         line-height: 1;
+        touch-action: manipulation;
     }
 
-    .close-btn:hover {
-        background: rgba(255, 255, 255, 0.1);
+    @media (hover: hover) {
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
     }
 
     .settings-content {
         padding: 1.5rem;
+        flex: 1;
+        overflow-y: auto;
     }
 
     .setting-section {
@@ -249,10 +255,12 @@
         gap: 0.75rem;
     }
 
-    .theme-option:hover {
-        border-color: var(--color-primary, #3b82f6);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    @media (hover: hover) {
+        .theme-option:hover {
+            border-color: var(--color-primary, #3b82f6);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
     }
 
     .theme-option.selected {
@@ -318,14 +326,17 @@
         font-size: 0.875rem;
         background: none;
         border: none;
-        color: var(--color-text, #1f2937);
+        color: white; /* Changed to white for better visibility */
         cursor: pointer;
         border-radius: 6px;
         transition: background-color 0.2s ease;
     }
 
-    .close-btn.mobile:hover {
-        background: var(--color-background, #f8fafc);
+    @media (hover: hover) {
+        .close-btn.mobile:hover {
+            background: white; /* Make box white on hover */
+            color: black; /* Make text black on hover */
+        }
     }
 
     /* Mobile safe area adjustments */

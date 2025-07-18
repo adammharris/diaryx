@@ -222,6 +222,7 @@
 
 
   async function handleSelectEntry(event: { id: string }) {
+    console.log('handleSelectEntry called for id:', event.id);
     const entryId = event.id;
     
     try {
@@ -411,6 +412,7 @@
   }
 
   function handleOpenSettings() {
+    console.log('handleOpenSettings called');
     if (isMobile) {
       mobileView = 'settings';
     } else {
@@ -877,10 +879,13 @@
     justify-content: center;
     min-width: 2.5rem;
     height: 2.5rem;
+    touch-action: manipulation; /* Add this line */
   }
 
-  .settings-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+  @media (hover: hover) {
+    .settings-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
   }
 
   .settings-btn .icon {
@@ -921,10 +926,13 @@
     font-weight: 500;
     transition: background-color 0.2s ease;
     min-width: 3rem;
+    touch-action: manipulation; /* Add this line */
   }
 
-  .new-entry-btn:hover:not(:disabled) {
-    background: var(--color-primaryHover, #2563eb);
+  @media (hover: hover) {
+    .new-entry-btn:hover:not(:disabled) {
+      background: var(--color-primaryHover, #2563eb);
+    }
   }
 
   .new-entry-btn:disabled {

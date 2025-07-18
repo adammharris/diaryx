@@ -174,7 +174,7 @@
     }
 
     .modal-content {
-        background: white;
+        background: var(--color-surface);
         border-radius: 12px;
         max-width: 600px;
         width: 100%;
@@ -190,15 +190,15 @@
         justify-content: space-between;
         align-items: center;
         padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        background: #f9fafb;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-background);
     }
 
     .modal-title {
         margin: 0;
         font-size: 1.25rem;
         font-weight: 600;
-        color: #1f2937;
+        color: var(--color-text);
     }
 
     .close-btn {
@@ -208,19 +208,23 @@
         cursor: pointer;
         padding: 0.25rem;
         border-radius: 4px;
-        color: #6b7280;
+        color: var(--color-textSecondary);
         transition: background-color 0.2s ease;
     }
 
-    .close-btn:hover {
-        background: #f3f4f6;
-        color: #374151;
+    @media (hover: hover) {
+        .close-btn:hover {
+            background: var(--color-border);
+            color: var(--color-text);
+        }
     }
 
     .modal-body {
         flex: 1;
         overflow-y: auto;
         padding: 1.5rem;
+        padding-left: calc(1.5rem + env(safe-area-inset-left));
+        padding-right: calc(1.5rem + env(safe-area-inset-right));
     }
 
     .info-section {
@@ -235,8 +239,8 @@
         margin: 0 0 1rem 0;
         font-size: 1rem;
         font-weight: 600;
-        color: #374151;
-        border-bottom: 1px solid #e5e7eb;
+        color: var(--color-text);
+        border-bottom: 1px solid var(--color-border);
         padding-bottom: 0.5rem;
     }
 
@@ -254,23 +258,23 @@
 
     .info-label {
         font-weight: 500;
-        color: #6b7280;
+        color: var(--color-textSecondary);
     }
 
     .info-value {
-        color: #1f2937;
+        color: var(--color-text);
         word-break: break-word;
     }
 
     .file-path {
         font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
         font-size: 0.875rem;
-        color: #4b5563;
+        color: var(--color-textSecondary);
     }
 
     .array-value {
         font-style: italic;
-        color: #059669;
+        color: var(--color-primary);
     }
 
     .tags-container {
@@ -280,8 +284,8 @@
     }
 
     .tag {
-        background: #dbeafe;
-        color: #1e40af;
+        background: var(--color-primary);
+        color: var(--color-surface);
         padding: 0.25rem 0.75rem;
         border-radius: 9999px;
         font-size: 0.875rem;
@@ -289,21 +293,21 @@
     }
 
     .raw-frontmatter {
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
+        background: var(--color-background);
+        border: 1px solid var(--color-border);
         border-radius: 6px;
         padding: 1rem;
         font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
         font-size: 0.875rem;
-        color: #374151;
+        color: var(--color-text);
         overflow-x: auto;
         margin: 0;
     }
 
     .modal-footer {
         padding: 1.5rem;
-        border-top: 1px solid #e5e7eb;
-        background: #f9fafb;
+        border-top: 1px solid var(--color-border);
+        background: var(--color-background);
     }
 
     .btn {
@@ -317,14 +321,16 @@
     }
 
     .btn-secondary {
-        background: white;
-        color: #374151;
-        border-color: #d1d5db;
+        background: var(--color-surface);
+        color: var(--color-text);
+        border-color: var(--color-border);
     }
 
-    .btn-secondary:hover {
-        background: #f9fafb;
-        border-color: #9ca3af;
+    @media (hover: hover) {
+        .btn-secondary:hover {
+            background: var(--color-background);
+            border-color: var(--color-textSecondary);
+        }
     }
 
     /* Mobile responsiveness */
@@ -338,6 +344,7 @@
             border-radius: 0;
             width: 100%;
             height: 100%;
+            background: var(--color-surface);
         }
 
         .info-item {
@@ -353,9 +360,18 @@
             padding: 1rem;
         }
 
-        .modal-header,
+        .modal-header {
+            padding-top: calc(1rem + env(safe-area-inset-top));
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            padding-bottom: 1rem;
+        }
+
         .modal-footer {
-            padding: 1rem;
+            padding-top: 1rem;
+            padding-left: calc(1rem + env(safe-area-inset-left));
+            padding-right: calc(1rem + env(safe-area-inset-right));
+            padding-bottom: calc(1rem + env(safe-area-inset-bottom));
         }
     }
 </style>

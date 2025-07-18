@@ -191,7 +191,7 @@
   }
 
   .modal-content {
-    background: white;
+    background: var(--color-surface);
     border-radius: 12px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     width: 90%;
@@ -205,21 +205,21 @@
     justify-content: space-between;
     align-items: center;
     padding: 1.5rem;
-    border-bottom: 1px solid #e5e7eb;
-    background: #f9fafb;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-background);
   }
 
   .modal-title {
     margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--color-text);
   }
 
   .close-btn {
     background: none;
     border: none;
-    color: #6b7280;
+    color: var(--color-textSecondary);
     font-size: 1.25rem;
     cursor: pointer;
     padding: 0.25rem;
@@ -228,8 +228,8 @@
   }
 
   .close-btn:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--color-border);
+    color: var(--color-text);
   }
 
   .modal-body {
@@ -238,7 +238,7 @@
 
   .unlock-description {
     margin: 0 0 1rem 0;
-    color: #374151;
+    color: var(--color-text);
     line-height: 1.5;
   }
 
@@ -249,7 +249,7 @@
   .batch-password-input {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     font-size: 0.875rem;
     outline: none;
@@ -258,13 +258,13 @@
   }
 
   .batch-password-input:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-shadow);
   }
 
   .batch-password-input:disabled {
-    background: #f9fafb;
-    color: #9ca3af;
+    background: var(--color-background);
+    color: var(--color-textSecondary);
     cursor: not-allowed;
   }
 
@@ -304,8 +304,8 @@
     justify-content: flex-end;
     gap: 0.75rem;
     padding: 1.5rem;
-    border-top: 1px solid #e5e7eb;
-    background: #f9fafb;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-background);
   }
 
   .btn {
@@ -325,28 +325,28 @@
   }
 
   .btn-secondary {
-    background: white;
-    color: #374151;
-    border-color: #d1d5db;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-color: var(--color-border);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
+    background: var(--color-background);
+    border-color: var(--color-textSecondary);
   }
 
   .btn-primary {
-    background: #3b82f6;
+    background: var(--color-primary);
     color: white;
-    border-color: #3b82f6;
+    border-color: var(--color-primary);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: #2563eb;
-    border-color: #2563eb;
+    background: var(--color-primaryHover);
+    border-color: var(--color-primaryHover);
   }
 
   .btn-primary:focus {
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px var(--color-primary-shadow);
   }
 </style>
