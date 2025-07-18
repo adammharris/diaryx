@@ -4,6 +4,7 @@
     import { passwordStore } from '../stores/password.js';
     import { isEncrypted, encrypt } from '../utils/crypto.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
+    import InfoModal from './InfoModal.svelte';
 
     interface Props {
         entryId: string | null;
@@ -28,6 +29,7 @@
     let isSaving = $state(false);
     let isLoading = $state(false);
     let isEncryptionEnabled = $state(false);
+    let showInfo = $state(false);
     
     // Mobile detection
     let isMobile = $state(false);
@@ -329,6 +331,14 @@
             setTimeout(() => scrollToCursor(), 50);
         }
     }
+
+    function handleShowInfo() {
+        showInfo = true;
+    }
+
+    function handleCloseInfo() {
+        showInfo = false;
+    }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -379,6 +389,13 @@
                     {:else}
                         <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Plain text" />
                     {/if}
+                </button>
+                <button 
+                    class="btn btn-info"
+                    onclick={handleShowInfo}
+                    title="Entry information and metadata"
+                >
+                    <img src="/src/lib/icons/material-symbols--info.svg" class="icon" alt="Info" />
                 </button>
                 <button 
                     class="btn btn-secondary"
@@ -443,6 +460,13 @@
         <p>Select an entry to start editing</p>
     </div>
 {/if}
+
+<!-- Info Modal -->
+<InfoModal 
+    entry={entry}
+    isVisible={showInfo}
+    onclose={handleCloseInfo}
+/>
 
 
 <style>
@@ -586,6 +610,19 @@
     .btn-encryption.enabled:hover {
         background: #fde68a;
         border-color: #f59e0b;
+    }
+
+    .btn-info {
+        background: #f3f4f6;
+        color: #6b7280;
+        border-color: #d1d5db;
+        transition: all 0.2s ease;
+    }
+
+    .btn-info:hover {
+        background: #e5e7eb;
+        color: #374151;
+        border-color: #9ca3af;
     }
 
     .editor-content-area {

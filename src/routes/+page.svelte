@@ -10,9 +10,6 @@
   import { detectTauri } from '../lib/utils/tauri.js';
   import { isEncrypted } from '../lib/utils/crypto.js';
   import { passwordStore } from '../lib/stores/password.js';
-  import { PreviewService } from '../lib/storage/preview.service.js';
-  import { TitleService } from '../lib/storage/title.service.js';
-  import { metadataStore } from '../lib/stores/metadata.js';
   import { isKeyboardVisible, keyboardHeight } from '../lib/stores/keyboard.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
