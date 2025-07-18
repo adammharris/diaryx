@@ -582,7 +582,7 @@
               aria-label="Batch unlock encrypted entries"
               title="Unlock All Encrypted Entries"
             >
-              <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
+              <img src="/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
             </button>
             <button 
               class="settings-btn"
@@ -590,7 +590,7 @@
               aria-label="Open settings"
               title="Settings"
             >
-              <img src="/src/lib/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
+              <img src="/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
             </button>
           </div>
         </div>
@@ -680,7 +680,7 @@
             aria-label="Batch unlock encrypted entries"
             title="Unlock All Encrypted Entries"
           >
-            <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
+            <img src="/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
           </button>
           <button 
             class="settings-btn"
@@ -688,7 +688,7 @@
             aria-label="Open settings"
             title="Settings"
           >
-            <img src="/src/lib/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
+            <img src="/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
           </button>
         </div>
       </div>

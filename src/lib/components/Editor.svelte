@@ -406,9 +406,9 @@
                     title={isEncryptionEnabled ? 'Encryption enabled' : 'Enable encryption'}
                 >
                     {#if isEncryptionEnabled}
-                        <img src="/src/lib/icons/material-symbols--lock.svg" class="icon" alt="Encrypted" />
+                        <img src="/icons/material-symbols--lock.svg" class="icon" alt="Encrypted" />
                     {:else}
-                        <img src="/src/lib/icons/material-symbols--lock-open-right.svg" class="icon" alt="Plain text" />
+                        <img src="/icons/material-symbols--lock-open-right.svg" class="icon" alt="Plain text" />
                     {/if}
                 </button>
                 <button 
@@ -416,7 +416,7 @@
                     onclick={handleShowInfo}
                     title="Entry information and metadata"
                 >
-                    <img src="/src/lib/icons/material-symbols--info.svg" class="icon" alt="Info" />
+                    <img src="/icons/material-symbols--info.svg" class="icon" alt="Info" />
                 </button>
                 <button 
                     class="btn btn-secondary"
@@ -453,10 +453,10 @@
         <div class="editor-status" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
             <span class="encryption-status">
                 {#if isEncryptionEnabled}
-                    <img src="/src/lib/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
+                    <img src="/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
                     Encrypted
                 {:else}
-                    <img src="/src/lib/icons/material-symbols--edit-note.svg" class="status-icon" alt="Plain text" />
+                    <img src="/icons/material-symbols--edit-note.svg" class="status-icon" alt="Plain text" />
                     Plain text
                 {/if}
             </span>
@@ -665,6 +665,7 @@
         font-size: 0.9rem;
         line-height: 1.6;
         color: var(--color-text);
+        background: var(--color-surface);
         box-sizing: border-box;
     }
 
@@ -876,7 +877,7 @@
             border: none;
             outline: none;
             resize: none;
-            background: transparent;
+            background: var(--color-surface);
             box-sizing: border-box;
             overflow-y: auto;
         }
