@@ -27,7 +27,7 @@ import { encryptionService } from './encryption';
 import { metadataStore } from '../stores/metadata';
 
 class StorageService {
-	private environment: StorageEnvironment;
+	public environment: StorageEnvironment;
 	private db: IDBPDatabase<DBSchema> | null = null;
 	private readonly dbName = 'diaryx-journal';
 	private readonly dbVersion = 1;
@@ -46,6 +46,17 @@ class StorageService {
 		encryptionService.setMetadataUpdateCallback((entryId: string, decryptedContent: string) => {
 			this.updateDecryptedTitle(entryId, decryptedContent);
 		});
+	}
+
+	public getJournalPath(): string {
+		if (this.environment === 'tauri') {
+			// In Tauri, the journal folder is relative to the user's documents directory
+			// We can't get the absolute path directly here without another Tauri API call
+			// For now, return a user-friendly representation
+			return `~/Documents/${this.journalFolder}/`;
+		} else {
+			return 'N/A (Web Browser)';
+		}
 	}
 
 	private detectEnvironment(): StorageEnvironment {

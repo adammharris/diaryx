@@ -1,22 +1,21 @@
 <script lang="ts">
     import { currentTheme, themes, setTheme } from '../stores/theme.js';
-    
+    import { whichTauri } from '../utils/tauri.js';
 
     interface Props {
-    storageService: any; // The storage service instance
-    onclose: () => void;
-  }
+        storageService: any; // The storage service instance
+        onclose: () => void;
+    }
 
     let { storageService, onclose }: Props = $props();
 
     let selectedTheme = $state($currentTheme);
-    let isTauri = $state(false);
+    let platform = $state('');
     let isMobile = $state(false);
 
     // Initialize detection when component mounts
     $effect(() => {
-        // Get initial detection
-        isTauri = storageService.isRunningInTauri;
+        platform = whichTauri();
         
         // Mobile detection
         const checkMobile = () => {
@@ -123,10 +122,21 @@
                     Diaryx - Personal Journal<br>
                     A beautiful journaling app built with Tauri and Svelte.<br>
                     <br>
-                    <strong>Mode:</strong> {isTauri ? 'Desktop (Tauri)' : 'Web Browser'}<br>
-                    <strong>Storage:</strong> {isTauri ? 'Files + IndexedDB Cache' : 'IndexedDB only'}<br>
-                    {#if isTauri}
-                        <strong>Location:</strong> ~/Documents/Diaryx/
+                    <strong>Mode:</strong>
+                    {#if platform === 'web'}
+                        Web Browser
+                    {:else if platform === 'android'}
+                        Mobile — Android
+                    {:else if platform === 'ios'}
+                        Mobile — iOS
+                    {:else if platform}
+                        Desktop — {platform}
+                    {:else}
+                        Unknown
+                    {/if}<br>
+                    <strong>Storage:</strong> {platform === 'web' ? 'IndexedDB Only' : 'Files + IndexedDB Cache'}<br>
+                    {#if platform !== 'web'}
+                        <strong>Location:</strong> {storageService.getJournalPath()}<br>
                     {:else}
                         <em>Note: In web mode, entries are stored locally in your browser's database.</em>
                     {/if}
