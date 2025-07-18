@@ -1,6 +1,12 @@
 <script lang="ts">
-    import { type JournalEntry } from '../storage/index';
-    import { FrontmatterService, type ParsedContent } from '../storage/frontmatter.service';
+    import { type JournalEntry } from "../storage/index";
+    import {
+        FrontmatterService,
+        type ParsedContent,
+    } from "../storage/frontmatter.service";
+    import { detectTauri } from '../utils/tauri.js';
+    import { save } from '@tauri-apps/plugin-dialog';
+    import { writeTextFile } from '@tauri-apps/plugin-fs';
 
     interface Props {
         entry: JournalEntry | null;
@@ -11,12 +17,16 @@
     let { entry, isVisible, onclose }: Props = $props();
 
     // Parse frontmatter when entry changes - compute values directly
-    let parsedContent = $derived(entry ? FrontmatterService.parseContent(entry.content) : null);
+    let parsedContent = $derived(
+        entry ? FrontmatterService.parseContent(entry.content) : null,
+    );
 
     let wordCount = $derived.by(() => {
         if (!parsedContent) return 0;
         const contentOnly = parsedContent.content.trim();
-        return contentOnly ? contentOnly.split(/\s+/).filter(w => w.length > 0).length : 0;
+        return contentOnly
+            ? contentOnly.split(/\s+/).filter((w) => w.length > 0).length
+            : 0;
     });
 
     let characterCount = $derived.by(() => {
@@ -25,7 +35,7 @@
     });
 
     function handleClose() {
-        console.log('InfoModal: handleClose called');
+        console.log("InfoModal: handleClose called");
         onclose?.();
     }
 
@@ -36,7 +46,7 @@
     }
 
     function handleKeydown(event: KeyboardEvent) {
-        if (event.key === 'Escape') {
+        if (event.key === "Escape") {
             handleClose();
         }
     }
@@ -54,12 +64,75 @@
         if (!parsedContent) return [];
         return FrontmatterService.extractTags(parsedContent.frontmatter);
     });
+
+    // Export functionality
+    function generateFilename(entry: JournalEntry): string {
+        // Use entry ID as base filename, replace invalid characters
+        const safeId = entry.id.replace(/[^a-zA-Z0-9-_]/g, "-");
+        return `${safeId}.md`;
+    }
+
+    async function exportAsMarkdown() {
+        if (!entry) return;
+
+        const filename = generateFilename(entry);
+        const content = entry.content;
+        const isTauri = detectTauri();
+
+        try {
+            if (isTauri) {
+                // Tauri environment - use save dialog
+                const filePath = await save({
+                    filters: [
+                        {
+                            name: 'Markdown',
+                            extensions: ['md'],
+                        },
+                    ],
+                    defaultPath: filename,
+                });
+
+                if (filePath) {
+                    await writeTextFile(filePath, content);
+                    console.log(`Exported entry "${entry.title}" to ${filePath}`);
+                }
+            } else {
+                // Web environment - use blob download
+                const blob = new Blob([content], {
+                    type: "text/markdown;charset=utf-8",
+                });
+
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = filename;
+
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                URL.revokeObjectURL(url);
+                console.log(`Exported entry "${entry.title}" as ${filename}`);
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            // TODO: Show user-friendly error message
+        }
+    }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 {#if isVisible && entry}
-    <div class="modal-backdrop" role="button" tabindex="0" onclick={handleBackdropClick} onkeydown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') handleBackdropClick(); }}>
+    <div
+        class="modal-backdrop"
+        role="button"
+        tabindex="0"
+        onclick={handleBackdropClick}
+        onkeydown={(e) => {
+            if (e.key === "Escape" || e.key === "Enter") handleBackdropClick();
+        }}
+    >
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title">Entry Information</h2>
@@ -79,15 +152,25 @@
                         </div>
                         <div class="info-item">
                             <span class="info-label">Created:</span>
-                            <span class="info-value">{new Date(entry.created_at).toLocaleString()}</span>
+                            <span class="info-value"
+                                >{new Date(
+                                    entry.created_at,
+                                ).toLocaleString()}</span
+                            >
                         </div>
                         <div class="info-item">
                             <span class="info-label">Modified:</span>
-                            <span class="info-value">{new Date(entry.modified_at).toLocaleString()}</span>
+                            <span class="info-value"
+                                >{new Date(
+                                    entry.modified_at,
+                                ).toLocaleString()}</span
+                            >
                         </div>
                         <div class="info-item">
                             <span class="info-label">File Path:</span>
-                            <span class="info-value file-path">{entry.file_path || 'N/A'}</span>
+                            <span class="info-value file-path"
+                                >{entry.file_path || "N/A"}</span
+                            >
                         </div>
                     </div>
                 </section>
@@ -98,15 +181,23 @@
                     <div class="info-grid">
                         <div class="info-item">
                             <span class="info-label">Word Count:</span>
-                            <span class="info-value">{wordCount.toLocaleString()}</span>
+                            <span class="info-value"
+                                >{wordCount.toLocaleString()}</span
+                            >
                         </div>
                         <div class="info-item">
                             <span class="info-label">Character Count:</span>
-                            <span class="info-value">{characterCount.toLocaleString()}</span>
+                            <span class="info-value"
+                                >{characterCount.toLocaleString()}</span
+                            >
                         </div>
                         <div class="info-item">
                             <span class="info-label">Has Frontmatter:</span>
-                            <span class="info-value">{parsedContent?.hasFrontmatter ? 'Yes' : 'No'}</span>
+                            <span class="info-value"
+                                >{parsedContent?.hasFrontmatter
+                                    ? "Yes"
+                                    : "No"}</span
+                            >
                         </div>
                     </div>
                 </section>
@@ -131,7 +222,11 @@
                             {#each metadataInfo as meta}
                                 <div class="info-item">
                                     <span class="info-label">{meta.key}:</span>
-                                    <span class="info-value" class:array-value={meta.type === 'array'}>
+                                    <span
+                                        class="info-value"
+                                        class:array-value={meta.type ===
+                                            "array"}
+                                    >
                                         {meta.value}
                                     </span>
                                 </div>
@@ -144,15 +239,33 @@
                 {#if parsedContent?.hasFrontmatter && Object.keys(parsedContent.frontmatter).length > 0}
                     <section class="info-section">
                         <h3>Raw Frontmatter</h3>
-                        <pre class="raw-frontmatter">{JSON.stringify(parsedContent.frontmatter, null, 2)}</pre>
+                        <pre class="raw-frontmatter">{JSON.stringify(
+                                parsedContent.frontmatter,
+                                null,
+                                2,
+                            )}</pre>
                     </section>
                 {/if}
             </div>
 
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick={handleClose}>
-                    Close
-                </button>
+                <div class="footer-buttons">
+                    <button
+                        class="btn btn-primary"
+                        onclick={exportAsMarkdown}
+                        title="Export this entry as a Markdown file"
+                    >
+                        <img
+                            src="/static/icons/material-symbols--download.svg"
+                            alt="Export"
+                            class="btn-icon"
+                        />
+                        Export as Markdown
+                    </button>
+                    <button class="btn btn-secondary" onclick={handleClose}>
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -267,7 +380,9 @@
     }
 
     .file-path {
-        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        font-family:
+            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+            "Courier New", monospace;
         font-size: 0.875rem;
         color: var(--color-textSecondary);
     }
@@ -297,7 +412,9 @@
         border: 1px solid var(--color-border);
         border-radius: 6px;
         padding: 1rem;
-        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        font-family:
+            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+            "Courier New", monospace;
         font-size: 0.875rem;
         color: var(--color-text);
         overflow-x: auto;
@@ -310,6 +427,18 @@
         background: var(--color-background);
     }
 
+    .footer-buttons {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+    }
+
+    @media (max-width: 480px) {
+        .footer-buttons {
+            flex-direction: column;
+        }
+    }
+
     .btn {
         padding: 0.5rem 1rem;
         border-radius: 6px;
@@ -318,6 +447,25 @@
         cursor: pointer;
         transition: all 0.2s ease;
         border: 1px solid transparent;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-icon {
+        width: 1rem;
+        height: 1rem;
+        filter: brightness(0) saturate(100%) invert(100%);
+    }
+
+    .btn-primary {
+        background: var(--color-primary);
+        color: var(--color-surface);
+        border-color: var(--color-primary);
+    }
+
+    .btn-primary .btn-icon {
+        filter: brightness(0) saturate(100%) invert(100%);
     }
 
     .btn-secondary {
@@ -326,7 +474,22 @@
         border-color: var(--color-border);
     }
 
+    .btn-secondary .btn-icon {
+        filter: brightness(0) saturate(100%) invert(50%);
+    }
+
     @media (hover: hover) {
+        .btn-primary:hover {
+            background: var(
+                --color-primaryHover,
+                color-mix(in srgb, var(--color-primary) 90%, black)
+            );
+            border-color: var(
+                --color-primaryHover,
+                color-mix(in srgb, var(--color-primary) 90%, black)
+            );
+        }
+
         .btn-secondary:hover {
             background: var(--color-background);
             border-color: var(--color-textSecondary);

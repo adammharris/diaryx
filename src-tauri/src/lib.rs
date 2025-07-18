@@ -13,6 +13,7 @@ pub fn run() {
         {
             // This code path is ONLY used for iOS.
             tauri::Builder::default()
+                .plugin(tauri_plugin_dialog::init())
                 .plugin(tauri_plugin_opener::init())
                 .plugin(tauri_plugin_fs::init())
                 .plugin(tauri_plugin_os::init())
@@ -24,6 +25,7 @@ pub fn run() {
             // This code path is used for all non-iOS targets (e.g., desktop).
             // It never mentions the virtual keyboard plugin.
             tauri::Builder::default()
+                .plugin(tauri_plugin_dialog::init())
                 .plugin(tauri_plugin_opener::init())
                 .plugin(tauri_plugin_fs::init())
                 .plugin(tauri_plugin_os::init())
