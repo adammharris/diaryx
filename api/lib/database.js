@@ -47,14 +47,16 @@ export async function queryWithUser(userId, text, params = []) {
   
   try {
     // Set the current user ID for RLS policies
-    await client.query('SET app.current_user_id = $1', [userId]);
+    // Neon doesn't support parameterized SET statements, so we need to escape and interpolate
+    const escapedUserId = userId.replace(/'/g, "''");
+    await client.query(`SET app.current_user_id = '${escapedUserId}'`);
     
     const result = await client.query(text, params);
     return result;
   } finally {
     // Clear the session variable and release connection
-    // Use DEFAULT instead of NULL to avoid syntax issues with Neon driver
-    await client.query('SET app.current_user_id = DEFAULT');
+    // Set to empty string instead of using RESET which might not work for custom variables
+    await client.query("SET app.current_user_id = ''");
     client.release();
   }
 }
@@ -70,7 +72,9 @@ export async function transactionWithUser(userId, queries) {
     await client.query('BEGIN');
     
     // Set the current user ID for RLS policies
-    await client.query('SET app.current_user_id = $1', [userId]);
+    // Neon doesn't support parameterized SET statements, so we need to escape and interpolate
+    const escapedUserId = userId.replace(/'/g, "''");
+    await client.query(`SET app.current_user_id = '${escapedUserId}'`);
     
     const results = [];
     
@@ -86,8 +90,8 @@ export async function transactionWithUser(userId, queries) {
     throw error;
   } finally {
     // Clear the session variable and release connection
-    // Use DEFAULT instead of NULL to avoid syntax issues with Neon driver
-    await client.query('SET app.current_user_id = DEFAULT');
+    // Set to empty string instead of using RESET which might not work for custom variables
+    await client.query("SET app.current_user_id = ''");
     client.release();
   }
 }
