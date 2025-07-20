@@ -4,7 +4,7 @@
  */
 
 import nacl from 'tweetnacl';
-import { encodeUTF8, decodeUTF8, encodeBase64, decodeBase64 } from 'tweetnacl-util';
+import { decodeUTF8, encodeBase64, decodeBase64 } from 'tweetnacl-util';
 import type { UserKeyPair } from './KeyManager.js';
 
 export interface EntryObject {
@@ -40,7 +40,7 @@ export class EntryCryptor {
     
     // Serialize the entry object to JSON and convert to bytes
     const entryJson = JSON.stringify(entryObject);
-    const entryBytes = encodeUTF8(entryJson);
+    const entryBytes = new TextEncoder().encode(entryJson);
     
     // Generate nonce for content encryption
     const contentNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
@@ -168,7 +168,7 @@ export class EntryCryptor {
    */
   static generateContentHash(entryObject: EntryObject): string {
     const entryJson = JSON.stringify(entryObject);
-    const entryBytes = encodeUTF8(entryJson);
+    const entryBytes = new TextEncoder().encode(entryJson);
     const hash = nacl.hash(entryBytes);
     return encodeBase64(hash);
   }
@@ -177,7 +177,7 @@ export class EntryCryptor {
    * Generate a hash of just the title for indexing
    */
   static generateTitleHash(title: string): string {
-    const titleBytes = encodeUTF8(title);
+    const titleBytes = new TextEncoder().encode(title);
     const hash = nacl.hash(titleBytes);
     return encodeBase64(hash);
   }
@@ -188,7 +188,7 @@ export class EntryCryptor {
    */
   static generatePreviewHash(content: string, previewLength: number = 100): string {
     const preview = content.slice(0, previewLength);
-    const previewBytes = encodeUTF8(preview);
+    const previewBytes = new TextEncoder().encode(preview);
     const hash = nacl.hash(previewBytes);
     return encodeBase64(hash);
   }
@@ -223,7 +223,7 @@ export class EntryCryptor {
    * This is used when we need to encrypt title, content, and frontmatter separately
    */
   static encryptField(fieldValue: string, entryKey: Uint8Array): { encrypted: string; nonce: string } {
-    const fieldBytes = encodeUTF8(fieldValue);
+    const fieldBytes = new TextEncoder().encode(fieldValue);
     const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
     const encrypted = nacl.secretbox(fieldBytes, nonce, entryKey);
     
