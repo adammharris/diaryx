@@ -17,7 +17,7 @@ export default publicEndpoint(async function handler(req, res) {
   }
 
   try {
-    const { code, state } = req.body;
+    const { code, state, redirectUri } = req.body;
 
     if (!code) {
       return res.status(400).json({
@@ -27,7 +27,7 @@ export default publicEndpoint(async function handler(req, res) {
     }
 
     // Exchange authorization code for access token
-    const tokenResponse = await exchangeCodeForTokens(code);
+    const tokenResponse = await exchangeCodeForTokens(code, redirectUri);
     
     if (!tokenResponse.access_token) {
       return res.status(400).json({
@@ -124,10 +124,9 @@ export default publicEndpoint(async function handler(req, res) {
 /**
  * Exchange authorization code for access tokens
  */
-async function exchangeCodeForTokens(code) {
+async function exchangeCodeForTokens(code, redirectUri) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/callback';
 
   if (!clientId || !clientSecret) {
     throw new Error('Google OAuth credentials not configured');

@@ -715,7 +715,7 @@ class StorageService {
 			});
 
 			// Call the API to publish
-			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 			const response = await fetch(`${apiUrl}/api/entries`, {
 				method: 'POST',
 				headers: {
@@ -749,7 +749,7 @@ class StorageService {
 
 		try {
 			// Call the API to unpublish
-			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
 				method: 'PATCH',
 				headers: {
@@ -782,7 +782,7 @@ class StorageService {
 		}
 
 		try {
-			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
 				method: 'GET',
 				headers: {
@@ -819,7 +819,7 @@ class StorageService {
 			}
 
 			// Update the cloud entry
-			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
 				method: 'PATCH',
 				headers: {

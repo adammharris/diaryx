@@ -46,7 +46,7 @@ async function createEntry(req, res) {
       tag_ids = []
     } = req.body;
     
-    // Validate required fields
+    // Validate required fields (NOT NULL in database schema)
     const required = [
       'encrypted_title',
       'encrypted_content', 
@@ -56,12 +56,17 @@ async function createEntry(req, res) {
       'owner_key_nonce'
     ];
     
-    const missing = required.filter(field => !req.body[field]);
+    const missing = required.filter(field => {
+      const value = req.body[field];
+      return !value || value === null || value === undefined || value === '' || value === 'null' || value === 'NULL';
+    });
+    
     if (missing.length > 0) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields',
-        missing
+        error: 'Missing or invalid required fields',
+        missing,
+        note: 'Required fields cannot be null, empty, or the string "null"'
       });
     }
     
@@ -69,7 +74,12 @@ async function createEntry(req, res) {
     
     // Helper function to safely handle null values
     const safeNull = (value) => {
-      if (value === null || value === undefined || value === 'null' || value === 'NULL' || value === 'undefined') {
+      if (value === null || 
+          value === undefined || 
+          value === 'null' || 
+          value === 'NULL' || 
+          value === 'undefined' ||
+          value === '') {
         return null;
       }
       return value;
@@ -91,15 +101,59 @@ async function createEntry(req, res) {
       owner_key_nonce: owner_key_nonce ? 'present' : 'NULL/undefined'
     });
     
-    // Clean all parameters
+    // Clean all parameters - note that some fields are NOT NULL in database
     const cleanParams = [
-      entryId, userId, encrypted_title, encrypted_content, 
-      safeNull(encrypted_frontmatter),
-      JSON.stringify(encryption_metadata), // Convert object to JSON string
-      title_hash, content_preview_hash, is_published, file_path
+      entryId, 
+      userId, 
+      encrypted_title, // NOT NULL in DB - don't apply safeNull
+      encrypted_content, // NOT NULL in DB - don't apply safeNull
+      safeNull(encrypted_frontmatter), // Can be NULL
+      (() => {
+        // encryption_metadata is NOT NULL in DB
+        if (!encryption_metadata) {
+          console.error('encryption_metadata is required but missing');
+          throw new Error('encryption_metadata is required');
+        }
+        try {
+          return JSON.stringify(encryption_metadata);
+        } catch (e) {
+          console.error('Failed to stringify encryption_metadata:', e);
+          throw new Error('Invalid encryption_metadata format');
+        }
+      })(), // Convert object to JSON string, required field
+      title_hash, // NOT NULL in DB - don't apply safeNull
+      safeNull(content_preview_hash), // Can be NULL
+      is_published, 
+      safeNull(file_path) // Can be NULL
     ];
 
     console.log('Cleaned parameters for entries table:', cleanParams.map((p, i) => `$${i+1}: ${p === null ? 'NULL' : typeof p} ${p === null ? '' : '(' + String(p).substring(0, 20) + '...)'}`));
+    
+    // Additional validation to prevent SQL injection or malformed parameters
+    const hasInvalidParams = cleanParams.some((param, index) => {
+      if (typeof param === 'string' && (param.includes('NULL') || param.includes('undefined'))) {
+        console.error(`Invalid parameter at position ${index + 1}: "${param}" - should be actual null value`);
+        return true;
+      }
+      return false;
+    });
+    
+    if (hasInvalidParams) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid parameter values detected'
+      });
+    }
+
+    // Validate parameter count matches SQL placeholders
+    const expectedParamCount = 10; // Number of $1, $2, ... $10 in the SQL
+    if (cleanParams.length !== expectedParamCount) {
+      console.error(`Parameter count mismatch: expected ${expectedParamCount}, got ${cleanParams.length}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal error: parameter count mismatch'
+      });
+    }
 
     // Use transaction to create entry + access key + tag associations
     const queries = [
@@ -122,7 +176,7 @@ async function createEntry(req, res) {
           VALUES ($1, $2, $3, $4)
           RETURNING *
         `,
-        params: [entryId, userId, safeNull(owner_encrypted_entry_key), safeNull(owner_key_nonce)]
+        params: [entryId, userId, owner_encrypted_entry_key, owner_key_nonce] // Both are NOT NULL in DB
       }
     ];
     
