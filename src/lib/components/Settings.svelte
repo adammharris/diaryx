@@ -1,6 +1,8 @@
 <script lang="ts">
     import { currentTheme, themes, setTheme, colorMode } from '../stores/theme.js';
     import { whichTauri } from '../utils/tauri.js';
+    import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
+    import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -12,6 +14,12 @@
     let selectedTheme = $state($currentTheme);
     let platform = $state('');
     let isMobile = $state(false);
+
+    // Auth and E2E state
+    let authSession = $derived($apiAuthStore);
+    let e2eSession = $derived($e2eSessionStore);
+    let isAuthenticated = $derived(!!authSession?.user);
+    let isE2EUnlocked = $derived(e2eSession?.isUnlocked || false);
 
     // Initialize detection when component mounts
     $effect(() => {
@@ -47,6 +55,37 @@
     function handleKeydown(event: KeyboardEvent) {
         if (event.key === 'Escape') {
             handleClose();
+        }
+    }
+
+    // Auth functions
+
+    async function handleSignOut() {
+        try {
+            await apiAuthService.signOut();
+            e2eEncryptionService.logout();
+        } catch (error) {
+            console.error('Sign out failed:', error);
+        }
+    }
+
+    async function handleGoogleSignIn() {
+        try {
+            const session = await apiAuthService.signInWithGoogle();
+            console.log('Signed in successfully:', session.user.email);
+        } catch (error) {
+            console.error('Google sign in failed:', error);
+            alert('Sign in failed. Please try again.');
+        }
+    }
+
+    async function unlockE2E() {
+        const password = prompt('Enter your encryption password:');
+        if (password) {
+            const success = e2eEncryptionService.login(password);
+            if (!success) {
+                alert('Invalid password. Please try again.');
+            }
         }
     }
 </script>
@@ -117,6 +156,76 @@
             </div>
 
             <div class="setting-section">
+                <h3 class="section-title">Account & Sync</h3>
+                <p class="section-description">Manage your account and enable cloud sync with end-to-end encryption</p>
+
+                {#if !isAuthenticated}
+                    <div class="auth-section">
+                        <p class="auth-description">
+                            Sign in to sync your entries across devices with end-to-end encryption.
+                            Your data is encrypted client-side and only you can decrypt it.
+                        </p>
+                        <div class="auth-buttons">
+                            <button class="btn btn-primary" onclick={handleGoogleSignIn}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right: 0.5rem;">
+                                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                </svg>
+                                Sign in with Google
+                            </button>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="user-section">
+                        <div class="user-info">
+                            <div class="user-avatar">
+                                {#if authSession?.user.avatar}
+                                    <img src={authSession.user.avatar} alt="Profile" />
+                                {:else}
+                                    <div class="avatar-fallback">
+                                        {authSession?.user.name?.[0] || authSession?.user.email?.[0] || 'U'}
+                                    </div>
+                                {/if}
+                            </div>
+                            <div class="user-details">
+                                <h4 class="user-name">{authSession?.user.name || 'Anonymous User'}</h4>
+                                <p class="user-email">{authSession?.user.email}</p>
+                                <p class="user-provider">via {authSession?.user.provider || 'Unknown'}</p>
+                            </div>
+                        </div>
+
+                        <div class="encryption-status">
+                            <div class="status-row">
+                                <span class="status-label">Encryption Status:</span>
+                                <span class="status-badge" class:unlocked={isE2EUnlocked}>
+                                    {isE2EUnlocked ? '🔓 Unlocked' : '🔒 Locked'}
+                                </span>
+                            </div>
+                            {#if !isE2EUnlocked && e2eEncryptionService.hasStoredKeys()}
+                                <button class="btn btn-small" onclick={unlockE2E}>
+                                    Unlock Encryption
+                                </button>
+                            {/if}
+                        </div>
+
+                        <div class="sync-info">
+                            <p class="sync-description">
+                                ✅ Cloud sync enabled<br>
+                                🔐 End-to-end encrypted<br>
+                                📱 Available on all your devices
+                            </p>
+                        </div>
+
+                        <button class="btn btn-danger" onclick={handleSignOut}>
+                            Sign Out
+                        </button>
+                    </div>
+                {/if}
+            </div>
+
+            <div class="setting-section">
                 <h3 class="section-title">About</h3>
                 <p class="about-text">
                     Diaryx - Personal Journal<br>
@@ -145,6 +254,7 @@
         </div>
     </div>
 </div>
+
 
 <style>
     .settings-overlay {
@@ -362,5 +472,177 @@
         .theme-grid {
             grid-template-columns: repeat(2, 1fr);
         }
+    }
+
+    /* Auth Section Styles */
+    .auth-section, .user-section {
+        background: var(--color-background, #f8fafc);
+        border-radius: 8px;
+        padding: 1.5rem;
+        border: 1px solid var(--color-border, #e5e7eb);
+    }
+
+    .auth-description {
+        color: var(--color-textSecondary, #6b7280);
+        font-size: 0.875rem;
+        line-height: 1.5;
+        margin: 0 0 1rem 0;
+    }
+
+    .auth-buttons {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: none;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+    }
+
+    .btn-primary {
+        background: var(--color-primary, #3b82f6);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--color-primaryDark, #2563eb);
+    }
+
+    .btn-secondary {
+        background: var(--color-surface, white);
+        color: var(--color-text, #1f2937);
+        border: 1px solid var(--color-border, #e5e7eb);
+    }
+
+    .btn-secondary:hover {
+        background: var(--color-background, #f8fafc);
+    }
+
+    .btn-danger {
+        background: #dc2626;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #b91c1c;
+    }
+
+    .btn-small {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .user-avatar {
+        width: 3rem;
+        height: 3rem;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 2px solid var(--color-border, #e5e7eb);
+    }
+
+    .user-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .avatar-fallback {
+        width: 100%;
+        height: 100%;
+        background: var(--color-primary, #3b82f6);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1.25rem;
+    }
+
+    .user-details {
+        flex: 1;
+    }
+
+    .user-name {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--color-text, #1f2937);
+        margin: 0 0 0.25rem 0;
+    }
+
+    .user-email {
+        font-size: 0.875rem;
+        color: var(--color-textSecondary, #6b7280);
+        margin: 0 0 0.25rem 0;
+    }
+
+    .user-provider {
+        font-size: 0.75rem;
+        color: var(--color-textSecondary, #6b7280);
+        margin: 0;
+    }
+
+    .encryption-status {
+        margin-bottom: 1.5rem;
+        padding: 1rem;
+        background: var(--color-surface, white);
+        border-radius: 6px;
+        border: 1px solid var(--color-border, #e5e7eb);
+    }
+
+    .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+    }
+
+    .status-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--color-text, #1f2937);
+    }
+
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .status-badge.unlocked {
+        background: #dcfce7;
+        color: #166534;
+        border-color: #bbf7d0;
+    }
+
+    .sync-info {
+        margin-bottom: 1.5rem;
+    }
+
+    .sync-description {
+        color: var(--color-textSecondary, #6b7280);
+        font-size: 0.875rem;
+        line-height: 1.5;
+        margin: 0;
     }
 </style>
