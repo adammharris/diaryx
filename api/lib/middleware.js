@@ -31,6 +31,12 @@ export function authenticateUser(req) {
     try {
       const token = authHeader.substring(7);
       const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-here';
+      
+      // Debug logging
+      console.log('Received token (first 50 chars):', token.substring(0, 50) + '...');
+      console.log('JWT secret length:', jwtSecret.length);
+      console.log('Token length:', token.length);
+      
       const decoded = jwt.verify(token, jwtSecret);
       return {
         userId: decoded.userId || decoded.sub,
@@ -39,6 +45,7 @@ export function authenticateUser(req) {
       };
     } catch (error) {
       console.error('JWT verification failed:', error);
+      console.error('Token that failed:', authHeader.substring(0, 100) + '...');
       return { isAuthenticated: false, error: 'Invalid token' };
     }
   }
