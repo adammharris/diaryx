@@ -498,7 +498,7 @@
               aria-label="Open settings"
               title="Settings"
             >
-              <img src="/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
+              <img src="/material-symbols--settings.svg" class="icon" alt="Settings" />
             </button>
           </div>
         </div>
@@ -587,7 +587,7 @@
             aria-label="Open settings"
             title="Settings"
           >
-            <img src="/icons/material-symbols--settings.svg" class="icon" alt="Settings" />
+            <img src="/material-symbols--settings.svg" class="icon" alt="Settings" />
           </button>
         </div>
       </div>

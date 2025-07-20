@@ -256,7 +256,7 @@
                         title="Export this entry as a Markdown file"
                     >
                         <img
-                            src="/static/icons/material-symbols--download.svg"
+                            src="/material-symbols--download.svg"
                             alt="Export"
                             class="btn-icon"
                         />

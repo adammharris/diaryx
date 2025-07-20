@@ -393,9 +393,9 @@
                     disabled={!canPublish}
                 >
                     {#if isPublished}
-                        <img src="/icons/material-symbols--public.svg" class="icon" alt="Published" />
+                        <img src="/material-symbols--public.svg" class="icon" alt="Published" />
                     {:else}
-                        <img src="/icons/material-symbols--draft.svg" class="icon" alt="Draft" />
+                        <img src="/material-symbols--draft.svg" class="icon" alt="Draft" />
                     {/if}
                 </button>
                 <button 
@@ -403,7 +403,7 @@
                     onclick={handleShowInfo}
                     title="Entry information and metadata"
                 >
-                    <img src="/icons/material-symbols--info.svg" class="icon" alt="Info" />
+                    <img src="/material-symbols--info.svg" class="icon" alt="Info" />
                 </button>
                 <button 
                     class="btn btn-secondary"
@@ -441,17 +441,17 @@
             <span class="publish-status">
                 {#if canPublish}
                     {#if isPublished}
-                        <img src="/icons/material-symbols--public.svg" class="status-icon" alt="Published" />
+                        <img src="/material-symbols--public.svg" class="status-icon" alt="Published" />
                         Published
                     {:else}
-                        <img src="/icons/material-symbols--draft.svg" class="status-icon" alt="Draft" />
+                        <img src="/material-symbols--draft.svg" class="status-icon" alt="Draft" />
                         Draft
                     {/if}
                 {:else if apiAuthService.isAuthenticated()}
-                    <img src="/icons/material-symbols--lock.svg" class="status-icon" alt="Encryption locked" />
+                    <img src="/material-symbols--lock.svg" class="status-icon" alt="Encryption locked" />
                     Encryption locked
                 {:else}
-                    <img src="/icons/material-symbols--edit-note.svg" class="status-icon" alt="Local only" />
+                    <img src="/material-symbols--edit-note.svg" class="status-icon" alt="Local only" />
                     Local only
                 {/if}
             </span>

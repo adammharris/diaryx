@@ -128,9 +128,9 @@
     <div class="entry-meta">
         <div class="entry-date-with-icon">
             {#if encryptionState() === 'locked'}
-                <img src="/icons/material-symbols--lock.svg" class="lock-icon locked" alt="Locked" title="This entry is encrypted and locked" />
+                <img src="/material-symbols--lock.svg" class="lock-icon locked" alt="Locked" title="This entry is encrypted and locked" />
             {:else if encryptionState() === 'unlocked'}
-                <img src="/icons/material-symbols--lock-open-right.svg" class="lock-icon unlocked" alt="Unlocked" title="This entry is encrypted but unlocked" />
+                <img src="/material-symbols--lock-open-right.svg" class="lock-icon unlocked" alt="Unlocked" title="This entry is encrypted but unlocked" />
             {/if}
             <span class="entry-date">{formatDate(currentEntry().modified_at)}</span>
         </div>
