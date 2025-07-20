@@ -159,17 +159,40 @@ async function createEntry(req, res) {
       });
     }
 
+    // Log the exact SQL query that will be executed
+    const insertQuery = `
+      INSERT INTO entries (
+        id, author_id, encrypted_title, encrypted_content, encrypted_frontmatter,
+        encryption_metadata, title_hash, content_preview_hash, is_published, file_path
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING *
+    `;
+    
+    console.log('=== SQL QUERY DEBUG ===');
+    console.log('Query:', insertQuery.trim());
+    console.log('Parameters:', cleanParams.map((p, i) => `$${i+1} = ${p === null ? 'NULL' : JSON.stringify(p)}`));
+    console.log('Parameter types:', cleanParams.map((p, i) => `$${i+1}: ${p === null ? 'null' : typeof p}`));
+    
+    // Final parameter validation before execution
+    const invalidParams = cleanParams.map((param, index) => {
+      if (param === undefined) return `$${index + 1}: undefined`;
+      if (typeof param === 'string' && param.trim() === '') {
+        // Check if this is a field that can be empty (only encrypted_frontmatter)
+        if (index !== 4) return `$${index + 1}: empty string (not allowed for this field)`;
+      }
+      return null;
+    }).filter(Boolean);
+    
+    if (invalidParams.length > 0) {
+      console.error('Invalid parameters detected:', invalidParams);
+    }
+    console.log('========================');
+
     // Use transaction to create entry + access key + tag associations
     const queries = [
       // 1. Insert entry
       {
-        text: `
-          INSERT INTO entries (
-            id, author_id, encrypted_title, encrypted_content, encrypted_frontmatter,
-            encryption_metadata, title_hash, content_preview_hash, is_published, file_path
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-          RETURNING *
-        `,
+        text: insertQuery,
         params: cleanParams
       },
       
