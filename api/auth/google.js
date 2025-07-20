@@ -50,20 +50,21 @@ export default publicEndpoint(async function handler(req, res) {
 
     // Create or update user profile
     let user;
-    const existingUser = await getUserByEmail(userInfo.email);
+    const existingUser = await getUserByGoogleId(userInfo.id) || await getUserByEmail(userInfo.email);
     
     if (existingUser) {
       // Update existing user
       user = existingUser;
     } else {
-      // Create new user
+      // Create new user with UUID
       const userData = {
-        id: `google_${userInfo.id}`,
+        id: generateUUID(),
         email: userInfo.email,
         name: userInfo.name,
         avatar_url: userInfo.picture,
         provider: 'google',
-        public_key: publicKey
+        public_key: publicKey,
+        external_id: userInfo.id // Store Google ID separately
       };
       
       user = await insertUserProfile(userData);
@@ -168,10 +169,35 @@ async function getUserByEmail(email) {
 }
 
 /**
+ * Get user by Google ID (helper function)
+ */
+async function getUserByGoogleId(googleId) {
+  try {
+    const { query } = await import('../lib/database.js');
+    const result = await query('SELECT * FROM user_profiles WHERE external_id = $1', [googleId]);
+    return result.rows[0] || null;
+  } catch (error) {
+    console.error('Error getting user by Google ID:', error);
+    return null;
+  }
+}
+
+/**
  * Generate a mock public key (in real app, this would be done client-side)
  */
 function generateMockPublicKey() {
   // In a real implementation, the client would generate the key pair
   // and only send the public key to the server
   return `pk_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+}
+
+/**
+ * Generate a UUID v4
+ */
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
