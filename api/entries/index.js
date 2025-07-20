@@ -45,10 +45,6 @@ async function createEntry(req, res) {
       owner_key_nonce,
       tag_ids = []
     } = req.body;
-
-    if (encrypted_frontmatter == null) {
-      encrypted_frontmatter = '';
-    }
     
     // Validate required fields (NOT NULL in database schema)
     const required = [
