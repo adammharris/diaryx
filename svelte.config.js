@@ -12,8 +12,7 @@ const config = {
   kit: {
     adapter: isVercelBuild 
       ? adapterVercel({
-          // Vercel adapter configuration
-          runtime: 'nodejs18.x'
+          // Vercel adapter configuration - use default runtime
         })
       : adapterStatic({
           // Tauri static adapter configuration
