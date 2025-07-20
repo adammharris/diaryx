@@ -29,13 +29,16 @@ src/
 │   │   ├── Editor.svelte    # Main editor with encryption support
 │   │   ├── EntryCard.svelte # Entry list item component
 │   │   ├── PasswordPrompt.svelte # Password input modal
-│   │   ├── InfoModal.svelte # Entry metadata and frontmatter display
+│   │   ├── InfoModal.svelte # Entry metadata, frontmatter display, and export functionality
 │   │   ├── Settings.svelte  # Application settings
 │   │   ├── BatchUnlock.svelte # Batch password unlock component
 │   │   └── Dialog.svelte    # General purpose dialog component
 │   ├── services/            # Business logic services
 │   │   ├── encryption.ts   # Centralized encryption service with session management
-│   │   └── storage.ts      # Unified storage service with platform detection
+│   │   ├── encryption.test.ts # Comprehensive encryption service tests
+│   │   ├── encryption.reactivity.test.ts # Store reactivity and state management tests
+│   │   ├── storage.ts      # Unified storage service with platform detection
+│   │   └── storage.simple.test.ts # Storage service functionality tests
 │   ├── storage/             # Storage type definitions and utilities
 │   │   ├── index.ts        # Storage exports and types
 │   │   ├── types.ts        # TypeScript interfaces
@@ -105,6 +108,14 @@ The storage system uses a unified service architecture with platform detection:
   ---
   ```
 
+### Export/Import System
+- **Export Functionality**: Individual entry export from InfoModal
+- **File Format**: Standard markdown with YAML frontmatter
+- **Filename Generation**: Sanitized titles with date prefixes for uniqueness
+- **Content Preservation**: Maintains original formatting and metadata
+- **Cross-Platform**: Works in both web (download) and Tauri (save dialog) environments
+- **Future Enhancement**: Bulk export and import functionality planned
+
 ## Development Practices
 
 ### Svelte 5 Patterns
@@ -163,8 +174,11 @@ bun add -d package-name
 
 ### Testing
 ```bash
-# Run tests (check package.json for available scripts)
+# Run all tests
 bun test
+
+# Run tests in watch mode
+bun test:watch
 
 # Type checking
 bun run check
@@ -249,7 +263,8 @@ Required features in `src-tauri/Cargo.toml`:
 ### Potential Improvements
 - Multi-device sync capability
 - Advanced search and filtering
-- Export/import functionality
+- ✅ **Export functionality** (completed - individual entries)
+- Bulk import/export functionality
 - Plugin system for custom themes
 - Backup and restore features
 - Rich text editing support
@@ -273,6 +288,8 @@ Required features in `src-tauri/Cargo.toml`:
 8. **Svelte infinite loops**: Use `$derived.by()` instead of `$effect()` for computed values
 9. **Mobile keyboard detection**: Enable `navigator.virtualKeyboard.overlaysContent = true`
 10. **Uninitialized variable errors**: Don't use `$state()` runes outside component context - use Svelte stores instead
+11. **Test IndexedDB errors**: Tests use proper mocking to prevent `ReferenceError: indexedDB is not defined`
+12. **Export not working**: Verify platform detection and ensure proper file permissions in Tauri mode
 
 ### Debug Tools
 - Browser DevTools for web debugging
@@ -290,11 +307,27 @@ Required features in `src-tauri/Cargo.toml`:
 - **Enhanced UI**: Fixed EntryCard lock/unlock icons and metadata flashing issues
 - **Better Performance**: Optimized file watcher to filter out read-only access events
 
+### Export System Implementation (2025-01-19)
+- **Individual Entry Export**: Added export functionality to InfoModal
+- **Cross-Platform Support**: Works in both web (download) and Tauri (save dialog) environments
+- **Proper Filename Generation**: Sanitized titles with date prefixes for uniqueness
+- **Content Preservation**: Maintains original markdown formatting and YAML frontmatter
+- **User Experience**: Integrated export button with appropriate platform-specific behavior
+
+### Comprehensive Test Coverage (2025-01-19)
+- **66 Test Cases**: Full coverage across encryption, storage, and reactivity systems
+- **Error Scenario Testing**: Comprehensive edge case and failure condition coverage
+- **Store Reactivity Testing**: Real-time state management and UI synchronization validation
+- **Mock Strategy**: Proper mocking of external dependencies (IndexedDB, File System)
+- **Clean Test Output**: Eliminated console errors and warnings for better developer experience
+- **Production Ready**: Tests validate critical security and business logic functionality
+
 ### Code Organization Benefits
 - **Separation of Concerns**: Business logic moved from UI components to dedicated services
 - **Maintainability**: Easier to test and modify encryption behavior
 - **Reusability**: Encryption service can be used across different components
 - **Type Safety**: Better TypeScript interfaces and error handling
+- **Test Coverage**: Comprehensive validation of core functionality and edge cases
 
 ## Contributing Guidelines
 
@@ -306,10 +339,13 @@ Required features in `src-tauri/Cargo.toml`:
 - Use meaningful variable and function names
 
 ### Testing
-- Test both Tauri and web modes
-- Verify encryption/decryption workflows
-- Test file system operations
-- Validate UI responsiveness
+- **Comprehensive Test Suite**: 66 tests covering encryption, storage, and reactivity
+- **Platform Testing**: Test both Tauri and web modes
+- **Security Validation**: Verify encryption/decryption workflows with real cryptography
+- **Error Coverage**: Test edge cases, invalid inputs, and failure scenarios
+- **State Management**: Validate UI reactivity and store synchronization
+- **Mock Strategy**: Proper mocking of external dependencies without affecting core logic
+- **Clean Output**: Tests run without console errors or warnings
 
 ### Package Management
 - Use Bun for all package operations

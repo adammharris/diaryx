@@ -1,0 +1,26 @@
+{
+  "name": "diaryx-api",
+  "version": "1.0.0",
+  "description": "Diaryx Backend API for Vercel",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build step needed'",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.1",
+    "cors": "^2.8.5",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.11.17",
+    "@types/uuid": "^9.0.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
