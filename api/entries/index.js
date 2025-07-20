@@ -95,7 +95,8 @@ async function createEntry(req, res) {
     const cleanParams = [
       entryId, userId, encrypted_title, encrypted_content, 
       safeNull(encrypted_frontmatter),
-      encryption_metadata, title_hash, content_preview_hash, is_published, file_path
+      JSON.stringify(encryption_metadata), // Convert object to JSON string
+      title_hash, content_preview_hash, is_published, file_path
     ];
 
     console.log('Cleaned parameters for entries table:', cleanParams.map((p, i) => `$${i+1}: ${p === null ? 'NULL' : typeof p} ${p === null ? '' : '(' + String(p).substring(0, 20) + '...)'}`));
