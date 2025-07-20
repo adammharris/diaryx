@@ -412,8 +412,8 @@
           });
         } else {
           showDialog({
-            title: 'Publish Failed',
-            message: 'Failed to publish entry. Please try again.',
+            title: 'Publish Failed', 
+            message: 'Failed to publish entry. Make sure you\'re signed in and E2E encryption is unlocked.',
             type: 'error'
           });
         }

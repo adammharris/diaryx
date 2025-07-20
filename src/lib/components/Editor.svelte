@@ -2,6 +2,7 @@
         import SvelteMarkdown from 'svelte-markdown';
     import type { JournalEntry } from '../storage/types';
     import { apiAuthService } from '../services/api-auth.service.js';
+    import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
     import InfoModal from './InfoModal.svelte';
 
@@ -38,6 +39,10 @@
     let isMobile = $state(false);
     let textareaFocused = $state(false);
     let textareaElement: HTMLTextAreaElement | null = $state(null);
+    
+    // E2E encryption state
+    let e2eSession = $derived($e2eSessionStore);
+    let canPublish = $derived(apiAuthService.isAuthenticated() && e2eSession?.isUnlocked);
     
     // Simplified: removed complex cache system
 
@@ -245,7 +250,7 @@
 
     function togglePublish() {
         if (!entry || !entryId) return;
-        if (!apiAuthService.isAuthenticated()) return;
+        if (!canPublish) return;
         
         const newPublishState = !isPublished;
         isPublished = newPublishState;
@@ -384,8 +389,8 @@
                     class="btn btn-publish"
                     class:published={isPublished}
                     onclick={togglePublish}
-                    title={isPublished ? 'Published - Click to unpublish' : 'Draft - Click to publish'}
-                    disabled={!apiAuthService.isAuthenticated()}
+                    title={isPublished ? 'Published - Click to unpublish' : canPublish ? 'Draft - Click to publish' : 'Sign in and unlock encryption to publish'}
+                    disabled={!canPublish}
                 >
                     {#if isPublished}
                         <img src="/icons/material-symbols--public.svg" class="icon" alt="Published" />
@@ -434,7 +439,7 @@
 
         <div class="editor-status" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
             <span class="publish-status">
-                {#if apiAuthService.isAuthenticated()}
+                {#if canPublish}
                     {#if isPublished}
                         <img src="/icons/material-symbols--public.svg" class="status-icon" alt="Published" />
                         Published
@@ -442,6 +447,9 @@
                         <img src="/icons/material-symbols--draft.svg" class="status-icon" alt="Draft" />
                         Draft
                     {/if}
+                {:else if apiAuthService.isAuthenticated()}
+                    <img src="/icons/material-symbols--lock.svg" class="status-icon" alt="Encryption locked" />
+                    Encryption locked
                 {:else}
                     <img src="/icons/material-symbols--edit-note.svg" class="status-icon" alt="Local only" />
                     Local only

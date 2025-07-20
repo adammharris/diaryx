@@ -26,6 +26,9 @@ import { isEncrypted } from '../utils/crypto';
 import { encryptionService } from './encryption';
 import { metadataStore } from '../stores/metadata';
 import { apiAuthService } from './api-auth.service';
+import { e2eEncryptionService } from './e2e-encryption.service';
+import { FrontmatterService } from '../storage/frontmatter.service';
+import type { EntryObject } from '../crypto/EntryCryptor';
 
 class StorageService {
 	public environment: StorageEnvironment;
@@ -641,11 +644,18 @@ class StorageService {
 	// Cloud sync methods
 
 	/**
-	 * Publish an entry to the cloud
+	 * Publish an entry to the cloud with E2E encryption
 	 */
 	async publishEntry(entryId: string): Promise<boolean> {
 		if (!apiAuthService.isAuthenticated()) {
 			console.error('Cannot publish: user not authenticated');
+			return false;
+		}
+
+		// Check if E2E encryption is available
+		const e2eSession = e2eEncryptionService.getCurrentSession();
+		if (!e2eSession || !e2eSession.isUnlocked) {
+			console.error('Cannot publish: E2E encryption not unlocked');
 			return false;
 		}
 
@@ -657,13 +667,41 @@ class StorageService {
 				return false;
 			}
 
-			// Prepare entry data for API
-			const entryData = {
-				id: entry.id,
+			// Parse frontmatter from content
+			const parsedContent = FrontmatterService.parseContent(entry.content);
+			
+			// Prepare entry object for encryption
+			const entryObject: EntryObject = {
 				title: entry.title,
 				content: entry.content,
-				created_at: entry.created_at,
-				modified_at: entry.modified_at
+				frontmatter: parsedContent.frontmatter,
+				tags: FrontmatterService.extractTags(parsedContent.frontmatter)
+			};
+
+			// Encrypt the entry using E2E encryption service
+			const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
+			if (!encryptedData) {
+				throw new Error('Failed to encrypt entry');
+			}
+
+			// Generate hashes using E2E encryption service
+			const hashes = e2eEncryptionService.generateHashes(entryObject);
+
+			// Get encryption metadata
+			const encryptionMetadata = e2eEncryptionService.createEncryptionMetadata();
+
+			// Prepare API payload according to backend schema
+			const apiPayload = {
+				encrypted_title: encryptedData.encryptedContentB64,
+				encrypted_content: encryptedData.encryptedContentB64,
+				encrypted_frontmatter: parsedContent.hasFrontmatter ? JSON.stringify(parsedContent.frontmatter) : null,
+				encryption_metadata: encryptionMetadata,
+				title_hash: hashes.titleHash,
+				content_preview_hash: hashes.previewHash,
+				is_published: true,
+				file_path: entry.file_path || `${entryId}.md`,
+				owner_encrypted_entry_key: encryptedData.encryptedEntryKeyB64,
+				owner_key_nonce: encryptedData.keyNonceB64
 			};
 
 			// Call the API to publish
@@ -674,14 +712,12 @@ class StorageService {
 					'Content-Type': 'application/json',
 					...apiAuthService.getAuthHeaders()
 				},
-				body: JSON.stringify({
-					...entryData,
-					is_published: true
-				})
+				body: JSON.stringify(apiPayload)
 			});
 
 			if (!response.ok) {
-				throw new Error(`Failed to publish entry: ${response.status}`);
+				const errorText = await response.text();
+				throw new Error(`Failed to publish entry: ${response.status} - ${errorText}`);
 			}
 
 			console.log('Entry published successfully:', entryId);
