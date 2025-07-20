@@ -95,7 +95,8 @@ async function createEntry(req, res) {
           RETURNING *
         `,
         params: [
-          entryId, userId, encrypted_title, encrypted_content, encrypted_frontmatter,
+          entryId, userId, encrypted_title, encrypted_content, 
+          encrypted_frontmatter === 'null' ? null : encrypted_frontmatter,
           encryption_metadata, title_hash, content_preview_hash, is_published, file_path
         ]
       },

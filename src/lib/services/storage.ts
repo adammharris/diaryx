@@ -706,6 +706,14 @@ class StorageService {
 				owner_key_nonce: encryptedData.keyNonceB64
 			};
 
+			// Debug: Log the payload before sending
+			console.log('Frontend API payload:', {
+				...apiPayload,
+				encrypted_title: apiPayload.encrypted_title?.substring(0, 50) + '...',
+				encrypted_content: apiPayload.encrypted_content?.substring(0, 50) + '...',
+				owner_encrypted_entry_key: apiPayload.owner_encrypted_entry_key?.substring(0, 50) + '...'
+			});
+
 			// Call the API to publish
 			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
 			const response = await fetch(`${apiUrl}/api/entries`, {
