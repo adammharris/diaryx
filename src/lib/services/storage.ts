@@ -25,6 +25,7 @@ import { TitleService } from '../storage/title.service';
 import { isEncrypted } from '../utils/crypto';
 import { encryptionService } from './encryption';
 import { metadataStore } from '../stores/metadata';
+import { apiAuthService } from './api-auth.service';
 
 class StorageService {
 	public environment: StorageEnvironment;
@@ -635,6 +636,167 @@ class StorageService {
 		};
 
 		return [welcomeEntry, demoEntry];
+	}
+
+	// Cloud sync methods
+
+	/**
+	 * Publish an entry to the cloud
+	 */
+	async publishEntry(entryId: string): Promise<boolean> {
+		if (!apiAuthService.isAuthenticated()) {
+			console.error('Cannot publish: user not authenticated');
+			return false;
+		}
+
+		try {
+			// Get the entry to publish
+			const entry = await this.getEntry(entryId);
+			if (!entry) {
+				console.error('Entry not found:', entryId);
+				return false;
+			}
+
+			// Prepare entry data for API
+			const entryData = {
+				id: entry.id,
+				title: entry.title,
+				content: entry.content,
+				created_at: entry.created_at,
+				modified_at: entry.modified_at
+			};
+
+			// Call the API to publish
+			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const response = await fetch(`${apiUrl}/api/entries`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...apiAuthService.getAuthHeaders()
+				},
+				body: JSON.stringify({
+					...entryData,
+					is_published: true
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to publish entry: ${response.status}`);
+			}
+
+			console.log('Entry published successfully:', entryId);
+			return true;
+		} catch (error) {
+			console.error('Failed to publish entry:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Unpublish an entry from the cloud
+	 */
+	async unpublishEntry(entryId: string): Promise<boolean> {
+		if (!apiAuthService.isAuthenticated()) {
+			console.error('Cannot unpublish: user not authenticated');
+			return false;
+		}
+
+		try {
+			// Call the API to unpublish
+			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					...apiAuthService.getAuthHeaders()
+				},
+				body: JSON.stringify({
+					is_published: false
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to unpublish entry: ${response.status}`);
+			}
+
+			console.log('Entry unpublished successfully:', entryId);
+			return true;
+		} catch (error) {
+			console.error('Failed to unpublish entry:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Get publish status of an entry from the cloud
+	 */
+	async getEntryPublishStatus(entryId: string): Promise<boolean | null> {
+		if (!apiAuthService.isAuthenticated()) {
+			return null;
+		}
+
+		try {
+			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
+				method: 'GET',
+				headers: {
+					...apiAuthService.getAuthHeaders()
+				}
+			});
+
+			if (!response.ok) {
+				// Entry doesn't exist in cloud - not published
+				return false;
+			}
+
+			const data = await response.json();
+			return data.is_published || false;
+		} catch (error) {
+			console.error('Failed to get entry publish status:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Sync an entry to cloud (update existing published entry)
+	 */
+	async syncEntryToCloud(entryId: string): Promise<boolean> {
+		if (!apiAuthService.isAuthenticated()) {
+			return false;
+		}
+
+		try {
+			// Get the local entry
+			const entry = await this.getEntry(entryId);
+			if (!entry) {
+				return false;
+			}
+
+			// Update the cloud entry
+			const apiUrl = import.meta.env.VITE_API_BASE_URL || '';
+			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					...apiAuthService.getAuthHeaders()
+				},
+				body: JSON.stringify({
+					title: entry.title,
+					content: entry.content,
+					modified_at: entry.modified_at
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to sync entry: ${response.status}`);
+			}
+
+			console.log('Entry synced to cloud:', entryId);
+			return true;
+		} catch (error) {
+			console.error('Failed to sync entry to cloud:', error);
+			return false;
+		}
 	}
 }
 

@@ -398,16 +398,51 @@
   async function handlePublishToggle(event: { entryId: string; publish: boolean }) {
     const { entryId, publish } = event;
     
-    if (publish) {
-      // Publishing entry - sync to cloud
-      console.log('Publishing entry:', entryId);
-      // TODO: Implement cloud sync API call
-      // await storageService.publishEntry(entryId);
-    } else {
-      // Unpublishing entry - remove from cloud but keep local
-      console.log('Unpublishing entry:', entryId);
-      // TODO: Implement unpublish API call
-      // await storageService.unpublishEntry(entryId);
+    try {
+      if (publish) {
+        // Publishing entry - sync to cloud
+        console.log('Publishing entry:', entryId);
+        const success = await storageService.publishEntry(entryId);
+        
+        if (success) {
+          showDialog({
+            title: 'Published',
+            message: 'Entry published successfully!',
+            type: 'success'
+          });
+        } else {
+          showDialog({
+            title: 'Publish Failed',
+            message: 'Failed to publish entry. Please try again.',
+            type: 'error'
+          });
+        }
+      } else {
+        // Unpublishing entry - remove from cloud but keep local
+        console.log('Unpublishing entry:', entryId);
+        const success = await storageService.unpublishEntry(entryId);
+        
+        if (success) {
+          showDialog({
+            title: 'Unpublished',
+            message: 'Entry unpublished successfully!',
+            type: 'success'
+          });
+        } else {
+          showDialog({
+            title: 'Unpublish Failed',
+            message: 'Failed to unpublish entry. Please try again.',
+            type: 'error'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Publish toggle error:', error);
+      showDialog({
+        title: 'Error',
+        message: 'An error occurred. Please try again.',
+        type: 'error'
+      });
     }
   }
 

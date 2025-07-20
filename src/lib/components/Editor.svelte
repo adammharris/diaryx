@@ -101,8 +101,15 @@
             entry = preloadedEntry;
             editableTitle = preloadedEntry.title;
             content = preloadedEntry.content;
-            // TODO: Get publish status from cloud API
-            isPublished = false; // Default to draft
+            
+            // Get publish status from cloud API if authenticated
+            if (apiAuthService.isAuthenticated()) {
+                const publishStatus = await storageService.getEntryPublishStatus(entryId);
+                isPublished = publishStatus || false;
+            } else {
+                isPublished = false;
+            }
+            
             isLoading = false;
             return;
         }
@@ -118,8 +125,13 @@
             editableTitle = rawEntry.title;
             content = rawEntry.content;
             
-            // TODO: Get publish status from cloud API when authenticated
-            isPublished = false; // Default to draft
+            // Get publish status from cloud API when authenticated
+            if (apiAuthService.isAuthenticated()) {
+                const publishStatus = await storageService.getEntryPublishStatus(entryId);
+                isPublished = publishStatus || false;
+            } else {
+                isPublished = false;
+            }
         } catch (error) {
             console.error('Failed to load entry:', error);
         } finally {
@@ -141,7 +153,10 @@
                 lastSavedContent = content;
                 saveStatus = 'saved';
                 
-                // TODO: If authenticated and published, sync to cloud
+                // If authenticated and published, sync changes to cloud
+                if (apiAuthService.isAuthenticated() && isPublished) {
+                    await storageService.syncEntryToCloud(entry.id);
+                }
                 
                 return true;
             } else {
