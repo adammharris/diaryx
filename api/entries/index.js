@@ -108,7 +108,7 @@ async function createEntry(req, res) {
       encrypted_title, // NOT NULL in DB
       encrypted_content, // NOT NULL in DB
       safeNull(encrypted_frontmatter), // Can be NULL in DB
-      encryption_metadata, // NOT NULL in DB
+      JSON.stringify(encryption_metadata), // NOT NULL in DB - must be JSON string
       title_hash, // NOT NULL in DB
       safeNull(content_preview_hash), // Can be NULL
       is_published, 

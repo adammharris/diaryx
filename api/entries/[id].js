@@ -169,7 +169,7 @@ async function updateEntry(req, res) {
     if (encryption_metadata !== undefined) {
       paramCount++;
       updates.push(`encryption_metadata = $${paramCount}`);
-      values.push(encryption_metadata);
+      values.push(JSON.stringify(encryption_metadata)); // Must be JSON string for PostgreSQL
     }
     
     if (title_hash !== undefined) {
