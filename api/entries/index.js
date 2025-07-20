@@ -32,7 +32,7 @@ export default async function handler(req, res) {
 async function createEntry(req, res) {
   try {
     const userId = req.user.userId;
-    const {
+    let {
       encrypted_title,
       encrypted_content,
       encrypted_frontmatter,
