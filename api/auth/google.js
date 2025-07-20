@@ -3,6 +3,7 @@
  * POST /api/auth/google - Exchange authorization code for user data
  */
 
+import jwt from 'jsonwebtoken';
 import { publicEndpoint } from '../lib/middleware.js';
 import { insertUserProfile, getUserById } from '../lib/database.js';
 
@@ -70,7 +71,21 @@ export default publicEndpoint(async function handler(req, res) {
       user = await insertUserProfile(userData);
     }
 
-    // Return user session data
+    // Generate JWT token for our backend
+    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-here';
+    const jwtToken = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        sub: user.id // Standard JWT subject claim
+      },
+      jwtSecret,
+      { 
+        expiresIn: '24h' // Token expires in 24 hours
+      }
+    );
+
+    // Return user session data with our JWT token
     return res.status(200).json({
       success: true,
       data: {
@@ -82,9 +97,9 @@ export default publicEndpoint(async function handler(req, res) {
           provider: user.provider,
           public_key: user.public_key
         },
-        access_token: tokenResponse.access_token,
+        access_token: jwtToken, // Our JWT token instead of Google's
         refresh_token: tokenResponse.refresh_token,
-        expires_in: tokenResponse.expires_in
+        expires_in: 24 * 60 * 60 // 24 hours in seconds
       }
     });
 
