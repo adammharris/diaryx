@@ -107,7 +107,7 @@ async function createEntry(req, res) {
       userId, 
       encrypted_title, // NOT NULL in DB - don't apply safeNull
       encrypted_content, // NOT NULL in DB - don't apply safeNull
-      safeNull(encrypted_frontmatter), // Can be NULL
+      encrypted_frontmatter, // NOT NULL in DB - don't apply safeNull
       (() => {
         // encryption_metadata is NOT NULL in DB
         if (!encryption_metadata) {
