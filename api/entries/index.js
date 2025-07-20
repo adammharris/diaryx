@@ -91,6 +91,15 @@ async function createEntry(req, res) {
       owner_key_nonce: owner_key_nonce ? 'present' : 'NULL/undefined'
     });
     
+    // Clean all parameters
+    const cleanParams = [
+      entryId, userId, encrypted_title, encrypted_content, 
+      safeNull(encrypted_frontmatter),
+      encryption_metadata, title_hash, content_preview_hash, is_published, file_path
+    ];
+
+    console.log('Cleaned parameters for entries table:', cleanParams.map((p, i) => `$${i+1}: ${p === null ? 'NULL' : typeof p} ${p === null ? '' : '(' + String(p).substring(0, 20) + '...)'}`));
+
     // Use transaction to create entry + access key + tag associations
     const queries = [
       // 1. Insert entry
@@ -102,11 +111,7 @@ async function createEntry(req, res) {
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           RETURNING *
         `,
-        params: [
-          entryId, userId, encrypted_title, encrypted_content, 
-          safeNull(encrypted_frontmatter),
-          encryption_metadata, title_hash, content_preview_hash, is_published, file_path
-        ]
+        params: cleanParams
       },
       
       // 2. Insert owner's access key
@@ -116,7 +121,7 @@ async function createEntry(req, res) {
           VALUES ($1, $2, $3, $4)
           RETURNING *
         `,
-        params: [entryId, userId, owner_encrypted_entry_key, owner_key_nonce]
+        params: [entryId, userId, safeNull(owner_encrypted_entry_key), safeNull(owner_key_nonce)]
       }
     ];
     

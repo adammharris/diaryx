@@ -127,7 +127,7 @@ export default publicEndpoint(async function handler(req, res) {
 async function exchangeCodeForTokens(code) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:1420/auth/callback';
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/callback';
 
   if (!clientId || !clientSecret) {
     throw new Error('Google OAuth credentials not configured');
