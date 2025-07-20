@@ -54,7 +54,18 @@ export class KeyManager {
     
     // Create a key from the user's password using nacl.hash
     const passwordBytes = encodeUTF8(password);
-    const passwordKey = nacl.hash(passwordBytes).slice(0, nacl.secretbox.keyLength);
+    // Ensure passwordBytes is a Uint8Array for nacl.hash - handle different build environments
+    let passwordBytesArray: Uint8Array;
+    if (passwordBytes instanceof Uint8Array) {
+      passwordBytesArray = passwordBytes;
+    } else if (typeof passwordBytes === 'string') {
+      // In some builds, encodeUTF8 returns a string, convert it manually
+      passwordBytesArray = new TextEncoder().encode(password);
+    } else {
+      // Fallback: assume it's array-like
+      passwordBytesArray = new Uint8Array(passwordBytes);
+    }
+    const passwordKey = nacl.hash(passwordBytesArray).slice(0, nacl.secretbox.keyLength);
     
     // Encrypt the secret key
     const encryptedSecretKey = nacl.secretbox(secretKeyBytes, nonce, passwordKey);
@@ -84,7 +95,18 @@ export class KeyManager {
       
       // Derive the password key (must be exact same method as encryption)
       const passwordBytes = encodeUTF8(password);
-      const passwordKey = nacl.hash(passwordBytes).slice(0, nacl.secretbox.keyLength);
+      // Ensure passwordBytes is a Uint8Array for nacl.hash - handle different build environments
+      let passwordBytesArray: Uint8Array;
+      if (passwordBytes instanceof Uint8Array) {
+        passwordBytesArray = passwordBytes;
+      } else if (typeof passwordBytes === 'string') {
+        // In some builds, encodeUTF8 returns a string, convert it manually
+        passwordBytesArray = new TextEncoder().encode(password);
+      } else {
+        // Fallback: assume it's array-like
+        passwordBytesArray = new Uint8Array(passwordBytes);
+      }
+      const passwordKey = nacl.hash(passwordBytesArray).slice(0, nacl.secretbox.keyLength);
       
       // Decrypt the secret key
       const decryptedSecretKey = nacl.secretbox.open(encryptedSecretKey, nonce, passwordKey);
@@ -130,7 +152,8 @@ export class KeyManager {
   static validateKeyPair(keyPair: UserKeyPair): boolean {
     try {
       // Test encryption/decryption with the key pair
-      const testMessage = encodeUTF8('test message');
+      const testMessageStr = 'test message';
+      const testMessage = new TextEncoder().encode(testMessageStr);
       const testNonce = nacl.randomBytes(nacl.box.nonceLength);
       
       const encrypted = nacl.box(testMessage, testNonce, keyPair.publicKey, keyPair.secretKey);
