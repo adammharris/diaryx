@@ -85,6 +85,7 @@ CREATE TABLE entry_access_keys (
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE NOT NULL,
   encrypted_entry_key TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  key_nonce TEXT NOT NULL,
 
   UNIQUE(entry_id, user_id)
 );

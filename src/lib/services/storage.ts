@@ -691,6 +691,8 @@ class StorageService {
 			const encryptionMetadata = e2eEncryptionService.createEncryptionMetadata();
 
 			// Prepare API payload according to backend schema
+			// Note: We're using the same encrypted content for both title and content for now
+			// In a more sophisticated implementation, we might encrypt them separately
 			const apiPayload = {
 				encrypted_title: encryptedData.encryptedContentB64,
 				encrypted_content: encryptedData.encryptedContentB64,

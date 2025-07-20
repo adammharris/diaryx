@@ -86,11 +86,11 @@ async function createEntry(req, res) {
       // 2. Insert owner's access key
       {
         text: `
-          INSERT INTO entry_access_keys (entry_id, user_id, encrypted_entry_key)
-          VALUES ($1, $2, $3)
+          INSERT INTO entry_access_keys (entry_id, user_id, encrypted_entry_key, key_nonce)
+          VALUES ($1, $2, $3, $4)
           RETURNING *
         `,
-        params: [entryId, userId, owner_encrypted_entry_key]
+        params: [entryId, userId, owner_encrypted_entry_key, owner_key_nonce]
       }
     ];
     
@@ -130,6 +130,7 @@ async function createEntry(req, res) {
           entry_id: accessKey.entry_id,
           user_id: accessKey.user_id,
           encrypted_entry_key: accessKey.encrypted_entry_key,
+          key_nonce: accessKey.key_nonce,
           created_at: accessKey.created_at
         }
       }
@@ -207,6 +208,7 @@ async function listEntries(req, res) {
       SELECT 
         e.*,
         eak.encrypted_entry_key,
+        eak.key_nonce,
         eak.created_at as access_granted_at,
         up.name as author_name,
         up.username as author_username,
@@ -258,6 +260,7 @@ async function listEntries(req, res) {
         updated_at: entry.updated_at,
         access_key: entry.encrypted_entry_key ? {
           encrypted_entry_key: entry.encrypted_entry_key,
+          key_nonce: entry.key_nonce,
           granted_at: entry.access_granted_at
         } : null,
         author: {

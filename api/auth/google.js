@@ -85,15 +85,9 @@ export default publicEndpoint(async function handler(req, res) {
       }
     );
 
-    // Debug logging
-    console.log('Generated JWT token:', jwtToken.substring(0, 50) + '...');
-    console.log('JWT secret length:', jwtSecret.length);
-    console.log('User ID:', user.id);
-    
     // Verify the token we just created to make sure it's valid
     try {
-      const testDecoded = jwt.verify(jwtToken, jwtSecret);
-      console.log('JWT verification test passed:', testDecoded.userId);
+      jwt.verify(jwtToken, jwtSecret);
     } catch (testError) {
       console.error('JWT verification test failed:', testError);
       throw new Error('Generated JWT token is invalid');
