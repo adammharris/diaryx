@@ -52,7 +52,8 @@ async function createEntry(req, res) {
       'encrypted_content', 
       'encryption_metadata',
       'title_hash',
-      'owner_encrypted_entry_key'
+      'owner_encrypted_entry_key',
+      'owner_key_nonce'
     ];
     
     const missing = required.filter(field => !req.body[field]);
@@ -65,6 +66,22 @@ async function createEntry(req, res) {
     }
     
     const entryId = uuidv4();
+    
+    // Debug: Log all parameter values to identify the NULL issue
+    console.log('Entry creation parameters:', {
+      entryId,
+      userId,
+      encrypted_title: encrypted_title ? 'present' : 'NULL/undefined',
+      encrypted_content: encrypted_content ? 'present' : 'NULL/undefined', 
+      encrypted_frontmatter: encrypted_frontmatter === null ? 'NULL' : encrypted_frontmatter ? 'present' : 'undefined',
+      encryption_metadata: encryption_metadata ? 'present' : 'NULL/undefined',
+      title_hash: title_hash ? 'present' : 'NULL/undefined',
+      content_preview_hash: content_preview_hash ? 'present' : 'NULL/undefined',
+      is_published,
+      file_path: file_path ? 'present' : 'NULL/undefined',
+      owner_encrypted_entry_key: owner_encrypted_entry_key ? 'present' : 'NULL/undefined',
+      owner_key_nonce: owner_key_nonce ? 'present' : 'NULL/undefined'
+    });
     
     // Use transaction to create entry + access key + tag associations
     const queries = [
