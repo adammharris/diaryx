@@ -12,6 +12,7 @@
 -- 1. Create user_profiles table
 CREATE TABLE user_profiles (
   id UUID PRIMARY KEY, -- This ID will come from your external authentication provider
+  external_id TEXT UNIQUE;
   email TEXT,
   name TEXT,
   avatar_url TEXT,

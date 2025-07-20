@@ -5,25 +5,18 @@
   import Editor from '../lib/components/Editor.svelte';
   import Settings from '../lib/components/Settings.svelte';
   import Dialog from '../lib/components/Dialog.svelte';
-  import BatchUnlock from '../lib/components/BatchUnlock.svelte';
-  import PasswordPrompt from '../lib/components/PasswordPrompt.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
-  import { encryptionService } from '../lib/services/encryption.js';
   import { isKeyboardVisible, keyboardHeight } from '../lib/stores/keyboard.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let preloadedEntry: JournalEntry | null = $state(null); // Store preloaded entry to avoid double-loading
-  let preloadedEntryIsDecrypted: boolean = $state(false); // Flag to indicate if preloaded entry is already decrypted
   let selectedEntryId: string | null = $state(null);
   let isLoading = $state(true);
   let searchQuery = $state('');
   let isCreating = $state(false);
   let newEntryTitle = $state('');
   let showSettings = $state(false);
-  let showBatchUnlock = $state(false);
-  let showPasswordPrompt = $state(false);
-  let pendingEntryId: string | null = $state(null);
   let isTauri = $state(false);
   let reloadTimeout: number | null = null;
   let suppressedFiles = $state(new Map<string, { metadata: boolean; data: boolean }>());
@@ -226,7 +219,7 @@
     const entryId = event.id;
     
     try {
-      // Get the full entry to check if it's encrypted
+      // Get the entry
       const entry = await storageService.getEntry(entryId);
       if (!entry) {
         showDialog({
@@ -237,37 +230,13 @@
         return;
       }
 
-      // Check if entry is encrypted
-      if (encryptionService.isContentEncrypted(entry.content)) {
-        // Try to decrypt with cached password first
-        const decryptedEntry = await encryptionService.tryDecryptEntry(entry);
-        
-        if (decryptedEntry) {
-          // Successfully decrypted with cached password - open editor
-          preloadedEntry = decryptedEntry; // Pass decrypted entry to avoid double-loading
-          preloadedEntryIsDecrypted = true; // Mark as already decrypted
-          selectedEntryId = entryId;
-          
-          // On mobile, navigate to editor view
-          if (isMobile) {
-            mobileView = 'editor';
-          }
-        } else {
-          // Need password from user - show password prompt
-          pendingEntryId = entryId;
-          showPasswordPrompt = true;
-          encryptionService.startPrompting(entryId);
-        }
-      } else {
-        // Not encrypted - open editor directly
-        preloadedEntry = entry; // Pass plaintext entry to avoid double-loading
-        preloadedEntryIsDecrypted = false; // Mark as not encrypted
-        selectedEntryId = entryId;
-        
-        // On mobile, navigate to editor view
-        if (isMobile) {
-          mobileView = 'editor';
-        }
+      // Open editor directly (no encryption to handle)
+      preloadedEntry = entry;
+      selectedEntryId = entryId;
+      
+      // On mobile, navigate to editor view
+      if (isMobile) {
+        mobileView = 'editor';
       }
     } catch (error) {
       console.error('Error selecting entry:', error);
@@ -326,7 +295,6 @@
   function handleCloseEditor() {
     selectedEntryId = null;
     preloadedEntry = null; // Clear preloaded entry when editor closes
-    preloadedEntryIsDecrypted = false; // Clear decryption flag
     
     // On mobile, navigate back to entry list
     if (isMobile) {
@@ -338,15 +306,12 @@
     // Add this specific file to suppression list
     suppressedFiles.set(data.id, { metadata: false, data: false });
     
-    // Update the preview for this specific entry if it has a cached password (i.e., it's decrypted)
-    if (encryptionService.hasCachedPassword(data.id)) {
-      // Call storage.updateDecryptedTitle with the NEW content to generate fresh metadata
-      try {
-        await storageService.updateDecryptedTitle(data.id, data.content);
-        console.log('Updated storage metadata for encrypted entry:', data.id);
-      } catch (error) {
-        console.error('Failed to update storage metadata:', error);
-      }
+    // Update metadata for the entry (no encryption to worry about)
+    try {
+      await storageService.updateDecryptedTitle(data.id, data.content);
+      console.log('Updated storage metadata for entry:', data.id);
+    } catch (error) {
+      console.error('Failed to update metadata:', error);
     }
     
     console.log('Entry saved, suppression set for', data.id);
@@ -429,104 +394,20 @@
     }
   }
 
-  function handleOpenBatchUnlock() {
-    showBatchUnlock = true;
-  }
 
-  function handleCloseBatchUnlock() {
-    showBatchUnlock = false;
-  }
-
-  function handleBatchUnlockSuccess(unlockedCount: number) {
-    // No need to manually refresh - metadata store will update automatically
-    // No need for additional dialog - BatchUnlock component already shows success
-    console.log(`Batch unlock completed: ${unlockedCount} entries unlocked`);
-  }
-
-  async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
-    if (!pendingEntryId) return;
+  async function handlePublishToggle(event: { entryId: string; publish: boolean }) {
+    const { entryId, publish } = event;
     
-    const { password } = event.detail;
-    
-    try {
-      const entry = await storageService.getEntry(pendingEntryId);
-      if (!entry) {
-        showPasswordPromptError();
-        return;
-      }
-
-      if (encryptionService.isContentEncrypted(entry.content)) {
-        // Entry is encrypted - try to decrypt for viewing
-        const success = await encryptionService.submitPassword(pendingEntryId, password, entry.content);
-        
-        if (success) {
-          // Password correct - open editor and close prompt
-          // Get the decrypted entry to pass to editor
-          const decryptedEntry = await encryptionService.tryDecryptEntry(entry);
-          if (decryptedEntry) {
-            preloadedEntry = decryptedEntry; // Pass decrypted entry to avoid double-loading
-            preloadedEntryIsDecrypted = true; // Mark as already decrypted
-          }
-          selectedEntryId = pendingEntryId;
-          showPasswordPrompt = false;
-          pendingEntryId = null;
-          encryptionService.endPrompting();
-          
-          // On mobile, navigate to editor view
-          if (isMobile) {
-            mobileView = 'editor';
-          }
-        } else {
-          // Password incorrect - just let the password prompt handle the retry
-          // (it will show the "last attempt failed" indicator)
-        }
-      } else {
-        // Entry is not encrypted - we're setting up encryption
-        // Just cache the password and close prompt
-        encryptionService.cachePassword(pendingEntryId, password);
-        showPasswordPrompt = false;
-        pendingEntryId = null;
-        encryptionService.endPrompting();
-        
-        // The Editor will detect the cached password and enable encryption automatically
-        
-        // Note: The actual encryption will happen when the user saves the content
-        // The Editor will detect the cached password and encrypt on save
-      }
-    } catch (error) {
-      console.error('Password submission error:', error);
-      showPasswordPromptError();
-    }
-  }
-
-  function handlePasswordCancel() {
-    showPasswordPrompt = false;
-    pendingEntryId = null;
-    encryptionService.endPrompting();
-  }
-
-  function showPasswordPromptError() {
-    showPasswordPrompt = false;
-    pendingEntryId = null;
-    encryptionService.endPrompting();
-    showDialog({
-      title: 'Error',
-      message: 'Failed to decrypt entry. Please try again.',
-      type: 'error'
-    });
-  }
-
-  async function handleEncryptionToggle(event: { entryId: string; enable: boolean }) {
-    const { entryId, enable } = event;
-    
-    if (enable) {
-      // Enabling encryption - need password
-      pendingEntryId = entryId;
-      showPasswordPrompt = true;
-      encryptionService.startPrompting(entryId);
+    if (publish) {
+      // Publishing entry - sync to cloud
+      console.log('Publishing entry:', entryId);
+      // TODO: Implement cloud sync API call
+      // await storageService.publishEntry(entryId);
     } else {
-      // Disabling encryption is handled directly in the Editor
-      // No need for additional handling here
+      // Unpublishing entry - remove from cloud but keep local
+      console.log('Unpublishing entry:', entryId);
+      // TODO: Implement unpublish API call
+      // await storageService.unpublishEntry(entryId);
     }
   }
 
@@ -576,14 +457,6 @@
             <p class="app-subtitle">Personal Journal</p>
           </div>
           <div class="header-buttons">
-            <button 
-              class="settings-btn"
-              onclick={handleOpenBatchUnlock}
-              aria-label="Batch unlock encrypted entries"
-              title="Unlock All Encrypted Entries"
-            >
-              <img src="/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
-            </button>
             <button 
               class="settings-btn"
               onclick={handleOpenSettings}
@@ -647,12 +520,11 @@
             {storageService}
             entryId={selectedEntryId}
             preloadedEntry={preloadedEntry}
-            preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
-            onclose={handleCloseEditor}
+              onclose={handleCloseEditor}
 
             onsaved={handleEntrySaved}
             onrenamed={handleEntryRenamed}
-            onencryptiontoggle={handleEncryptionToggle}
+            onpublishtoggle={handlePublishToggle}
             onerror={handleEditorError}
             onkeyboardtoggle={handleKeyboardToggle}
           />
@@ -674,14 +546,6 @@
           <p class="app-subtitle">Personal Journal</p>
         </div>
         <div class="header-buttons">
-          <button 
-            class="settings-btn"
-            onclick={handleOpenBatchUnlock}
-            aria-label="Batch unlock encrypted entries"
-            title="Unlock All Encrypted Entries"
-          >
-            <img src="/icons/material-symbols--lock-open-right.svg" class="icon" alt="Batch unlock" />
-          </button>
           <button 
             class="settings-btn"
             onclick={handleOpenSettings}
@@ -744,11 +608,10 @@
           {storageService}
           entryId={selectedEntryId}
           preloadedEntry={preloadedEntry}
-          preloadedEntryIsDecrypted={preloadedEntryIsDecrypted}
           onclose={handleCloseEditor}
           onsaved={handleEntrySaved}
           onrenamed={handleEntryRenamed}
-          onencryptiontoggle={handleEncryptionToggle}
+          onpublishtoggle={handlePublishToggle}
           onerror={handleEditorError}
           onkeyboardtoggle={handleKeyboardToggle}
         />
@@ -763,25 +626,6 @@
   <Settings {storageService} onclose={handleCloseSettings} />
 {/if}
 
-{#if showBatchUnlock}
-  <BatchUnlock 
-    {storageService}
-    isVisible={showBatchUnlock}
-    entries={entries}
-    onclose={handleCloseBatchUnlock}
-    onunlock={handleBatchUnlockSuccess}
-  />
-{/if}
-
-{#if showPasswordPrompt && pendingEntryId}
-  <PasswordPrompt
-    entryTitle={entries.find(e => e.id === pendingEntryId)?.title || 'Entry'}
-    lastAttemptFailed={encryptionService.lastAttemptFailed}
-    isVisible={showPasswordPrompt}
-    on:submit={handlePasswordSubmit}
-    on:cancel={handlePasswordCancel}
-  />
-{/if}
 
 <Dialog 
   isVisible={dialogState.isVisible}
