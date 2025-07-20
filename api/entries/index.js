@@ -101,15 +101,15 @@ async function createEntry(req, res) {
       owner_key_nonce: owner_key_nonce ? 'present' : 'NULL/undefined'
     });
     
-    // Clean all parameters - note that some fields are NOT NULL in database
+    // Clean all parameters - note which fields can be NULL in database
     const cleanParams = [
       entryId, 
       userId, 
-      encrypted_title, // NOT NULL in DB - don't apply safeNull
-      encrypted_content, // NOT NULL in DB - don't apply safeNull
-      encrypted_frontmatter, // NOT NULL in DB - don't apply safeNull
-      encryption_metadata,
-      title_hash, // NOT NULL in DB - don't apply safeNull
+      encrypted_title, // NOT NULL in DB
+      encrypted_content, // NOT NULL in DB
+      safeNull(encrypted_frontmatter), // Can be NULL in DB
+      encryption_metadata, // NOT NULL in DB
+      title_hash, // NOT NULL in DB
       safeNull(content_preview_hash), // Can be NULL
       is_published, 
       safeNull(file_path) // Can be NULL
@@ -161,7 +161,8 @@ async function createEntry(req, res) {
     const invalidParams = cleanParams.map((param, index) => {
       if (param === undefined) return `$${index + 1}: undefined`;
       if (typeof param === 'string' && param.trim() === '') {
-        // Check if this is a field that can be empty (only encrypted_frontmatter)
+        // Check if this is a field that can be empty (only encrypted_frontmatter when null)
+        if (index === 4 && param === null) return null; // encrypted_frontmatter can be null
         if (index !== 4) return `$${index + 1}: empty string (not allowed for this field)`;
       }
       return null;
