@@ -67,13 +67,21 @@ async function createEntry(req, res) {
     
     const entryId = uuidv4();
     
+    // Helper function to safely handle null values
+    const safeNull = (value) => {
+      if (value === null || value === undefined || value === 'null' || value === 'NULL' || value === 'undefined') {
+        return null;
+      }
+      return value;
+    };
+
     // Debug: Log all parameter values to identify the NULL issue
     console.log('Entry creation parameters:', {
       entryId,
       userId,
       encrypted_title: encrypted_title ? 'present' : 'NULL/undefined',
       encrypted_content: encrypted_content ? 'present' : 'NULL/undefined', 
-      encrypted_frontmatter: encrypted_frontmatter === null ? 'NULL' : encrypted_frontmatter ? 'present' : 'undefined',
+      encrypted_frontmatter: encrypted_frontmatter,
       encryption_metadata: encryption_metadata ? 'present' : 'NULL/undefined',
       title_hash: title_hash ? 'present' : 'NULL/undefined',
       content_preview_hash: content_preview_hash ? 'present' : 'NULL/undefined',
@@ -96,7 +104,7 @@ async function createEntry(req, res) {
         `,
         params: [
           entryId, userId, encrypted_title, encrypted_content, 
-          encrypted_frontmatter === 'null' ? null : encrypted_frontmatter,
+          safeNull(encrypted_frontmatter),
           encryption_metadata, title_hash, content_preview_hash, is_published, file_path
         ]
       },
