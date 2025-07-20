@@ -3,6 +3,7 @@
     import { whichTauri } from '../utils/tauri.js';
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
+    import E2ESetup from './E2ESetup.svelte';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -20,6 +21,10 @@
     let e2eSession = $derived($e2eSessionStore);
     let isAuthenticated = $derived(!!authSession?.user);
     let isE2EUnlocked = $derived(e2eSession?.isUnlocked || false);
+    let hasStoredKeys = $derived(e2eEncryptionService.hasStoredKeys());
+    
+    // E2E Setup modal state
+    let showE2ESetup = $state(false);
 
     // Initialize detection when component mounts
     $effect(() => {
@@ -79,14 +84,17 @@
         }
     }
 
-    async function unlockE2E() {
-        const password = prompt('Enter your encryption password:');
-        if (password) {
-            const success = e2eEncryptionService.login(password);
-            if (!success) {
-                alert('Invalid password. Please try again.');
-            }
-        }
+    function showE2ESetupModal() {
+        showE2ESetup = true;
+    }
+
+    function closeE2ESetupModal() {
+        showE2ESetup = false;
+    }
+
+    function handleE2ESetupComplete() {
+        // Modal will close automatically
+        console.log('E2E encryption setup completed successfully');
     }
 </script>
 
@@ -199,24 +207,53 @@
                         <div class="encryption-status">
                             <div class="status-row">
                                 <span class="status-label">Encryption Status:</span>
-                                <span class="status-badge" class:unlocked={isE2EUnlocked}>
-                                    {isE2EUnlocked ? '🔓 Unlocked' : '🔒 Locked'}
+                                <span class="status-badge" class:unlocked={isE2EUnlocked} class:setup-needed={!hasStoredKeys}>
+                                    {#if !hasStoredKeys}
+                                        ⚠️ Not Set Up
+                                    {:else if isE2EUnlocked}
+                                        🔓 Unlocked
+                                    {:else}
+                                        🔒 Locked
+                                    {/if}
                                 </span>
                             </div>
-                            {#if !isE2EUnlocked && e2eEncryptionService.hasStoredKeys()}
-                                <button class="btn btn-small" onclick={unlockE2E}>
-                                    Unlock Encryption
-                                </button>
+                            
+                            {#if !hasStoredKeys}
+                                <div class="setup-prompt">
+                                    <p class="setup-description">
+                                        Set up end-to-end encryption to securely sync your entries to the cloud.
+                                    </p>
+                                    <button class="btn btn-primary btn-small" onclick={showE2ESetupModal}>
+                                        Set Up Encryption
+                                    </button>
+                                </div>
+                            {:else if !isE2EUnlocked}
+                                <div class="unlock-prompt">
+                                    <p class="unlock-description">
+                                        Your encryption is set up but locked. Unlock it to publish entries.
+                                    </p>
+                                    <button class="btn btn-secondary btn-small" onclick={showE2ESetupModal}>
+                                        Unlock Encryption
+                                    </button>
+                                </div>
+                            {:else}
+                                <div class="encryption-ready">
+                                    <p class="ready-description">
+                                        🎉 Ready to publish encrypted entries to the cloud!
+                                    </p>
+                                </div>
                             {/if}
                         </div>
 
-                        <div class="sync-info">
-                            <p class="sync-description">
-                                ✅ Cloud sync enabled<br>
-                                🔐 End-to-end encrypted<br>
-                                📱 Available on all your devices
-                            </p>
-                        </div>
+                        {#if isE2EUnlocked}
+                            <div class="sync-info">
+                                <p class="sync-description">
+                                    ✅ Cloud sync enabled<br>
+                                    🔐 End-to-end encrypted<br>
+                                    📱 Available on all your devices
+                                </p>
+                            </div>
+                        {/if}
 
                         <button class="btn btn-danger" onclick={handleSignOut}>
                             Sign Out
@@ -254,6 +291,13 @@
         </div>
     </div>
 </div>
+
+{#if showE2ESetup}
+    <E2ESetup 
+        onclose={closeE2ESetupModal}
+        onSetupComplete={handleE2ESetupComplete}
+    />
+{/if}
 
 
 <style>
@@ -635,6 +679,12 @@
         border-color: #bbf7d0;
     }
 
+    .status-badge.setup-needed {
+        background: #fef3cd;
+        color: #92400e;
+        border-color: #fde68a;
+    }
+
     .sync-info {
         margin-bottom: 1.5rem;
     }
@@ -644,5 +694,21 @@
         font-size: 0.875rem;
         line-height: 1.5;
         margin: 0;
+    }
+
+    .setup-prompt, .unlock-prompt, .encryption-ready {
+        margin-top: 0.75rem;
+    }
+
+    .setup-description, .unlock-description, .ready-description {
+        font-size: 0.875rem;
+        color: var(--color-textSecondary, #6b7280);
+        margin: 0 0 0.75rem 0;
+        line-height: 1.4;
+    }
+
+    .ready-description {
+        color: #166534;
+        font-weight: 500;
     }
 </style>
