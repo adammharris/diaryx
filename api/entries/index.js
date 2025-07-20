@@ -112,19 +112,7 @@ async function createEntry(req, res) {
       encrypted_title, // NOT NULL in DB - don't apply safeNull
       encrypted_content, // NOT NULL in DB - don't apply safeNull
       encrypted_frontmatter, // NOT NULL in DB - don't apply safeNull
-      (() => {
-        // encryption_metadata is NOT NULL in DB
-        if (!encryption_metadata) {
-          console.error('encryption_metadata is required but missing');
-          throw new Error('encryption_metadata is required');
-        }
-        try {
-          return JSON.stringify(encryption_metadata);
-        } catch (e) {
-          console.error('Failed to stringify encryption_metadata:', e);
-          throw new Error('Invalid encryption_metadata format');
-        }
-      })(), // Convert object to JSON string, required field
+      encryption_metadata,
       title_hash, // NOT NULL in DB - don't apply safeNull
       safeNull(content_preview_hash), // Can be NULL
       is_published, 
