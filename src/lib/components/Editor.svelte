@@ -1,7 +1,7 @@
 <script lang="ts">
         import SvelteMarkdown from 'svelte-markdown';
     import type { JournalEntry } from '../storage/types';
-    import { encryptionService } from '../services/encryption.js';
+    import { apiAuthService } from '../services/api-auth.service.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
     import InfoModal from './InfoModal.svelte';
 
@@ -9,16 +9,15 @@
         storageService: any; // The storage service instance
         entryId: string | null;
         preloadedEntry?: JournalEntry | null; // Pass pre-loaded entry to avoid double-loading
-        preloadedEntryIsDecrypted?: boolean; // Flag to indicate if preloaded entry is already decrypted
         onclose?: () => void;
         onsaved?: (data: { id: string; content: string }) => void;
         onrenamed?: (data: { oldId: string; newId: string }) => void;
-        onencryptiontoggle?: (data: { entryId: string; enable: boolean }) => void;
+        onpublishtoggle?: (data: { entryId: string; publish: boolean }) => void;
         onerror?: (data: { title: string; message: string }) => void;
         onkeyboardtoggle?: (data: { visible: boolean }) => void;
     }
 
-    let { storageService, entryId, preloadedEntry, preloadedEntryIsDecrypted, onclose, onsaved, onrenamed, onencryptiontoggle, onerror, onkeyboardtoggle }: Props = $props();
+    let { storageService, entryId, preloadedEntry, onclose, onsaved, onrenamed, onpublishtoggle, onerror, onkeyboardtoggle }: Props = $props();
 
 
     let entry: JournalEntry | null = $state(null);
@@ -32,7 +31,7 @@
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     let saveStatus: 'idle' | 'saving' | 'saved' | 'error' = $state('idle');
     const AUTOSAVE_DELAY = 1500; // 1.5 seconds
-    let isEncryptionEnabled = $state(false);
+    let isPublished = $state(false);
     let showInfo = $state(false);
     
     // Mobile detection
@@ -58,7 +57,7 @@
             entry = null;
             content = '';
             editableTitle = '';
-            isEncryptionEnabled = false;
+            isPublished = false;
         }
         
         return () => {
@@ -102,7 +101,8 @@
             entry = preloadedEntry;
             editableTitle = preloadedEntry.title;
             content = preloadedEntry.content;
-            isEncryptionEnabled = preloadedEntryIsDecrypted || encryptionService.hasCachedPassword(entryId);
+            // TODO: Get publish status from cloud API
+            isPublished = false; // Default to draft
             isLoading = false;
             return;
         }
@@ -116,29 +116,10 @@
 
             entry = rawEntry;
             editableTitle = rawEntry.title;
+            content = rawEntry.content;
             
-            if (encryptionService.isContentEncrypted(rawEntry.content)) {
-                isEncryptionEnabled = true;
-                const cachedContent = encryptionService.getCachedDecryptedContent(entryId);
-                
-                if (cachedContent) {
-                    content = cachedContent;
-                } else {
-                    const decryptedEntry = await encryptionService.tryDecryptEntry(rawEntry);
-                    if (decryptedEntry) {
-                        content = decryptedEntry.content;
-                    } else {
-                        onerror?.({
-                            title: 'Decryption Error',
-                            message: 'Unable to decrypt entry. Please try selecting it again.'
-                        });
-                        return;
-                    }
-                }
-            } else {
-                isEncryptionEnabled = encryptionService.hasCachedPassword(entryId);
-                content = rawEntry.content;
-            }
+            // TODO: Get publish status from cloud API when authenticated
+            isPublished = false; // Default to draft
         } catch (error) {
             console.error('Failed to load entry:', error);
         } finally {
@@ -147,34 +128,21 @@
     }
 
     async function saveEntryContent() {
-        if (!entry || !storageService) return false; // Ensure storageService is defined
+        if (!entry || !storageService) return false;
         
         saveStatus = 'saving';
         try {
-            let contentToSave = content;
-            
-            // If encryption is enabled, encrypt the content before saving
-            if (isEncryptionEnabled && entryId) {
-                try {
-                    contentToSave = await encryptionService.encryptEntry({ ...entry, content }, entryId);
-                } catch (error) {
-                    onerror?.({
-                        title: 'Password Required',
-                        message: 'Cannot save encrypted entry without password. Please decrypt the entry first.'
-                    });
-                    saveStatus = 'error';
-                    return false;
-                }
-            }
-            
-            const success = await storageService.saveEntry(entry.id, contentToSave);
+            // Save content as plain text (no encryption)
+            const success = await storageService.saveEntry(entry.id, content);
             if (success) {
-                onsaved?.({ id: entry.id, content: content }); // Pass original decrypted content
-                // Update local entry with the original content (not encrypted)
-                entry.content = content; // Keep the decrypted content for display
+                onsaved?.({ id: entry.id, content: content });
+                entry.content = content;
                 entry.modified_at = new Date().toISOString();
                 lastSavedContent = content;
                 saveStatus = 'saved';
+                
+                // TODO: If authenticated and published, sync to cloud
+                
                 return true;
             } else {
                 onerror?.({
@@ -260,17 +228,15 @@
 
 
 
-    function toggleEncryption() {
+    function togglePublish() {
         if (!entry || !entryId) return;
+        if (!apiAuthService.isAuthenticated()) return;
         
-        if (!isEncryptionEnabled) {
-            // Enabling encryption - delegate to main page
-            onencryptiontoggle?.({ entryId, enable: true });
-        } else {
-            // Disabling encryption - clear password and convert to plain text
-            isEncryptionEnabled = false;
-            encryptionService.clearPassword(entryId);
-        }
+        const newPublishState = !isPublished;
+        isPublished = newPublishState;
+        
+        // Notify parent component to handle cloud sync
+        onpublishtoggle?.({ entryId, publish: newPublishState });
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -400,15 +366,16 @@
             </div>
             <div class="editor-controls">
                 <button 
-                    class="btn btn-encryption"
-                    class:enabled={isEncryptionEnabled}
-                    onclick={toggleEncryption}
-                    title={isEncryptionEnabled ? 'Encryption enabled' : 'Enable encryption'}
+                    class="btn btn-publish"
+                    class:published={isPublished}
+                    onclick={togglePublish}
+                    title={isPublished ? 'Published - Click to unpublish' : 'Draft - Click to publish'}
+                    disabled={!apiAuthService.isAuthenticated()}
                 >
-                    {#if isEncryptionEnabled}
-                        <img src="/icons/material-symbols--lock.svg" class="icon" alt="Encrypted" />
+                    {#if isPublished}
+                        <img src="/icons/material-symbols--public.svg" class="icon" alt="Published" />
                     {:else}
-                        <img src="/icons/material-symbols--lock-open-right.svg" class="icon" alt="Plain text" />
+                        <img src="/icons/material-symbols--draft.svg" class="icon" alt="Draft" />
                     {/if}
                 </button>
                 <button 
@@ -451,13 +418,18 @@
         </div>
 
         <div class="editor-status" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
-            <span class="encryption-status">
-                {#if isEncryptionEnabled}
-                    <img src="/icons/material-symbols--lock.svg" class="status-icon" alt="Encrypted" />
-                    Encrypted
+            <span class="publish-status">
+                {#if apiAuthService.isAuthenticated()}
+                    {#if isPublished}
+                        <img src="/icons/material-symbols--public.svg" class="status-icon" alt="Published" />
+                        Published
+                    {:else}
+                        <img src="/icons/material-symbols--draft.svg" class="status-icon" alt="Draft" />
+                        Draft
+                    {/if}
                 {:else}
-                    <img src="/icons/material-symbols--edit-note.svg" class="status-icon" alt="Plain text" />
-                    Plain text
+                    <img src="/icons/material-symbols--edit-note.svg" class="status-icon" alt="Local only" />
+                    Local only
                 {/if}
             </span>
             <span class="word-count">
@@ -605,30 +577,35 @@
         flex-shrink: 0;
     }
 
-    .btn-encryption {
+    .btn-publish {
         background: var(--color-border);
         color: var(--color-textSecondary);
         border-color: var(--color-border);
         transition: all 0.2s ease;
     }
 
+    .btn-publish:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     @media (hover: hover) {
-        .btn-encryption:hover {
+        .btn-publish:hover:not(:disabled) {
             background: var(--color-textSecondary);
             color: var(--color-text);
         }
     }
 
-    .btn-encryption.enabled {
-        background: var(--color-accent);
-        color: var(--color-primary);
-        border-color: var(--color-accent);
+    .btn-publish.published {
+        background: #10b981;
+        color: white;
+        border-color: #10b981;
     }
 
     @media (hover: hover) {
-        .btn-encryption.enabled:hover {
-            background: var(--color-accent);
-            border-color: var(--color-primary);
+        .btn-publish.published:hover {
+            background: #059669;
+            border-color: #059669;
         }
     }
 
@@ -753,7 +730,7 @@
         flex-shrink: 0;
     }
 
-    .encryption-status {
+    .publish-status {
         font-weight: 500;
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
@@ -769,12 +746,12 @@
         filter: var(--color-icon-filter);
     }
 
-    .btn-encryption .icon {
-        filter: var(--color-icon-filter-encryption);
+    .btn-publish .icon {
+        filter: var(--color-icon-filter);
     }
 
-    .btn-encryption.enabled .icon {
-        filter: var(--color-icon-filter-encryption-enabled);
+    .btn-publish.published .icon {
+        filter: brightness(0) invert(1);
     }
 
     .status-icon {
