@@ -71,19 +71,6 @@ async function createEntry(req, res) {
     }
     
     const entryId = uuidv4();
-    
-    // Helper function to safely handle null values
-    const safeNull = (value) => {
-      if (value === null || 
-          value === undefined || 
-          value === 'null' || 
-          value === 'NULL' || 
-          value === 'undefined' ||
-          value === '') {
-        return null;
-      }
-      return value;
-    };
 
     // Debug: Log all parameter values to identify the NULL issue
     console.log('Entry creation parameters:', {
@@ -107,32 +94,16 @@ async function createEntry(req, res) {
       userId, 
       encrypted_title, // NOT NULL in DB
       encrypted_content, // NOT NULL in DB
-      safeNull(encrypted_frontmatter), // Can be NULL in DB
+      encrypted_frontmatter || null, // Can be NULL in DB
       JSON.stringify(encryption_metadata), // NOT NULL in DB - must be JSON string
       title_hash, // NOT NULL in DB
-      safeNull(content_preview_hash), // Can be NULL
+      content_preview_hash || null, // Can be NULL
       is_published, 
-      safeNull(file_path) // Can be NULL
+      file_path || null // Can be NULL
     ];
 
-    console.log('Cleaned parameters for entries table:', cleanParams.map((p, i) => `$${i+1}: ${p === null ? 'NULL' : typeof p} ${p === null ? '' : '(' + String(p).substring(0, 20) + '...)'}`));
+    console.log('Cleaned parameters for entries table:', cleanParams.map((p, i) => `${i+1}: ${p === null ? 'NULL' : typeof p} ${p === null ? '' : '(' + String(p).substring(0, 20) + '...)'}`));
     
-    // Additional validation to prevent SQL injection or malformed parameters
-    const hasInvalidParams = cleanParams.some((param, index) => {
-      if (typeof param === 'string' && (param.includes('NULL') || param.includes('undefined'))) {
-        console.error(`Invalid parameter at position ${index + 1}: "${param}" - should be actual null value`);
-        return true;
-      }
-      return false;
-    });
-    
-    if (hasInvalidParams) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid parameter values detected'
-      });
-    }
-
     // Validate parameter count matches SQL placeholders
     const expectedParamCount = 10; // Number of $1, $2, ... $10 in the SQL
     if (cleanParams.length !== expectedParamCount) {
@@ -159,11 +130,13 @@ async function createEntry(req, res) {
     
     // Final parameter validation before execution
     const invalidParams = cleanParams.map((param, index) => {
-      if (param === undefined) return `$${index + 1}: undefined`;
-      if (typeof param === 'string' && param.trim() === '') {
-        // Check if this is a field that can be empty (only encrypted_frontmatter when null)
-        if (index === 4 && param === null) return null; // encrypted_frontmatter can be null
-        if (index !== 4) return `$${index + 1}: empty string (not allowed for this field)`;
+      if (param === undefined) return `${index + 1}: undefined`;
+      // Parameters 5 (encrypted_frontmatter), 8 (content_preview_hash), and 10 (file_path) can be null
+      if (param === null && index !== 4 && index !== 7 && index !== 9) {
+        return `${index + 1}: unexpected null`;
+      }
+      if (typeof param === 'string' && param.trim() === '' && index !== 4 && index !== 7 && index !== 9) {
+        return `${index + 1}: empty string (not allowed for this field)`;
       }
       return null;
     }).filter(Boolean);

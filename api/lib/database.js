@@ -53,7 +53,8 @@ export async function queryWithUser(userId, text, params = []) {
     return result;
   } finally {
     // Clear the session variable and release connection
-    await client.query('SET app.current_user_id = NULL');
+    // Use DEFAULT instead of NULL to avoid syntax issues with Neon driver
+    await client.query('SET app.current_user_id = DEFAULT');
     client.release();
   }
 }
@@ -85,7 +86,8 @@ export async function transactionWithUser(userId, queries) {
     throw error;
   } finally {
     // Clear the session variable and release connection
-    await client.query('SET app.current_user_id = NULL');
+    // Use DEFAULT instead of NULL to avoid syntax issues with Neon driver
+    await client.query('SET app.current_user_id = DEFAULT');
     client.release();
   }
 }
@@ -103,17 +105,18 @@ export async function insertUserProfile(userData) {
     provider,
     username,
     display_name,
-    public_key
+    public_key,
+    external_id
   } = userData;
   
   const text = `
     INSERT INTO user_profiles (
-      id, email, name, avatar_url, provider, username, display_name, public_key
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      id, email, name, avatar_url, provider, username, display_name, public_key, external_id
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING *
   `;
   
-  const params = [id, email, name, avatar_url, provider, username, display_name, public_key];
+  const params = [id, email, name, avatar_url, provider, username, display_name, public_key, external_id || null];
   
   // Use regular query (not queryWithUser) since this is admin operation
   const result = await query(text, params);
