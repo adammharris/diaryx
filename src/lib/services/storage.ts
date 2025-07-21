@@ -691,8 +691,11 @@ class StorageService {
 			// Generate hashes using E2E encryption service
 			const hashes = e2eEncryptionService.generateHashes(entryObject);
 
-			// Get encryption metadata
-			const encryptionMetadata = e2eEncryptionService.createEncryptionMetadata();
+			// Get encryption metadata and include the content nonce
+			const encryptionMetadata = {
+				...e2eEncryptionService.createEncryptionMetadata(),
+				contentNonceB64: encryptedData.contentNonceB64
+			};
 
 			// Prepare API payload according to backend schema
 			// Note: We're using the same encrypted content for both title and content for now
@@ -885,8 +888,11 @@ class StorageService {
 			// Generate hashes using E2E encryption service
 			const hashes = e2eEncryptionService.generateHashes(entryObject);
 
-			// Get encryption metadata
-			const encryptionMetadata = e2eEncryptionService.createEncryptionMetadata();
+			// Get encryption metadata and include the content nonce
+			const encryptionMetadata = {
+				...e2eEncryptionService.createEncryptionMetadata(),
+				contentNonceB64: encryptedData.contentNonceB64
+			};
 
 			// Prepare API payload according to backend schema
 			const apiPayload = {
@@ -989,13 +995,38 @@ class StorageService {
 					continue;
 				}
 
+				// Parse encryption metadata to get content nonce
+				let encryptionMetadata;
+				try {
+					encryptionMetadata = typeof cloudEntry.encryption_metadata === 'string' 
+						? JSON.parse(cloudEntry.encryption_metadata) 
+						: cloudEntry.encryption_metadata;
+				} catch (error) {
+					console.log('Failed to parse encryption metadata, skipping:', cloudEntry.id);
+					continue;
+				}
+
+				// Get content nonce from encryption metadata
+				const contentNonceB64 = encryptionMetadata.contentNonceB64;
+				if (!contentNonceB64) {
+					console.log('No content nonce found in encryption metadata, skipping:', cloudEntry.id);
+					continue;
+				}
+
+				// Get author's public key
+				const authorPublicKey = cloudEntry.author?.public_key;
+				if (!authorPublicKey) {
+					console.log('No author public key found, skipping:', cloudEntry.id);
+					continue;
+				}
+
 				// Try to decrypt the entry
 				const decryptedEntry = e2eEncryptionService.decryptEntry({
 					encryptedContentB64: cloudEntry.encrypted_content,
+					contentNonceB64: contentNonceB64,
 					encryptedEntryKeyB64: cloudEntry.access_key.encrypted_entry_key,
-					keyNonceB64: cloudEntry.access_key.key_nonce,
-					encryptionMetadata: cloudEntry.encryption_metadata
-				});
+					keyNonceB64: cloudEntry.access_key.key_nonce
+				}, authorPublicKey);
 
 				if (!decryptedEntry) {
 					console.log('Failed to decrypt entry, skipping:', cloudEntry.id);
@@ -1026,8 +1057,16 @@ class StorageService {
 					await db.put('entries', journalEntry);
 				}
 
-				// Cache the entry metadata
-				await this.cacheEntryMetadata(journalEntry);
+				// Cache the entry metadata  
+				const metadata: JournalEntryMetadata = {
+					id: journalEntry.id,
+					title: journalEntry.title,
+					created_at: journalEntry.created_at,
+					modified_at: journalEntry.modified_at,
+					file_path: journalEntry.file_path,
+					preview: PreviewService.createPreview(journalEntry.content)
+				};
+				await this.cacheMetadata([metadata]);
 
 				// Store the cloud mapping
 				await this.storeCloudMapping(localId, cloudEntry.id);
@@ -1075,8 +1114,7 @@ class StorageService {
 				// Import cloud entries
 				const importedCount = await this.importCloudEntries();
 				if (importedCount > 0) {
-					// Refresh the UI by clearing cache and reloading
-					await this.clearCacheAndRefresh();
+					// Refresh the UI by reloading entries
 					console.log('Post-login sync completed successfully');
 				}
 			} else {
