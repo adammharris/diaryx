@@ -8,6 +8,8 @@ import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { KeyManager, type UserKeyPair, type UserKeyPairB64 } from '../crypto/KeyManager.js';
 import { EntryCryptor, type EntryObject, type EncryptedEntryData } from '../crypto/EntryCryptor.js';
+import nacl from 'tweetnacl';
+import { decodeBase64 } from 'tweetnacl-util';
 
 interface E2ESession {
   userId: string;
@@ -533,6 +535,69 @@ export class E2EEncryptionService {
     } catch (error) {
       console.error('❌ Encryption round-trip test FAILED with error:', error);
       return false;
+    }
+  }
+
+  /**
+   * Debug method: Analyze why a specific encrypted entry fails to decrypt
+   */
+  analyzeFailedDecryption(encryptedData: EncryptedEntryData, authorPublicKeyB64: string): void {
+    if (!this.currentSession || !this.currentSession.isUnlocked) {
+      console.error('Cannot analyze - session not unlocked');
+      return;
+    }
+
+    console.log('=== Failed Decryption Analysis ===');
+    
+    try {
+      // Test if we can decrypt the entry key successfully
+      const authorPublicKey = KeyManager.publicKeyFromB64(authorPublicKeyB64);
+      const encryptedEntryKey = decodeBase64(encryptedData.encryptedEntryKeyB64);
+      const keyNonce = decodeBase64(encryptedData.keyNonceB64);
+      
+      console.log('Testing entry key decryption...');
+      const entryKey = nacl.box.open(encryptedEntryKey, keyNonce, authorPublicKey, this.currentSession.userKeyPair.secretKey);
+      
+      if (!entryKey) {
+        console.error('❌ Entry key decryption failed - this suggests key mismatch');
+        return;
+      }
+      
+      console.log('✅ Entry key decrypted successfully');
+      
+      // Now test if we can create valid test data with the same key
+      console.log('Testing symmetric encryption with recovered entry key...');
+      const testData = 'Test data with recovered key';
+      const testBytes = new TextEncoder().encode(testData);
+      const testNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+      const testEncrypted = nacl.secretbox(testBytes, testNonce, entryKey);
+      const testDecrypted = nacl.secretbox.open(testEncrypted, testNonce, entryKey);
+      
+      if (testDecrypted) {
+        console.log('✅ Symmetric encryption/decryption with recovered key works');
+        console.log('❌ This confirms the original encrypted content is corrupted');
+      } else {
+        console.error('❌ Even fresh symmetric encryption fails with recovered key');
+      }
+      
+      // Compare the failing data format
+      const encryptedContent = decodeBase64(encryptedData.encryptedContentB64);
+      const contentNonce = decodeBase64(encryptedData.contentNonceB64);
+      
+      console.log('Failing data analysis:', {
+        encryptedContentLength: encryptedContent.length,
+        contentNonceLength: contentNonce.length,
+        entryKeyLength: entryKey.length,
+        isValidContentNonce: contentNonce.length === nacl.secretbox.nonceLength,
+        isValidEntryKey: entryKey.length === nacl.secretbox.keyLength,
+        hasMinimumContentLength: encryptedContent.length >= nacl.secretbox.overheadLength
+      });
+      
+      // Clear the entry key
+      KeyManager.clearKey(entryKey);
+      
+    } catch (error) {
+      console.error('Analysis failed:', error);
     }
   }
 
