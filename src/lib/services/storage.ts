@@ -1015,10 +1015,10 @@ class StorageService {
 					content_preview_hash: hashes.previewHash,
 					is_published: true,
 					file_path: entry.file_path || `${entryId}.md`,
-					// Use server timestamp if available, otherwise fall back to local time
-					client_modified_at: lastServerTimestamp || entry.modified_at,
-					// HTTP-style conditional header
-					if_unmodified_since: lastServerTimestamp || entry.modified_at
+					// Send the client's actual modification time for conflict detection
+					client_modified_at: entry.modified_at,
+					// Use last known server timestamp for conditional update
+					if_unmodified_since: lastServerTimestamp
 				};
 
 				// Update the cloud entry

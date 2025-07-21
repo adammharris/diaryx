@@ -225,41 +225,45 @@ async function updateEntry(req, res) {
     const currentEntry = currentEntryResult.rows[0];
     const serverModifiedTime = new Date(currentEntry.updated_at);
     
-    // Conflict detection: Check if client's version is stale
+    // Conflict detection: Check if another client has modified the entry
+    // client_modified_at = when the client last modified this entry locally
+    // serverModifiedTime = when the server last updated this entry
     if (client_modified_at) {
       const clientModifiedTime = new Date(client_modified_at);
       const timeDifferenceMs = serverModifiedTime.getTime() - clientModifiedTime.getTime();
       
-      // Skip conflict detection if timestamps are very close (within 1 second)
-      // This handles the case where client has the latest timestamp but server 
-      // updated it slightly due to the database NOW() function
-      if (Math.abs(timeDifferenceMs) <= 1000) {
-        console.log('Client and server timestamps are very close, skipping conflict check:', {
+      console.log('Conflict detection check:', {
+        entryId: id,
+        serverLastModified: serverModifiedTime.toISOString(),
+        clientLastModified: clientModifiedTime.toISOString(),
+        timeDifferenceMs: timeDifferenceMs,
+        interpretation: timeDifferenceMs > 0 ? 'server newer than client' : 'client newer than server'
+      });
+      
+      // Conflict occurs when server was modified AFTER the client's last modification
+      // This indicates another client/user modified the entry since this client's last change
+      if (timeDifferenceMs > 1000) { // 1 second tolerance for clock skew
+        console.warn('Sync conflict detected - entry modified by another client:', {
           entryId: id,
-          timeDifferenceMs: timeDifferenceMs
-        });
-      } else if (timeDifferenceMs > 0) {
-        // Only conflict if server is significantly newer than client
-        console.warn('Sync conflict detected:', {
-          entryId: id,
-          serverTime: serverModifiedTime.toISOString(),
-          clientTime: clientModifiedTime.toISOString(),
+          serverLastModified: serverModifiedTime.toISOString(),
+          clientLastModified: clientModifiedTime.toISOString(),
           timeDifferenceMs: timeDifferenceMs
         });
         
         return res.status(409).json({
           success: false,
           error: 'Conflict detected',
-          message: 'Entry has been modified by another client',
+          message: 'Entry has been modified by another client since your last change',
           server_modified_at: serverModifiedTime.toISOString(),
           client_modified_at: client_modified_at,
           conflict_type: 'modification_time',
           time_difference_ms: timeDifferenceMs
         });
       } else {
-        console.log('Client timestamp is newer than server, allowing update:', {
+        console.log('No conflict - allowing update:', {
           entryId: id,
-          timeDifferenceMs: timeDifferenceMs
+          timeDifferenceMs: timeDifferenceMs,
+          reason: timeDifferenceMs <= 1000 ? 'within clock skew tolerance' : 'client modification is newer'
         });
       }
     }
