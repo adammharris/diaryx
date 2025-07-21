@@ -212,7 +212,7 @@ async function updateEntry(req, res) {
     }
 
     // First, get current entry state for conflict detection
-    const currentEntryQuery = 'SELECT updated_at, encrypted_content FROM entries WHERE id = $1';
+    const currentEntryQuery = 'SELECT updated_at, updated_at::text as updated_at_string, encrypted_content FROM entries WHERE id = $1';
     const currentEntryResult = await queryWithUser(userId, currentEntryQuery, [id]);
     
     if (currentEntryResult.rows.length === 0) {
@@ -352,12 +352,13 @@ async function updateEntry(req, res) {
       paramCount++;
       paramCount++; // For the WHERE condition timestamp check
       values.push(id);
-      values.push(currentEntry.updated_at); // Use original PostgreSQL timestamp for optimistic locking
+      values.push(currentEntry.updated_at_string); // Use PostgreSQL timestamp string for optimistic locking
       
       console.log('Preparing optimistic locking query:', {
         entryId: id,
-        expectedTimestamp: currentEntry.updated_at,
-        timestampType: typeof currentEntry.updated_at,
+        expectedTimestamp: currentEntry.updated_at_string,
+        timestampType: typeof currentEntry.updated_at_string,
+        originalDateObject: currentEntry.updated_at,
         jsConversion: serverModifiedTime.toISOString()
       });
       
