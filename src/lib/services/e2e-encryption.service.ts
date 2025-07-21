@@ -95,6 +95,10 @@ export class E2EEncryptionService {
       };
       
       this.sessionStore.set(this.currentSession);
+      
+      // Update user profile with public key in the backend
+      this.updateUserPublicKey(userId, keyPair.publicKey);
+      
       return true;
     } catch (error) {
       console.error('Signup completion failed:', error);
@@ -353,6 +357,40 @@ export class E2EEncryptionService {
    */
   getCurrentSession(): E2ESession | null {
     return this.currentSession ? { ...this.currentSession } : null;
+  }
+
+  /**
+   * Update user's public key in the backend database
+   */
+  private async updateUserPublicKey(userId: string, publicKeyB64: string): Promise<void> {
+    try {
+      const { apiAuthService } = await import('./api-auth.service');
+      
+      if (!apiAuthService.isAuthenticated()) {
+        console.log('Cannot update public key: user not authenticated');
+        return;
+      }
+
+      const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${apiUrl}/api/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...apiAuthService.getAuthHeaders()
+        },
+        body: JSON.stringify({
+          public_key: publicKeyB64
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update public key: ${response.status}`);
+      }
+
+      console.log('User public key updated successfully');
+    } catch (error) {
+      console.error('Failed to update user public key:', error);
+    }
   }
 }
 

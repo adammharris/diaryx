@@ -99,7 +99,8 @@ async function updateUser(req, res) {
       username,
       display_name,
       avatar_url,
-      discoverable
+      discoverable,
+      public_key
     } = req.body;
     
     // Build update query dynamically
@@ -135,6 +136,12 @@ async function updateUser(req, res) {
       paramCount++;
       updates.push(`discoverable = $${paramCount}`);
       values.push(discoverable);
+    }
+    
+    if (public_key !== undefined) {
+      paramCount++;
+      updates.push(`public_key = $${paramCount}`);
+      values.push(public_key);
     }
     
     if (updates.length === 0) {
