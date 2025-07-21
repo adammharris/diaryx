@@ -106,6 +106,15 @@
       // Optionally show an error message to the user
     });
 
+    // Listen for entries updates from E2E setup or other components
+    function handleEntriesUpdated(event: CustomEvent) {
+      console.log('Received entries-updated event:', event.detail);
+      // Reload entries to reflect newly imported/decrypted entries
+      loadEntries();
+    }
+
+    window.addEventListener('entries-updated', handleEntriesUpdated as EventListener);
+
     // This will trigger the theme initialization
     currentTheme.set($currentTheme);
     
@@ -118,7 +127,8 @@
     
     // This return is for the outer effect
     return () => {
-      // No cleanup needed for outer effect
+      // Remove event listener on cleanup
+      window.removeEventListener('entries-updated', handleEntriesUpdated as EventListener);
     };
   });
 

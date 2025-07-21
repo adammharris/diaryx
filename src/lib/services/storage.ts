@@ -1270,7 +1270,7 @@ class StorageService {
 	/**
 	 * Sync after login - import cloud entries if any exist
 	 */
-	async syncAfterLogin(): Promise<void> {
+	async syncAfterLogin(): Promise<number> {
 		try {
 			console.log('Performing post-login sync...');
 			
@@ -1284,7 +1284,7 @@ class StorageService {
 				if (!e2eSession || !e2eSession.isUnlocked) {
 					console.log('E2E encryption not set up - user will need to unlock encryption to access cloud entries');
 					// Could potentially show a notification to the user here
-					return;
+					return 0;
 				}
 				
 				// Import cloud entries
@@ -1293,11 +1293,14 @@ class StorageService {
 					// Refresh the UI by reloading entries
 					console.log('Post-login sync completed successfully');
 				}
+				return importedCount;
 			} else {
 				console.log('User has no cloud entries - likely a new user');
+				return 0;
 			}
 		} catch (error) {
 			console.error('Failed to sync after login:', error);
+			return 0;
 		}
 	}
 

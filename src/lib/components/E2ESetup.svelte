@@ -143,7 +143,19 @@
                     // Trigger post-encryption sync to import any cloud entries
                     try {
                         const { storageService } = await import('../services/storage');
-                        await storageService.syncAfterLogin();
+                        console.log('Starting post-setup sync...');
+                        const importedCount = await storageService.syncAfterLogin();
+                        console.log('Post-setup sync completed, imported entries:', importedCount);
+                        
+                        // Force refresh the entries list by triggering a re-fetch
+                        const entriesRefreshed = await storageService.getAllEntries();
+                        console.log('Refreshed entries list, total entries:', entriesRefreshed.length);
+                        
+                        // Dispatch a custom event to notify the main app to refresh
+                        window.dispatchEvent(new CustomEvent('entries-updated', { 
+                            detail: { source: 'post-setup-sync', count: typeof importedCount === 'number' ? importedCount : 0 }
+                        }));
+                        
                     } catch (error) {
                         console.error('Post-encryption sync failed:', error);
                     }
@@ -200,7 +212,19 @@
                     // Trigger post-encryption sync to import any cloud entries
                     try {
                         const { storageService } = await import('../services/storage');
-                        await storageService.syncAfterLogin();
+                        console.log('Starting post-unlock sync...');
+                        const importedCount = await storageService.syncAfterLogin();
+                        console.log('Post-unlock sync completed, imported entries:', importedCount);
+                        
+                        // Force refresh the entries list by triggering a re-fetch
+                        const entriesRefreshed = await storageService.getAllEntries();
+                        console.log('Refreshed entries list, total entries:', entriesRefreshed.length);
+                        
+                        // Dispatch a custom event to notify the main app to refresh
+                        window.dispatchEvent(new CustomEvent('entries-updated', { 
+                            detail: { source: 'post-unlock-sync', count: typeof importedCount === 'number' ? importedCount : 0 }
+                        }));
+                        
                     } catch (error) {
                         console.error('Post-encryption sync failed:', error);
                     }
