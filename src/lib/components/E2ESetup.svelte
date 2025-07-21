@@ -35,15 +35,22 @@
 
     async function checkForCloudKeys() {
         if (!currentUser) {
+            console.log('No current user, showing intro');
             setupStep = 'intro';
             return;
         }
 
+        console.log('Checking for cloud encryption keys for user:', currentUser.id);
+        
         try {
             const hasCloudKeys = await e2eEncryptionService.hasCloudEncryptionKeys(currentUser.id);
+            console.log('Cloud keys check result:', hasCloudKeys);
+            
             if (hasCloudKeys) {
+                console.log('Found cloud keys, showing existing flow');
                 setupStep = 'existing';
             } else {
+                console.log('No cloud keys found, showing intro');
                 setupStep = 'intro';
             }
         } catch (error) {

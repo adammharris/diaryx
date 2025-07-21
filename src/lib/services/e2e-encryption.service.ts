@@ -384,6 +384,12 @@ export class E2EEncryptionService {
       }
 
       const result = await response.json();
+      console.log('User profile data:', {
+        public_key: result.data?.public_key ? 'present' : 'missing',
+        encrypted_private_key: result.data?.encrypted_private_key ? 'present' : 'missing',
+        user_id: userId
+      });
+      
       const hasKeys = !!(result.data?.public_key && result.data?.encrypted_private_key);
       
       console.log('Cloud encryption keys check:', hasKeys ? 'found' : 'not found');
