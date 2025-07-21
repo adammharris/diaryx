@@ -7,6 +7,22 @@ import nacl from 'tweetnacl';
 import { decodeUTF8, encodeBase64, decodeBase64 } from 'tweetnacl-util';
 import type { UserKeyPair } from './KeyManager.js';
 
+/**
+ * Helper function to convert Uint8Array to hex string (for non-sensitive debugging only)
+ */
+function uint8ArrayToHex(arr: Uint8Array): string {
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Securely clear a Uint8Array from memory
+ */
+function secureClear(arr: Uint8Array): void {
+  if (arr && arr.fill) {
+    arr.fill(0);
+  }
+}
+
 export interface EntryObject {
   title: string;
   content: string;
@@ -35,37 +51,51 @@ export class EntryCryptor {
    * @returns Object ready to be sent to the API
    */
   static encryptEntry(entryObject: EntryObject, ownerKeyPair: UserKeyPair): EncryptedEntryData {
-    // Generate a new random symmetric key for this entry
-    const entryKey = nacl.randomBytes(nacl.secretbox.keyLength);
+    // Input validation
+    if (!entryObject || typeof entryObject !== 'object') {
+      throw new Error('Invalid entry object provided');
+    }
     
-    // Serialize the entry object to JSON and convert to bytes
-    const entryJson = JSON.stringify(entryObject);
-    const entryBytes = new TextEncoder().encode(entryJson);
+    if (!ownerKeyPair?.publicKey || !ownerKeyPair?.secretKey) {
+      throw new Error('Invalid key pair provided');
+    }
     
-    // Generate nonce for content encryption
-    const contentNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
-    
-    // Encrypt the entry content with the symmetric key
-    const encryptedContent = nacl.secretbox(entryBytes, contentNonce, entryKey);
-    
-    // Generate nonce for key encryption
-    const keyNonce = nacl.randomBytes(nacl.box.nonceLength);
-    
-    // Encrypt the entry key for the owner using their public key
-    const encryptedEntryKey = nacl.box(entryKey, keyNonce, ownerKeyPair.publicKey, ownerKeyPair.secretKey);
-    
-    // Clear the entry key from memory
-    entryKey.fill(0);
-    
-    return {
-      encryptedContentB64: encodeBase64(encryptedContent),
-      contentNonceB64: encodeBase64(contentNonce),
-      encryptedEntryKeyB64: encodeBase64(encryptedEntryKey),
-      keyNonceB64: encodeBase64(keyNonce)
-    };
-  }
+    if (ownerKeyPair.publicKey.length !== nacl.box.publicKeyLength || 
+        ownerKeyPair.secretKey.length !== nacl.box.secretKeyLength) {
+      throw new Error('Invalid key pair lengths');
+    }
 
-  /**
+    try {
+      // Generate a new random symmetric key for this entry
+      const entryKey = nacl.randomBytes(nacl.secretbox.keyLength);
+      
+      // Serialize the entry object to JSON and convert to bytes
+      const entryJson = JSON.stringify(entryObject);
+      const entryBytes = new TextEncoder().encode(entryJson);
+      
+      // Generate nonce for content encryption
+      const contentNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+      
+      // Encrypt the entry content with the symmetric key
+      const encryptedContent = nacl.secretbox(entryBytes, contentNonce, entryKey);
+
+      // Encrypt the entry key with the owner's public key (asymmetric encryption)
+      const keyNonce = nacl.randomBytes(nacl.box.nonceLength);
+      const encryptedEntryKey = nacl.box(entryKey, keyNonce, ownerKeyPair.publicKey, ownerKeyPair.secretKey);
+
+      // Clear the entry key from memory
+      secureClear(entryKey);
+      
+      return {
+        encryptedContentB64: encodeBase64(encryptedContent),
+        contentNonceB64: encodeBase64(contentNonce),
+        encryptedEntryKeyB64: encodeBase64(encryptedEntryKey),
+        keyNonceB64: encodeBase64(keyNonce)
+      };
+    } catch (error) {
+      throw new Error(`Entry encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }  /**
    * Decrypt an entry (either owned or shared)
    * @param encryptedData - The encrypted entry data from the API
    * @param userSecretKey - The current user's secret key
@@ -77,12 +107,39 @@ export class EntryCryptor {
     userSecretKey: Uint8Array,
     authorPublicKey: Uint8Array
   ): EntryObject | null {
+    // Input validation
+    if (!this.validateEncryptedEntryData(encryptedData)) {
+      console.error('Invalid encrypted entry data structure');
+      return null;
+    }
+    
+    if (!userSecretKey || userSecretKey.length !== nacl.box.secretKeyLength) {
+      console.error('Invalid user secret key');
+      return null;
+    }
+    
+    if (!authorPublicKey || authorPublicKey.length !== nacl.box.publicKeyLength) {
+      console.error('Invalid author public key');
+      return null;
+    }
+
     try {
       // Decode the Base64 data
       const encryptedContent = decodeBase64(encryptedData.encryptedContentB64);
       const contentNonce = decodeBase64(encryptedData.contentNonceB64);
       const encryptedEntryKey = decodeBase64(encryptedData.encryptedEntryKeyB64);
       const keyNonce = decodeBase64(encryptedData.keyNonceB64);
+      
+      // Validate decoded data lengths
+      if (contentNonce.length !== nacl.secretbox.nonceLength) {
+        console.error('Invalid content nonce length');
+        return null;
+      }
+      
+      if (keyNonce.length !== nacl.box.nonceLength) {
+        console.error('Invalid key nonce length');
+        return null;
+      }
       
       // Decrypt the entry key using box (asymmetric decryption)
       const entryKey = nacl.box.open(encryptedEntryKey, keyNonce, authorPublicKey, userSecretKey);
@@ -92,13 +149,6 @@ export class EntryCryptor {
         return null;
       }
       
-      // Debug the exact data being used for symmetric decryption
-      console.log('=== Symmetric Decryption Debug ===');
-      console.log('Entry key (hex):', Array.from(entryKey).map(b => b.toString(16).padStart(2, '0')).join(''));
-      console.log('Content nonce (hex):', Array.from(contentNonce).map(b => b.toString(16).padStart(2, '0')).join(''));
-      console.log('Encrypted content (first 20 bytes hex):', Array.from(encryptedContent.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(''));
-      console.log('Encrypted content length:', encryptedContent.length);
-      
       // Use the decrypted entry key to decrypt the content (symmetric decryption)
       const decryptedContentBytes = nacl.secretbox.open(encryptedContent, contentNonce, entryKey);
       
@@ -106,25 +156,22 @@ export class EntryCryptor {
         entryKeyLength: entryKey?.length,
         encryptedContentLength: encryptedContent?.length,
         contentNonceLength: contentNonce?.length,
-        decryptedContentBytes: decryptedContentBytes ? `Uint8Array(${decryptedContentBytes.length})` : 'null',
-        decryptedContentBytesType: typeof decryptedContentBytes
+        decryptedContentBytes: decryptedContentBytes ? `Success - ${decryptedContentBytes.length} bytes` : 'null'
       });
       
       if (!decryptedContentBytes) {
         console.error('Failed to decrypt entry content - nacl.secretbox.open returned null');
         // Clear the entry key from memory
-        entryKey.fill(0);
+        secureClear(entryKey);
         return null;
       }
       
       // Convert decrypted bytes to string and parse JSON
-      console.log('Attempting to decode UTF8 from:', decryptedContentBytes);
       const entryJson = new TextDecoder().decode(decryptedContentBytes);
-      console.log('Decoded JSON string:', entryJson);
       const entryObject = JSON.parse(entryJson) as EntryObject;
       
       // Clear sensitive data from memory
-      entryKey.fill(0);
+      secureClear(entryKey);
       
       return entryObject;
     } catch (error) {
@@ -147,10 +194,32 @@ export class EntryCryptor {
     authorKeyPair: UserKeyPair,
     recipientPublicKey: Uint8Array
   ): RewrappedKey | null {
+    // Input validation
+    if (!encryptedEntryKey || !keyNonce) {
+      console.error('Missing encrypted entry key or nonce');
+      return null;
+    }
+    
+    if (!authorKeyPair?.publicKey || !authorKeyPair?.secretKey) {
+      console.error('Invalid author key pair');
+      return null;
+    }
+    
+    if (!recipientPublicKey || recipientPublicKey.length !== nacl.box.publicKeyLength) {
+      console.error('Invalid recipient public key');
+      return null;
+    }
+
     try {
       // Decode the encrypted entry key and nonce
       const encryptedKeyBytes = decodeBase64(encryptedEntryKey);
       const nonceBytes = decodeBase64(keyNonce);
+      
+      // Validate nonce length
+      if (nonceBytes.length !== nacl.box.nonceLength) {
+        console.error('Invalid nonce length');
+        return null;
+      }
       
       // Decrypt the entry key using the author's keys
       const entryKey = nacl.box.open(encryptedKeyBytes, nonceBytes, authorKeyPair.publicKey, authorKeyPair.secretKey);
@@ -167,7 +236,7 @@ export class EntryCryptor {
       const newEncryptedEntryKey = nacl.box(entryKey, newKeyNonce, recipientPublicKey, authorKeyPair.secretKey);
       
       // Clear the entry key from memory
-      entryKey.fill(0);
+      secureClear(entryKey);
       
       return {
         encryptedEntryKeyB64: encodeBase64(newEncryptedEntryKey),
@@ -239,27 +308,58 @@ export class EntryCryptor {
    * Encrypt individual fields for database storage
    * This is used when we need to encrypt title, content, and frontmatter separately
    */
-  static encryptField(fieldValue: string, entryKey: Uint8Array): { encrypted: string; nonce: string } {
-    const fieldBytes = new TextEncoder().encode(fieldValue);
-    const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
-    const encrypted = nacl.secretbox(fieldBytes, nonce, entryKey);
+  static encryptField(fieldValue: string, entryKey: Uint8Array): { encrypted: string; nonce: string } | null {
+    if (!fieldValue || typeof fieldValue !== 'string') {
+      throw new Error('Invalid field value provided');
+    }
     
-    return {
-      encrypted: encodeBase64(encrypted),
-      nonce: encodeBase64(nonce)
-    };
+    if (!entryKey || entryKey.length !== nacl.secretbox.keyLength) {
+      throw new Error('Invalid entry key provided');
+    }
+
+    try {
+      const fieldBytes = new TextEncoder().encode(fieldValue);
+      const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+      const encrypted = nacl.secretbox(fieldBytes, nonce, entryKey);
+      
+      return {
+        encrypted: encodeBase64(encrypted),
+        nonce: encodeBase64(nonce)
+      };
+    } catch (error) {
+      console.error('Field encryption failed:', error);
+      return null;
+    }
   }
 
   /**
    * Decrypt individual fields from database storage
    */
   static decryptField(encryptedField: string, nonce: string, entryKey: Uint8Array): string | null {
+    if (!encryptedField || !nonce) {
+      console.error('Missing encrypted field or nonce');
+      return null;
+    }
+    
+    if (!entryKey || entryKey.length !== nacl.secretbox.keyLength) {
+      console.error('Invalid entry key provided');
+      return null;
+    }
+
     try {
       const encryptedBytes = decodeBase64(encryptedField);
       const nonceBytes = decodeBase64(nonce);
+      
+      // Validate nonce length
+      if (nonceBytes.length !== nacl.secretbox.nonceLength) {
+        console.error('Invalid nonce length');
+        return null;
+      }
+      
       const decryptedBytes = nacl.secretbox.open(encryptedBytes, nonceBytes, entryKey);
       
       if (!decryptedBytes) {
+        console.error('Failed to decrypt field');
         return null;
       }
       

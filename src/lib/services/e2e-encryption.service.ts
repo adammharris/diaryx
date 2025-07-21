@@ -32,7 +32,6 @@ export class E2EEncryptionService {
       this.initializeFromStorage();
     }
   }
-
   /**
    * Initialize session from stored encrypted keys if available
    */
@@ -66,6 +65,22 @@ export class E2EEncryptionService {
    * Complete user signup - store encrypted keys locally
    */
   completeSignup(userId: string, keyPair: UserKeyPairB64, password: string): boolean {
+    // Input validation
+    if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
+      console.error('Invalid user ID provided');
+      return false;
+    }
+    
+    if (!keyPair?.publicKey || !keyPair?.secretKey) {
+      console.error('Invalid key pair provided');
+      return false;
+    }
+    
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      console.error('Invalid password provided - must be at least 8 characters');
+      return false;
+    }
+
     try {
       // Encrypt the secret key with the user's password
       const encryptedSecretKeyB64 = KeyManager.encryptSecretKey(keyPair.secretKey, password);
@@ -86,6 +101,13 @@ export class E2EEncryptionService {
         publicKey: KeyManager.publicKeyFromB64(keyPair.publicKey),
         secretKey: KeyManager.secretKeyFromB64(keyPair.secretKey)
       };
+      
+      // Validate the key pair works
+      if (!KeyManager.validateKeyPair(userKeyPair)) {
+        console.error('Generated key pair validation failed');
+        KeyManager.clearKeyPair(userKeyPair);
+        return false;
+      }
       
       this.currentSession = {
         userId,
@@ -110,6 +132,12 @@ export class E2EEncryptionService {
    * Login with password - decrypt stored keys
    */
   login(password: string): boolean {
+    // Input validation
+    if (!password || typeof password !== 'string' || password.length === 0) {
+      console.error('Invalid password provided');
+      return false;
+    }
+
     try {
       const stored = browser ? localStorage.getItem(this.STORAGE_KEY) : null;
       if (!stored) {
@@ -118,6 +146,13 @@ export class E2EEncryptionService {
       }
 
       const storedKeys: StoredUserKeys = JSON.parse(stored);
+      
+      // Validate stored data structure
+      if (!storedKeys.encryptedSecretKeyB64 || !storedKeys.publicKeyB64 || !storedKeys.userId) {
+        console.error('Invalid stored keys structure');
+        this.clearStoredKeys();
+        return false;
+      }
       
       // Decrypt the secret key
       const secretKey = KeyManager.decryptSecretKey(storedKeys.encryptedSecretKeyB64, password);
@@ -215,6 +250,11 @@ export class E2EEncryptionService {
       console.error('Cannot encrypt entry - session not unlocked');
       return null;
     }
+    
+    if (!entryObject || typeof entryObject !== 'object') {
+      console.error('Invalid entry object provided');
+      return null;
+    }
 
     try {
       return EntryCryptor.encryptEntry(entryObject, this.currentSession.userKeyPair);
@@ -230,6 +270,16 @@ export class E2EEncryptionService {
   decryptEntry(encryptedData: EncryptedEntryData, authorPublicKeyB64: string): EntryObject | null {
     if (!this.currentSession || !this.currentSession.isUnlocked) {
       console.error('Cannot decrypt entry - session not unlocked');
+      return null;
+    }
+    
+    if (!this.validateEncryptedEntryData(encryptedData)) {
+      console.error('Invalid encrypted entry data provided');
+      return null;
+    }
+    
+    if (!authorPublicKeyB64 || typeof authorPublicKeyB64 !== 'string') {
+      console.error('Invalid author public key provided');
       return null;
     }
 
@@ -256,6 +306,16 @@ export class E2EEncryptionService {
   ): { encryptedEntryKeyB64: string; keyNonceB64: string } | null {
     if (!this.currentSession || !this.currentSession.isUnlocked) {
       console.error('Cannot rewrap entry key - session not unlocked');
+      return null;
+    }
+    
+    if (!encryptedEntryKey || !keyNonce || !recipientPublicKeyB64) {
+      console.error('Missing required parameters for key rewrapping');
+      return null;
+    }
+    
+    if (typeof encryptedEntryKey !== 'string' || typeof keyNonce !== 'string' || typeof recipientPublicKeyB64 !== 'string') {
+      console.error('Invalid parameter types for key rewrapping');
       return null;
     }
 
@@ -306,6 +366,22 @@ export class E2EEncryptionService {
    * Change password - re-encrypt stored secret key
    */
   changePassword(oldPassword: string, newPassword: string): boolean {
+    // Input validation
+    if (!oldPassword || typeof oldPassword !== 'string') {
+      console.error('Invalid old password provided');
+      return false;
+    }
+    
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      console.error('Invalid new password provided - must be at least 8 characters');
+      return false;
+    }
+    
+    if (oldPassword === newPassword) {
+      console.error('New password must be different from old password');
+      return false;
+    }
+
     try {
       const stored = browser ? localStorage.getItem(this.STORAGE_KEY) : null;
       if (!stored) {
@@ -314,6 +390,12 @@ export class E2EEncryptionService {
       }
 
       const storedKeys: StoredUserKeys = JSON.parse(stored);
+      
+      // Validate stored data structure
+      if (!storedKeys.encryptedSecretKeyB64 || !storedKeys.publicKeyB64 || !storedKeys.userId) {
+        console.error('Invalid stored keys structure');
+        return false;
+      }
       
       // Decrypt with old password
       const secretKey = KeyManager.decryptSecretKey(storedKeys.encryptedSecretKeyB64, oldPassword);
@@ -338,6 +420,16 @@ export class E2EEncryptionService {
       // Clear old secret key from memory
       KeyManager.clearKey(secretKey);
       
+      // Update session if currently unlocked
+      if (this.currentSession && this.currentSession.isUnlocked) {
+        // Re-validate current session after password change
+        if (!KeyManager.validateKeyPair(this.currentSession.userKeyPair)) {
+          console.error('Session validation failed after password change');
+          this.logout();
+          return false;
+        }
+      }
+      
       return true;
     } catch (error) {
       console.error('Password change failed:', error);
@@ -357,6 +449,70 @@ export class E2EEncryptionService {
    */
   getCurrentSession(): E2ESession | null {
     return this.currentSession ? { ...this.currentSession } : null;
+  }
+
+  /**
+   * Validate current session integrity
+   */
+  validateSession(): boolean {
+    if (!this.currentSession || !this.currentSession.isUnlocked) {
+      return false;
+    }
+    
+    try {
+      return KeyManager.validateKeyPair(this.currentSession.userKeyPair);
+    } catch (error) {
+      console.error('Session validation failed:', error);
+      this.logout();
+      return false;
+    }
+  }
+
+  /**
+   * Lock the current session (keep keys in memory but mark as locked)
+   */
+  lockSession(): void {
+    if (this.currentSession) {
+      this.currentSession.isUnlocked = false;
+      this.sessionStore.set(this.currentSession);
+    }
+  }
+
+  /**
+   * Unlock session with password verification
+   */
+  unlockSession(password: string): boolean {
+    if (!this.currentSession || this.currentSession.isUnlocked) {
+      return false;
+    }
+    
+    if (!password || typeof password !== 'string') {
+      return false;
+    }
+    
+    try {
+      const stored = browser ? localStorage.getItem(this.STORAGE_KEY) : null;
+      if (!stored) {
+        return false;
+      }
+      
+      const storedKeys: StoredUserKeys = JSON.parse(stored);
+      const secretKey = KeyManager.decryptSecretKey(storedKeys.encryptedSecretKeyB64, password);
+      
+      if (!secretKey) {
+        return false;
+      }
+      
+      // Clear the test key
+      KeyManager.clearKey(secretKey);
+      
+      this.currentSession.isUnlocked = true;
+      this.sessionStore.set(this.currentSession);
+      return true;
+    } catch (error) {
+      console.error('Session unlock failed:', error);
+      return false;
+    }
   }
 
   /**
@@ -404,6 +560,17 @@ export class E2EEncryptionService {
    * Restore encryption keys from the cloud
    */
   async restoreKeysFromCloud(userId: string, password: string): Promise<boolean> {
+    // Input validation
+    if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
+      console.error('Invalid user ID provided');
+      return false;
+    }
+    
+    if (!password || typeof password !== 'string' || password.length === 0) {
+      console.error('Invalid password provided');
+      return false;
+    }
+
     try {
       console.log('=== Restoring keys from cloud for user:', userId);
       
@@ -441,6 +608,15 @@ export class E2EEncryptionService {
       
       if (!userData?.public_key || !userData?.encrypted_private_key) {
         console.log('No cloud encryption keys found in user profile');
+        return false;
+      }
+      
+      // Validate key formats (basic check for Base64)
+      try {
+        atob(userData.public_key);
+        atob(userData.encrypted_private_key);
+      } catch (error) {
+        console.error('Invalid key format in cloud data');
         return false;
       }
 
