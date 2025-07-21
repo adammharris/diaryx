@@ -1001,9 +1001,10 @@ class StorageService {
 				// Get API URL for requests
 				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
-				// Get the last known server timestamp for conflict detection
+				// Get the last known server timestamp for conditional updates
 				const lastServerTimestamp = await this.getLastServerTimestamp(entryId);
-				console.log('Using stored server timestamp for conflict detection:', lastServerTimestamp);
+				console.log('Last known server timestamp:', lastServerTimestamp);
+				console.log('Client entry modification time:', entry.modified_at);
 
 				// Prepare API payload according to backend schema
 				const apiPayload = {
@@ -1020,6 +1021,11 @@ class StorageService {
 					// Use last known server timestamp for conditional update
 					if_unmodified_since: lastServerTimestamp
 				};
+
+				console.log('Syncing with timestamps:', {
+					client_modified_at: apiPayload.client_modified_at,
+					if_unmodified_since: apiPayload.if_unmodified_since
+				});
 
 				// Update the cloud entry
 				const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
