@@ -228,12 +228,18 @@ async function updateEntry(req, res) {
     // Conflict detection: Check if client's version is stale
     if (client_modified_at) {
       const clientModifiedTime = new Date(client_modified_at);
-      
-      // Allow for a small time difference (5 seconds) to account for timestamp precision issues
       const timeDifferenceMs = serverModifiedTime.getTime() - clientModifiedTime.getTime();
-      const maxAllowedDifference = 5000; // 5 seconds
       
-      if (timeDifferenceMs > maxAllowedDifference) {
+      // Skip conflict detection if timestamps are very close (within 1 second)
+      // This handles the case where client has the latest timestamp but server 
+      // updated it slightly due to the database NOW() function
+      if (Math.abs(timeDifferenceMs) <= 1000) {
+        console.log('Client and server timestamps are very close, skipping conflict check:', {
+          entryId: id,
+          timeDifferenceMs: timeDifferenceMs
+        });
+      } else if (timeDifferenceMs > 0) {
+        // Only conflict if server is significantly newer than client
         console.warn('Sync conflict detected:', {
           entryId: id,
           serverTime: serverModifiedTime.toISOString(),
@@ -251,10 +257,9 @@ async function updateEntry(req, res) {
           time_difference_ms: timeDifferenceMs
         });
       } else {
-        console.log('Timestamp difference within acceptable range:', {
+        console.log('Client timestamp is newer than server, allowing update:', {
           entryId: id,
-          timeDifferenceMs: timeDifferenceMs,
-          maxAllowed: maxAllowedDifference
+          timeDifferenceMs: timeDifferenceMs
         });
       }
     }
