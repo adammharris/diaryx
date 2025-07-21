@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   
   switch (method) {
     case 'GET':
-      return publicEndpoint(getUser)(req, res);
+      return requireAuth(getUser)(req, res);
     case 'PUT':
       return requireAuth(updateUser)(req, res);
     case 'DELETE':
@@ -54,6 +54,12 @@ async function getUser(req, res) {
     // Only return public fields
     // Include encrypted private key only if user is viewing their own profile
     const isOwnProfile = req.user?.userId === id;
+    console.log('Profile access check:', {
+      requestedUserId: id,
+      authenticatedUserId: req.user?.userId,
+      isOwnProfile,
+      hasEncryptedKey: !!user.encrypted_private_key
+    });
     const responseData = {
       id: user.id,
       name: user.name,
