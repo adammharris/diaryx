@@ -1031,12 +1031,22 @@ class StorageService {
 				}
 
 				// Try to decrypt the entry
+				console.log('Attempting decryption with:', {
+					hasEncryptedContent: !!cloudEntry.encrypted_content,
+					hasContentNonce: !!contentNonceB64,
+					hasEncryptedEntryKey: !!cloudEntry.access_key.encrypted_entry_key,
+					hasKeyNonce: !!cloudEntry.access_key.key_nonce,
+					hasAuthorPublicKey: !!authorPublicKey
+				});
+				
 				const decryptedEntry = e2eEncryptionService.decryptEntry({
 					encryptedContentB64: cloudEntry.encrypted_content,
 					contentNonceB64: contentNonceB64,
 					encryptedEntryKeyB64: cloudEntry.access_key.encrypted_entry_key,
 					keyNonceB64: cloudEntry.access_key.key_nonce
 				}, authorPublicKey);
+				
+				console.log('Decryption result:', decryptedEntry ? 'success' : 'failed');
 
 				if (!decryptedEntry) {
 					console.log('Failed to decrypt entry, skipping:', cloudEntry.id);
