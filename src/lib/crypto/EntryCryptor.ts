@@ -95,15 +95,25 @@ export class EntryCryptor {
       // Use the decrypted entry key to decrypt the content (symmetric decryption)
       const decryptedContentBytes = nacl.secretbox.open(encryptedContent, contentNonce, entryKey);
       
+      console.log('Decryption debug:', {
+        entryKeyLength: entryKey?.length,
+        encryptedContentLength: encryptedContent?.length,
+        contentNonceLength: contentNonce?.length,
+        decryptedContentBytes: decryptedContentBytes ? `Uint8Array(${decryptedContentBytes.length})` : 'null',
+        decryptedContentBytesType: typeof decryptedContentBytes
+      });
+      
       if (!decryptedContentBytes) {
-        console.error('Failed to decrypt entry content');
+        console.error('Failed to decrypt entry content - nacl.secretbox.open returned null');
         // Clear the entry key from memory
         entryKey.fill(0);
         return null;
       }
       
       // Convert decrypted bytes to string and parse JSON
+      console.log('Attempting to decode UTF8 from:', decryptedContentBytes);
       const entryJson = decodeUTF8(decryptedContentBytes);
+      console.log('Decoded JSON string:', entryJson);
       const entryObject = JSON.parse(entryJson) as EntryObject;
       
       // Clear sensitive data from memory
