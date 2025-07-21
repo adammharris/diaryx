@@ -1054,7 +1054,7 @@ class StorageService {
 				}
 
 				// Generate a local ID based on the title
-				const localId = await this.generateUniqueFilename(decryptedEntry.title || 'Untitled Entry');
+				const localId = await this.generateUniqueFilenameForImport(decryptedEntry.title || 'Untitled Entry');
 				
 				// Create the entry locally
 				const journalEntry: JournalEntry = {
@@ -1142,6 +1142,38 @@ class StorageService {
 			}
 		} catch (error) {
 			console.error('Failed to sync after login:', error);
+		}
+	}
+
+	/**
+	 * Generate unique filename for importing entries (works in both Tauri and web)
+	 */
+	private async generateUniqueFilenameForImport(baseTitle: string): Promise<string> {
+		const safeTitle = this.titleToSafeFilename(baseTitle);
+		let filename = safeTitle;
+		let counter = 1;
+
+		// Check for existing entries in a way that works for both environments
+		while (await this.entryExistsForImport(filename)) {
+			filename = `${safeTitle}-${counter}`;
+			counter++;
+		}
+		
+		return filename;
+	}
+
+	/**
+	 * Check if entry exists during import (works in both Tauri and web)
+	 */
+	private async entryExistsForImport(filename: string): Promise<boolean> {
+		if (this.environment === 'tauri') {
+			const filePath = `${this.journalFolder}/${filename}${this.fileExtension}`;
+			return await exists(filePath, { baseDir: this.baseDir });
+		} else {
+			// In web mode, check IndexedDB
+			const db = await this.initDB();
+			const entry = await db.get('entries', filename);
+			return !!entry;
 		}
 	}
 
