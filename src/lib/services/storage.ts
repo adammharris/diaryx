@@ -182,14 +182,100 @@ class StorageService {
 			return false;
 		}
 
-		if (this.environment === 'tauri') {
-			const success = await this.deleteTauriEntry(id);
-			if (success) {
-				await this.deleteCachedEntry(id);
+		// Use cloud-aware deletion that handles both local and cloud cleanup
+		return this.deleteEntryWithCloudSync(id);
+	}
+
+	/**
+	 * Delete an entry with proper cloud synchronization
+	 */
+	async deleteEntryWithCloudSync(id: string): Promise<boolean> {
+		return this.acquireCloudLock(id, async () => {
+			try {
+				console.log('Starting deletion process for entry:', id);
+
+				// Check if entry is published to cloud
+				const cloudId = await this.getCloudId(id);
+				let cloudDeleteSuccess = true;
+
+				if (cloudId && apiAuthService.isAuthenticated()) {
+					console.log('Entry is published to cloud, deleting from server:', cloudId);
+					cloudDeleteSuccess = await this.deleteFromCloud(cloudId);
+					
+					if (!cloudDeleteSuccess) {
+						console.warn('Failed to delete from cloud, but continuing with local deletion');
+						// Continue with local deletion even if cloud deletion fails
+						// This handles cases where the entry was already deleted from cloud
+						// or there are network issues
+					} else {
+						console.log('Successfully deleted from cloud');
+					}
+				} else {
+					console.log('Entry not published to cloud or user not authenticated');
+				}
+
+				// Delete locally regardless of cloud deletion result
+				let localDeleteSuccess = false;
+				
+				if (this.environment === 'tauri') {
+					localDeleteSuccess = await this.deleteTauriEntry(id);
+					if (localDeleteSuccess) {
+						await this.deleteCachedEntry(id);
+					}
+				} else {
+					localDeleteSuccess = await this.deleteWebEntry(id);
+				}
+
+				if (!localDeleteSuccess) {
+					console.error('Failed to delete entry locally:', id);
+					return false;
+				}
+
+				// Clean up cloud mapping if it exists
+				if (cloudId) {
+					await this.removeCloudMapping(id);
+					console.log('Cleaned up cloud mapping for deleted entry');
+				}
+
+				console.log('Entry deletion completed successfully:', id);
+				return true;
+
+			} catch (error) {
+				console.error('Failed to delete entry:', id, error);
+				return false;
 			}
-			return success;
-		} else {
-			return this.deleteWebEntry(id);
+		});
+	}
+
+	/**
+	 * Delete an entry from the cloud server
+	 */
+	private async deleteFromCloud(cloudId: string): Promise<boolean> {
+		try {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+				method: 'DELETE',
+				headers: {
+					...apiAuthService.getAuthHeaders()
+				}
+			});
+
+			if (!response.ok) {
+				if (response.status === 404) {
+					// Entry doesn't exist in cloud anymore - that's fine
+					console.log('Entry already deleted from cloud or never existed');
+					return true;
+				}
+				throw new Error(`Failed to delete from cloud: ${response.status}`);
+			}
+
+			const result = await response.json();
+			console.log('Cloud deletion response:', result);
+			return result.success || true;
+
+		} catch (error) {
+			console.error('Error deleting from cloud:', error);
+			return false;
 		}
 	}
 
@@ -510,10 +596,18 @@ class StorageService {
 
 	private async deleteCachedEntry(id: string): Promise<void> {
 		const db = await this.initDB();
-		const tx = db.transaction(['entries', 'metadata'], 'readwrite');
+		const tx = db.transaction(['entries', 'metadata', 'cloudMappings'], 'readwrite');
+		
+		// Delete from all relevant stores
 		await tx.objectStore('entries').delete(id);
 		await tx.objectStore('metadata').delete(id);
+		await tx.objectStore('cloudMappings').delete(id);
 		await tx.done;
+		
+		// Update the metadata store to remove the entry from UI
+		metadataStore.removeEntryMetadata(id);
+		
+		console.log('Cleaned up all cached data for entry:', id);
 	}
 
 	// Method to update metadata for decrypted entries with proper previews

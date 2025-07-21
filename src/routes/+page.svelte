@@ -277,10 +277,14 @@
           const success = await storageService.deleteEntry(event.id);
           console.log('Delete result:', success);
           if (success) {
+            // Remove from current entries array
             entries = entries.filter(e => e.id !== event.id);
+            
+            // Clear selection if the deleted entry was selected
             if (selectedEntryId === event.id) {
               selectedEntryId = null;
             }
+            
             console.log('Entry deleted successfully');
           } else {
             console.log('Delete failed');
