@@ -229,11 +229,16 @@ async function updateEntry(req, res) {
     if (client_modified_at) {
       const clientModifiedTime = new Date(client_modified_at);
       
-      if (serverModifiedTime > clientModifiedTime) {
+      // Allow for a small time difference (5 seconds) to account for timestamp precision issues
+      const timeDifferenceMs = serverModifiedTime.getTime() - clientModifiedTime.getTime();
+      const maxAllowedDifference = 5000; // 5 seconds
+      
+      if (timeDifferenceMs > maxAllowedDifference) {
         console.warn('Sync conflict detected:', {
           entryId: id,
           serverTime: serverModifiedTime.toISOString(),
-          clientTime: clientModifiedTime.toISOString()
+          clientTime: clientModifiedTime.toISOString(),
+          timeDifferenceMs: timeDifferenceMs
         });
         
         return res.status(409).json({
@@ -242,7 +247,14 @@ async function updateEntry(req, res) {
           message: 'Entry has been modified by another client',
           server_modified_at: serverModifiedTime.toISOString(),
           client_modified_at: client_modified_at,
-          conflict_type: 'modification_time'
+          conflict_type: 'modification_time',
+          time_difference_ms: timeDifferenceMs
+        });
+      } else {
+        console.log('Timestamp difference within acceptable range:', {
+          entryId: id,
+          timeDifferenceMs: timeDifferenceMs,
+          maxAllowed: maxAllowedDifference
         });
       }
     }

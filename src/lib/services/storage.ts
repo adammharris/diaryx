@@ -833,11 +833,12 @@ class StorageService {
 				// Parse response to get cloud UUID
 				const result = await response.json();
 				const cloudId = result.data?.entry?.id;
+				const serverTimestamp = result.data?.entry?.updated_at;
 				
 				if (cloudId) {
-					// Store mapping between local ID and cloud UUID
-					await this.storeCloudMapping(entryId, cloudId);
-					console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId);
+					// Store mapping between local ID and cloud UUID with server timestamp
+					await this.storeCloudMapping(entryId, cloudId, serverTimestamp);
+					console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId, 'Server timestamp:', serverTimestamp);
 				} else {
 					console.warn('Entry published but no cloud ID returned');
 				}
@@ -997,6 +998,13 @@ class StorageService {
 					contentNonceB64: encryptedData.contentNonceB64
 				};
 
+				// Get API URL for requests
+				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+				// Get the last known server timestamp for conflict detection
+				const lastServerTimestamp = await this.getLastServerTimestamp(entryId);
+				console.log('Using stored server timestamp for conflict detection:', lastServerTimestamp);
+
 				// Prepare API payload according to backend schema
 				const apiPayload = {
 					encrypted_title: encryptedData.encryptedContentB64,
@@ -1007,14 +1015,13 @@ class StorageService {
 					content_preview_hash: hashes.previewHash,
 					is_published: true,
 					file_path: entry.file_path || `${entryId}.md`,
-					// Include local modification time for conflict detection
-					client_modified_at: entry.modified_at,
+					// Use server timestamp if available, otherwise fall back to local time
+					client_modified_at: lastServerTimestamp || entry.modified_at,
 					// HTTP-style conditional header
-					if_unmodified_since: entry.modified_at
+					if_unmodified_since: lastServerTimestamp || entry.modified_at
 				};
 
 				// Update the cloud entry
-				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 				const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 					method: 'PUT',
 					headers: {
@@ -1031,6 +1038,16 @@ class StorageService {
 						return false;
 					}
 					throw new Error(`Failed to sync entry: ${response.status}`);
+				}
+
+				// Parse response to get updated server timestamp
+				const responseData = await response.json();
+				const updatedServerTimestamp = responseData.data?.updated_at;
+				
+				if (updatedServerTimestamp) {
+					// Store the server's new timestamp for future conflict detection
+					await this.updateCloudMappingTimestamp(entryId, updatedServerTimestamp);
+					console.log('Updated server timestamp for entry:', entryId, updatedServerTimestamp);
 				}
 
 				console.log('Entry synced to cloud. Local ID:', entryId, 'Cloud ID:', cloudId);
@@ -1241,8 +1258,8 @@ class StorageService {
 					};
 					await this.cacheMetadata([metadata]);
 
-					// Store the cloud mapping
-					await this.storeCloudMapping(localId, cloudEntry.id);
+					// Store the cloud mapping with server timestamp
+					await this.storeCloudMapping(localId, cloudEntry.id, cloudEntry.updated_at);
 
 					console.log('Imported entry:', localId, 'from cloud ID:', cloudEntry.id);
 					importedCount++;
@@ -1470,14 +1487,36 @@ class StorageService {
 	/**
 	 * Store mapping between local entry ID and cloud UUID
 	 */
-	private async storeCloudMapping(localId: string, cloudId: string): Promise<void> {
+	private async storeCloudMapping(localId: string, cloudId: string, serverTimestamp?: string): Promise<void> {
 		const db = await this.initDB();
 		const mapping: CloudEntryMapping = {
 			localId,
 			cloudId,
-			publishedAt: new Date().toISOString()
+			publishedAt: new Date().toISOString(),
+			lastServerTimestamp: serverTimestamp
 		};
 		await db.put('cloudMappings', mapping);
+	}
+
+	/**
+	 * Update the server timestamp for an existing cloud mapping
+	 */
+	private async updateCloudMappingTimestamp(localId: string, serverTimestamp: string): Promise<void> {
+		const db = await this.initDB();
+		const mapping = await db.get('cloudMappings', localId);
+		if (mapping) {
+			mapping.lastServerTimestamp = serverTimestamp;
+			await db.put('cloudMappings', mapping);
+		}
+	}
+
+	/**
+	 * Get the last known server timestamp for conflict detection
+	 */
+	private async getLastServerTimestamp(localId: string): Promise<string | null> {
+		const db = await this.initDB();
+		const mapping = await db.get('cloudMappings', localId);
+		return mapping?.lastServerTimestamp || null;
 	}
 
 	/**

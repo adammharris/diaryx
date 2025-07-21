@@ -43,7 +43,7 @@ if (!process.env.VERCEL) {
       ignored: [
         "**/node_modules/**",
         "**/.svelte-kit/**",
-        "**/src-tauri/target/**",
+        "**/src-tauri/**",
       ],
     },
   };

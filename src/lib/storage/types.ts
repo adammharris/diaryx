@@ -68,6 +68,7 @@ export interface CloudEntryMapping {
     localId: string;
     cloudId: string;
     publishedAt: string;
+    lastServerTimestamp?: string; // Track server's last known timestamp for conflict detection
 }
 
 export interface DBSchema {
