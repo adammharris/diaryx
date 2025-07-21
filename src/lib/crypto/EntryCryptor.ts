@@ -112,7 +112,7 @@ export class EntryCryptor {
       
       // Convert decrypted bytes to string and parse JSON
       console.log('Attempting to decode UTF8 from:', decryptedContentBytes);
-      const entryJson = decodeUTF8(decryptedContentBytes);
+      const entryJson = new TextDecoder().decode(decryptedContentBytes);
       console.log('Decoded JSON string:', entryJson);
       const entryObject = JSON.parse(entryJson) as EntryObject;
       
@@ -256,7 +256,7 @@ export class EntryCryptor {
         return null;
       }
       
-      return decodeUTF8(decryptedBytes);
+      return new TextDecoder().decode(decryptedBytes);
     } catch (error) {
       console.error('Field decryption failed:', error);
       return null;
