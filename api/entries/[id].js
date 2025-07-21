@@ -263,7 +263,9 @@ async function updateEntry(req, res) {
         console.log('No conflict - allowing update:', {
           entryId: id,
           timeDifferenceMs: timeDifferenceMs,
-          reason: timeDifferenceMs <= 1000 ? 'within clock skew tolerance' : 'client modification is newer'
+          reason: timeDifferenceMs > 0 
+            ? (timeDifferenceMs <= 1000 ? 'within clock skew tolerance' : 'server significantly newer') 
+            : 'client modification is newer'
         });
       }
     }
@@ -352,6 +354,13 @@ async function updateEntry(req, res) {
       values.push(id);
       values.push(serverModifiedTime.toISOString()); // Optimistic locking
       
+      console.log('Preparing optimistic locking query:', {
+        entryId: id,
+        expectedTimestamp: serverModifiedTime.toISOString(),
+        originalTimestamp: currentEntry.updated_at,
+        timestampComparison: serverModifiedTime.toISOString() === new Date(currentEntry.updated_at).toISOString()
+      });
+      
       // Use optimistic locking by checking updated_at hasn't changed
       queries.push({
         text: `
@@ -392,7 +401,14 @@ async function updateEntry(req, res) {
     const results = await transactionWithUser(userId, queries);
     const entry = results[0].rows[0];
     
+    console.log('Update query executed:', {
+      entryId: id,
+      hasEntry: !!entry,
+      queryType: queries[0]?.text?.includes('UPDATE') ? 'UPDATE' : 'OTHER'
+    });
+    
     if (!entry) {
+      console.log('No entry returned from update - checking for optimistic lock failure');
       // Check if this was due to optimistic locking failure
       const recheckQuery = 'SELECT updated_at FROM entries WHERE id = $1';
       const recheckResult = await queryWithUser(userId, recheckQuery, [id]);
@@ -400,6 +416,13 @@ async function updateEntry(req, res) {
       if (recheckResult.rows.length > 0) {
         // Entry exists but optimistic lock failed
         const currentTime = recheckResult.rows[0].updated_at;
+        console.error('Optimistic locking failure detected:', {
+          entryId: id,
+          expectedTimestamp: serverModifiedTime.toISOString(),
+          actualTimestamp: currentTime,
+          reason: 'Entry was modified between read and write'
+        });
+        
         return res.status(409).json({
           success: false,
           error: 'Concurrent modification detected',
