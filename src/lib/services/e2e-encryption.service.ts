@@ -284,12 +284,35 @@ export class E2EEncryptionService {
     }
 
     try {
+      console.log('=== E2E Service Decryption Debug ===');
+      console.log('Encrypted data structure:', {
+        hasEncryptedContent: !!encryptedData.encryptedContentB64,
+        hasContentNonce: !!encryptedData.contentNonceB64,
+        hasEncryptedEntryKey: !!encryptedData.encryptedEntryKeyB64,
+        hasKeyNonce: !!encryptedData.keyNonceB64,
+        encryptedContentLength: encryptedData.encryptedContentB64?.length,
+        contentNonceLength: encryptedData.contentNonceB64?.length,
+        encryptedEntryKeyLength: encryptedData.encryptedEntryKeyB64?.length,
+        keyNonceLength: encryptedData.keyNonceB64?.length
+      });
+      
       const authorPublicKey = KeyManager.publicKeyFromB64(authorPublicKeyB64);
-      return EntryCryptor.decryptEntry(
+      console.log('Author public key decoded successfully, length:', authorPublicKey.length);
+      console.log('Current user secret key length:', this.currentSession.userKeyPair.secretKey.length);
+      console.log('Current user public key:', this.currentSession.publicKeyB64);
+      console.log('Author public key B64:', authorPublicKeyB64);
+      console.log('Is self-encrypted entry:', this.currentSession.publicKeyB64 === authorPublicKeyB64);
+      
+      const result = EntryCryptor.decryptEntry(
         encryptedData,
         this.currentSession.userKeyPair.secretKey,
         authorPublicKey
       );
+      
+      console.log('=== E2E Service Decryption Result ===');
+      console.log('Decryption result:', result ? 'success' : 'failed');
+      
+      return result;
     } catch (error) {
       console.error('Entry decryption failed:', error);
       return null;

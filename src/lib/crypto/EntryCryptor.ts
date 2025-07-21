@@ -124,20 +124,41 @@ export class EntryCryptor {
     }
 
     try {
+      console.log('=== Base64 Decoding Debug ===');
+      console.log('Input data lengths (Base64):', {
+        encryptedContent: encryptedData.encryptedContentB64.length,
+        contentNonce: encryptedData.contentNonceB64.length,
+        encryptedEntryKey: encryptedData.encryptedEntryKeyB64.length,
+        keyNonce: encryptedData.keyNonceB64.length
+      });
+      
       // Decode the Base64 data
       const encryptedContent = decodeBase64(encryptedData.encryptedContentB64);
       const contentNonce = decodeBase64(encryptedData.contentNonceB64);
       const encryptedEntryKey = decodeBase64(encryptedData.encryptedEntryKeyB64);
       const keyNonce = decodeBase64(encryptedData.keyNonceB64);
       
+      console.log('Decoded data lengths (bytes):', {
+        encryptedContent: encryptedContent.length,
+        contentNonce: contentNonce.length,
+        encryptedEntryKey: encryptedEntryKey.length,
+        keyNonce: keyNonce.length
+      });
+      
       // Validate decoded data lengths
       if (contentNonce.length !== nacl.secretbox.nonceLength) {
-        console.error('Invalid content nonce length');
+        console.error('Invalid content nonce length:', contentNonce.length, 'expected:', nacl.secretbox.nonceLength);
         return null;
       }
       
       if (keyNonce.length !== nacl.box.nonceLength) {
-        console.error('Invalid key nonce length');
+        console.error('Invalid key nonce length:', keyNonce.length, 'expected:', nacl.box.nonceLength);
+        return null;
+      }
+      
+      // Validate encrypted content has minimum length (should include auth tag)
+      if (encryptedContent.length < nacl.secretbox.overheadLength) {
+        console.error('Encrypted content too short:', encryptedContent.length, 'minimum required:', nacl.secretbox.overheadLength);
         return null;
       }
       
@@ -146,6 +167,19 @@ export class EntryCryptor {
       
       if (!entryKey) {
         console.error('Failed to decrypt entry key');
+        return null;
+      }
+      
+      console.log('=== Detailed Symmetric Decryption Debug ===');
+      console.log('Entry key successfully decrypted, length:', entryKey.length);
+      console.log('Content nonce length:', contentNonce.length);
+      console.log('Encrypted content length:', encryptedContent.length);
+      console.log('Expected content nonce length:', nacl.secretbox.nonceLength);
+      
+      // Additional validation before symmetric decryption
+      if (entryKey.length !== nacl.secretbox.keyLength) {
+        console.error('Invalid entry key length:', entryKey.length, 'expected:', nacl.secretbox.keyLength);
+        secureClear(entryKey);
         return null;
       }
       
