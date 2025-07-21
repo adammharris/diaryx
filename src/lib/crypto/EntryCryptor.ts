@@ -92,6 +92,13 @@ export class EntryCryptor {
         return null;
       }
       
+      // Debug the exact data being used for symmetric decryption
+      console.log('=== Symmetric Decryption Debug ===');
+      console.log('Entry key (hex):', Array.from(entryKey).map(b => b.toString(16).padStart(2, '0')).join(''));
+      console.log('Content nonce (hex):', Array.from(contentNonce).map(b => b.toString(16).padStart(2, '0')).join(''));
+      console.log('Encrypted content (first 20 bytes hex):', Array.from(encryptedContent.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(''));
+      console.log('Encrypted content length:', encryptedContent.length);
+      
       // Use the decrypted entry key to decrypt the content (symmetric decryption)
       const decryptedContentBytes = nacl.secretbox.open(encryptedContent, contentNonce, entryKey);
       
