@@ -352,13 +352,13 @@ async function updateEntry(req, res) {
       paramCount++;
       paramCount++; // For the WHERE condition timestamp check
       values.push(id);
-      values.push(serverModifiedTime.toISOString()); // Optimistic locking
+      values.push(currentEntry.updated_at); // Use original PostgreSQL timestamp for optimistic locking
       
       console.log('Preparing optimistic locking query:', {
         entryId: id,
-        expectedTimestamp: serverModifiedTime.toISOString(),
-        originalTimestamp: currentEntry.updated_at,
-        timestampComparison: serverModifiedTime.toISOString() === new Date(currentEntry.updated_at).toISOString()
+        expectedTimestamp: currentEntry.updated_at,
+        timestampType: typeof currentEntry.updated_at,
+        jsConversion: serverModifiedTime.toISOString()
       });
       
       // Use optimistic locking by checking updated_at hasn't changed
