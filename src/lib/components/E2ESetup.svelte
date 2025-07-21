@@ -107,8 +107,17 @@
 
             if (success) {
                 setupStep = 'success';
-                setTimeout(() => {
+                setTimeout(async () => {
                     onSetupComplete?.();
+                    
+                    // Trigger post-encryption sync to import any cloud entries
+                    try {
+                        const { storageService } = await import('../services/storage');
+                        await storageService.syncAfterLogin();
+                    } catch (error) {
+                        console.error('Post-encryption sync failed:', error);
+                    }
+                    
                     handleClose();
                 }, 2000);
             } else {
@@ -137,8 +146,17 @@
             const success = e2eEncryptionService.login(password);
             if (success) {
                 setupStep = 'success';
-                setTimeout(() => {
+                setTimeout(async () => {
                     onSetupComplete?.();
+                    
+                    // Trigger post-encryption sync to import any cloud entries
+                    try {
+                        const { storageService } = await import('../services/storage');
+                        await storageService.syncAfterLogin();
+                    } catch (error) {
+                        console.error('Post-encryption sync failed:', error);
+                    }
+                    
                     handleClose();
                 }, 1000);
             } else {

@@ -924,6 +924,170 @@ class StorageService {
 	}
 
 	/**
+	 * Fetch user's entries from the cloud
+	 */
+	async fetchCloudEntries(): Promise<any[]> {
+		if (!apiAuthService.isAuthenticated()) {
+			console.log('Cannot fetch cloud entries: user not authenticated');
+			return [];
+		}
+
+		try {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			const response = await fetch(`${apiUrl}/api/entries`, {
+				method: 'GET',
+				headers: {
+					...apiAuthService.getAuthHeaders()
+				}
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to fetch entries: ${response.status}`);
+			}
+
+			const result = await response.json();
+			return result.data || [];
+		} catch (error) {
+			console.error('Failed to fetch cloud entries:', error);
+			return [];
+		}
+	}
+
+	/**
+	 * Import cloud entries as local entries
+	 */
+	async importCloudEntries(): Promise<number> {
+		const cloudEntries = await this.fetchCloudEntries();
+		if (cloudEntries.length === 0) {
+			console.log('No cloud entries to import');
+			return 0;
+		}
+
+		console.log('Found', cloudEntries.length, 'cloud entries to import');
+
+		// Check if E2E encryption is available
+		const e2eSession = e2eEncryptionService.getCurrentSession();
+		if (!e2eSession || !e2eSession.isUnlocked) {
+			console.log('E2E encryption not unlocked - cannot decrypt entries');
+			return 0;
+		}
+
+		let importedCount = 0;
+
+		for (const cloudEntry of cloudEntries) {
+			try {
+				// Skip if we already have this entry locally (check by cloud ID)
+				const existingLocalId = await this.getLocalIdByCloudId(cloudEntry.id);
+				if (existingLocalId) {
+					console.log('Entry already exists locally, skipping:', cloudEntry.id);
+					continue;
+				}
+
+				// Check if we have access key for this entry
+				if (!cloudEntry.access_key?.encrypted_entry_key) {
+					console.log('No access key for entry, skipping:', cloudEntry.id);
+					continue;
+				}
+
+				// Try to decrypt the entry
+				const decryptedEntry = e2eEncryptionService.decryptEntry({
+					encryptedContentB64: cloudEntry.encrypted_content,
+					encryptedEntryKeyB64: cloudEntry.access_key.encrypted_entry_key,
+					keyNonceB64: cloudEntry.access_key.key_nonce,
+					encryptionMetadata: cloudEntry.encryption_metadata
+				});
+
+				if (!decryptedEntry) {
+					console.log('Failed to decrypt entry, skipping:', cloudEntry.id);
+					continue;
+				}
+
+				// Generate a local ID based on the title
+				const localId = await this.generateUniqueFilename(decryptedEntry.title || 'Untitled Entry');
+				
+				// Create the entry locally
+				const journalEntry: JournalEntry = {
+					id: localId,
+					title: decryptedEntry.title,
+					content: decryptedEntry.content,
+					created_at: cloudEntry.created_at,
+					modified_at: cloudEntry.updated_at,
+					file_path: `${localId}.md`
+				};
+
+				// Save to appropriate storage based on environment
+				if (this.environment === 'tauri') {
+					// Save to filesystem
+					const filePath = `${this.journalFolder}/${localId}${this.fileExtension}`;
+					await writeTextFile(filePath, journalEntry.content, { baseDir: this.baseDir });
+				} else {
+					// Save to IndexedDB
+					const db = await this.initDB();
+					await db.put('entries', journalEntry);
+				}
+
+				// Cache the entry metadata
+				await this.cacheEntryMetadata(journalEntry);
+
+				// Store the cloud mapping
+				await this.storeCloudMapping(localId, cloudEntry.id);
+
+				console.log('Imported entry:', localId, 'from cloud ID:', cloudEntry.id);
+				importedCount++;
+
+			} catch (error) {
+				console.error('Failed to import entry:', cloudEntry.id, error);
+			}
+		}
+
+		console.log('Successfully imported', importedCount, 'entries from cloud');
+		return importedCount;
+	}
+
+	/**
+	 * Check if user has E2E encryption set up by checking if they have any entries in the cloud
+	 */
+	async hasCloudEntries(): Promise<boolean> {
+		const cloudEntries = await this.fetchCloudEntries();
+		return cloudEntries.length > 0;
+	}
+
+	/**
+	 * Sync after login - import cloud entries if any exist
+	 */
+	async syncAfterLogin(): Promise<void> {
+		try {
+			console.log('Performing post-login sync...');
+			
+			// Check if user has entries in the cloud
+			const hasEntries = await this.hasCloudEntries();
+			if (hasEntries) {
+				console.log('User has cloud entries, attempting to import...');
+				
+				// Check if E2E encryption is set up
+				const e2eSession = e2eEncryptionService.getCurrentSession();
+				if (!e2eSession || !e2eSession.isUnlocked) {
+					console.log('E2E encryption not set up - user will need to unlock encryption to access cloud entries');
+					// Could potentially show a notification to the user here
+					return;
+				}
+				
+				// Import cloud entries
+				const importedCount = await this.importCloudEntries();
+				if (importedCount > 0) {
+					// Refresh the UI by clearing cache and reloading
+					await this.clearCacheAndRefresh();
+					console.log('Post-login sync completed successfully');
+				}
+			} else {
+				console.log('User has no cloud entries - likely a new user');
+			}
+		} catch (error) {
+			console.error('Failed to sync after login:', error);
+		}
+	}
+
+	/**
 	 * Store mapping between local entry ID and cloud UUID
 	 */
 	private async storeCloudMapping(localId: string, cloudId: string): Promise<void> {
@@ -943,6 +1107,24 @@ class StorageService {
 		const db = await this.initDB();
 		const mapping = await db.get('cloudMappings', localId);
 		return mapping?.cloudId || null;
+	}
+
+	/**
+	 * Get local ID for a given cloud UUID
+	 */
+	private async getLocalIdByCloudId(cloudId: string): Promise<string | null> {
+		const db = await this.initDB();
+		const tx = db.transaction('cloudMappings', 'readonly');
+		const store = tx.objectStore('cloudMappings');
+		const allMappings = await store.getAll();
+		
+		for (const mapping of allMappings) {
+			if (mapping.cloudId === cloudId) {
+				return mapping.localId;
+			}
+		}
+		
+		return null;
 	}
 
 	/**

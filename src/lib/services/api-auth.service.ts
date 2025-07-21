@@ -61,6 +61,16 @@ class ApiAuthService {
     
     if (browser) {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(session));
+      
+      // Trigger post-login sync after a short delay to ensure everything is initialized
+      setTimeout(async () => {
+        try {
+          const { storageService } = await import('./storage');
+          await storageService.syncAfterLogin();
+        } catch (error) {
+          console.error('Post-login sync failed:', error);
+        }
+      }, 1000);
     }
   }
 
