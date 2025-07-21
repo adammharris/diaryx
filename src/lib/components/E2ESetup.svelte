@@ -28,9 +28,29 @@
         } else if (e2eSession?.isUnlocked) {
             setupStep = 'success';
         } else {
-            setupStep = 'intro';
+            // Check for cloud keys if no local keys and user is authenticated
+            checkForCloudKeys();
         }
     });
+
+    async function checkForCloudKeys() {
+        if (!currentUser) {
+            setupStep = 'intro';
+            return;
+        }
+
+        try {
+            const hasCloudKeys = await e2eEncryptionService.hasCloudEncryptionKeys(currentUser.id);
+            if (hasCloudKeys) {
+                setupStep = 'existing';
+            } else {
+                setupStep = 'intro';
+            }
+        } catch (error) {
+            console.error('Failed to check cloud keys:', error);
+            setupStep = 'intro';
+        }
+    }
 
     function handleClose() {
         onclose?.();
@@ -143,7 +163,25 @@
         error = '';
 
         try {
-            const success = e2eEncryptionService.login(password);
+            let success = false;
+            
+            // First try to restore keys from cloud
+            if (currentUser) {
+                try {
+                    success = await e2eEncryptionService.restoreKeysFromCloud(currentUser.id, password);
+                    if (success) {
+                        console.log('Successfully restored encryption keys from cloud');
+                    }
+                } catch (error) {
+                    console.log('Cloud restoration failed, trying local login:', error);
+                }
+            }
+            
+            // If cloud restoration failed, try local login
+            if (!success) {
+                success = e2eEncryptionService.login(password);
+            }
+            
             if (success) {
                 setupStep = 'success';
                 setTimeout(async () => {

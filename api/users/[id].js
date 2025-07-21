@@ -52,18 +52,27 @@ async function getUser(req, res) {
     }
     
     // Only return public fields
+    // Include encrypted private key only if user is viewing their own profile
+    const isOwnProfile = req.user?.userId === id;
+    const responseData = {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      display_name: user.display_name,
+      avatar_url: user.avatar_url,
+      public_key: user.public_key,
+      discoverable: user.discoverable,
+      created_at: user.created_at
+    };
+
+    // Only include encrypted_private_key for own profile
+    if (isOwnProfile && user.encrypted_private_key) {
+      responseData.encrypted_private_key = user.encrypted_private_key;
+    }
+
     return res.status(200).json({
       success: true,
-      data: {
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        display_name: user.display_name,
-        avatar_url: user.avatar_url,
-        public_key: user.public_key,
-        discoverable: user.discoverable,
-        created_at: user.created_at
-      }
+      data: responseData
     });
     
   } catch (error) {
@@ -100,7 +109,8 @@ async function updateUser(req, res) {
       display_name,
       avatar_url,
       discoverable,
-      public_key
+      public_key,
+      encrypted_private_key
     } = req.body;
     
     // Build update query dynamically
@@ -142,6 +152,12 @@ async function updateUser(req, res) {
       paramCount++;
       updates.push(`public_key = $${paramCount}`);
       values.push(public_key);
+    }
+    
+    if (encrypted_private_key !== undefined) {
+      paramCount++;
+      updates.push(`encrypted_private_key = $${paramCount}`);
+      values.push(encrypted_private_key);
     }
     
     if (updates.length === 0) {

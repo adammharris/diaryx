@@ -96,8 +96,8 @@ export class E2EEncryptionService {
       
       this.sessionStore.set(this.currentSession);
       
-      // Update user profile with public key in the backend
-      this.updateUserPublicKey(userId, keyPair.publicKey);
+      // Update user profile with encryption keys in the backend
+      this.updateUserEncryptionKeys(userId, keyPair.publicKey, encryptedSecretKeyB64);
       
       return true;
     } catch (error) {
@@ -360,14 +360,122 @@ export class E2EEncryptionService {
   }
 
   /**
-   * Update user's public key in the backend database
+   * Check if user has existing encryption keys in the database
    */
-  private async updateUserPublicKey(userId: string, publicKeyB64: string): Promise<void> {
+  async hasCloudEncryptionKeys(userId: string): Promise<boolean> {
     try {
       const { apiAuthService } = await import('./api-auth.service');
       
       if (!apiAuthService.isAuthenticated()) {
-        console.log('Cannot update public key: user not authenticated');
+        console.log('Cannot check cloud keys: user not authenticated');
+        return false;
+      }
+
+      const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${apiUrl}/api/users/${userId}`, {
+        method: 'GET',
+        headers: {
+          ...apiAuthService.getAuthHeaders()
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get user profile: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const hasKeys = !!(result.data?.public_key && result.data?.encrypted_private_key);
+      
+      console.log('Cloud encryption keys check:', hasKeys ? 'found' : 'not found');
+      return hasKeys;
+    } catch (error) {
+      console.error('Failed to check cloud encryption keys:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Restore encryption keys from the cloud
+   */
+  async restoreKeysFromCloud(userId: string, password: string): Promise<boolean> {
+    try {
+      const { apiAuthService } = await import('./api-auth.service');
+      
+      if (!apiAuthService.isAuthenticated()) {
+        console.log('Cannot restore keys: user not authenticated');
+        return false;
+      }
+
+      const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${apiUrl}/api/users/${userId}`, {
+        method: 'GET',
+        headers: {
+          ...apiAuthService.getAuthHeaders()
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get user profile: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const userData = result.data;
+      
+      if (!userData?.public_key || !userData?.encrypted_private_key) {
+        console.log('No cloud encryption keys found');
+        return false;
+      }
+
+      // Try to decrypt the private key with the provided password
+      const secretKey = KeyManager.decryptSecretKey(userData.encrypted_private_key, password);
+      if (!secretKey) {
+        console.error('Failed to decrypt private key - invalid password');
+        return false;
+      }
+
+      // Store the keys locally
+      const storedKeys: StoredUserKeys = {
+        encryptedSecretKeyB64: userData.encrypted_private_key,
+        publicKeyB64: userData.public_key,
+        userId
+      };
+      
+      if (browser) {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(storedKeys));
+      }
+      
+      // Create active session
+      const userKeyPair: UserKeyPair = {
+        publicKey: KeyManager.publicKeyFromB64(userData.public_key),
+        secretKey: secretKey
+      };
+      
+      this.currentSession = {
+        userId,
+        userKeyPair,
+        publicKeyB64: userData.public_key,
+        isUnlocked: true
+      };
+      
+      this.sessionStore.set(this.currentSession);
+      
+      console.log('Successfully restored encryption keys from cloud');
+      return true;
+    } catch (error) {
+      console.error('Failed to restore keys from cloud:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Update user's encryption keys in the backend database
+   */
+  private async updateUserEncryptionKeys(userId: string, publicKeyB64: string, encryptedPrivateKeyB64: string): Promise<void> {
+    try {
+      const { apiAuthService } = await import('./api-auth.service');
+      
+      if (!apiAuthService.isAuthenticated()) {
+        console.log('Cannot update encryption keys: user not authenticated');
         return;
       }
 
@@ -379,17 +487,18 @@ export class E2EEncryptionService {
           ...apiAuthService.getAuthHeaders()
         },
         body: JSON.stringify({
-          public_key: publicKeyB64
+          public_key: publicKeyB64,
+          encrypted_private_key: encryptedPrivateKeyB64
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update public key: ${response.status}`);
+        throw new Error(`Failed to update encryption keys: ${response.status}`);
       }
 
-      console.log('User public key updated successfully');
+      console.log('User encryption keys updated successfully');
     } catch (error) {
-      console.error('Failed to update user public key:', error);
+      console.error('Failed to update user encryption keys:', error);
     }
   }
 }
