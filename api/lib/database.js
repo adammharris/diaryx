@@ -196,3 +196,149 @@ export async function healthCheck() {
     };
   }
 }
+
+/**
+ * Execute a conditional update with optimistic locking
+ * Returns { success: boolean, conflict: boolean, result?: any }
+ */
+export async function conditionalUpdate(userId, table, id, updates, expectedTimestamp) {
+  const db = getDb();
+  const client = await db.connect();
+  
+  try {
+    // Set the current user ID for RLS policies
+    await client.query(`SET app.current_user_id = '${userId}'`);
+    
+    await client.query('BEGIN');
+    
+    // Check current timestamp
+    const checkResult = await client.query(
+      `SELECT updated_at FROM ${table} WHERE id = $1`,
+      [id]
+    );
+    
+    if (checkResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, conflict: false, error: 'Not found' };
+    }
+    
+    const currentTimestamp = checkResult.rows[0].updated_at;
+    
+    // Check for conflict
+    if (expectedTimestamp && new Date(currentTimestamp) > new Date(expectedTimestamp)) {
+      await client.query('ROLLBACK');
+      return { 
+        success: false, 
+        conflict: true, 
+        currentTimestamp: currentTimestamp.toISOString() 
+      };
+    }
+    
+    // Build update query
+    const updateFields = Object.keys(updates);
+    const updateValues = Object.values(updates);
+    const setClause = updateFields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+    
+    const updateQuery = `
+      UPDATE ${table} 
+      SET ${setClause}, updated_at = NOW()
+      WHERE id = $1 AND updated_at = $${updateFields.length + 2}
+      RETURNING *
+    `;
+    
+    const result = await client.query(updateQuery, [id, ...updateValues, expectedTimestamp]);
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, conflict: true };
+    }
+    
+    await client.query('COMMIT');
+    return { success: true, conflict: false, result: result.rows[0] };
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get entry with version information for conflict detection
+ */
+export async function getEntryWithVersion(userId, entryId) {
+  const result = await queryWithUser(userId, 
+    `SELECT id, updated_at, EXTRACT(EPOCH FROM updated_at) as version
+     FROM entries WHERE id = $1`, 
+    [entryId]
+  );
+  
+  return result.rows[0] || null;
+}
+
+/**
+ * Batch operation with conflict detection
+ * Useful for syncing multiple entries
+ */
+export async function batchUpdateWithConflictDetection(userId, operations) {
+  const db = getDb();
+  const client = await db.connect();
+  
+  try {
+    await client.query(`SET app.current_user_id = '${userId}'`);
+    await client.query('BEGIN');
+    
+    const results = [];
+    
+    for (const operation of operations) {
+      const { type, table, id, data, expectedTimestamp } = operation;
+      
+      if (type === 'update') {
+        // Check for conflicts
+        const checkResult = await client.query(
+          `SELECT updated_at FROM ${table} WHERE id = $1`,
+          [id]
+        );
+        
+        if (checkResult.rows.length === 0) {
+          results.push({ id, success: false, error: 'Not found' });
+          continue;
+        }
+        
+        const currentTimestamp = checkResult.rows[0].updated_at;
+        
+        if (expectedTimestamp && new Date(currentTimestamp) > new Date(expectedTimestamp)) {
+          results.push({ 
+            id, 
+            success: false, 
+            conflict: true,
+            currentTimestamp: currentTimestamp.toISOString()
+          });
+          continue;
+        }
+        
+        // Perform update
+        const updateFields = Object.keys(data);
+        const updateValues = Object.values(data);
+        const setClause = updateFields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+        
+        const updateResult = await client.query(
+          `UPDATE ${table} SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [id, ...updateValues]
+        );
+        
+        results.push({ id, success: true, result: updateResult.rows[0] });
+      }
+    }
+    
+    await client.query('COMMIT');
+    return results;
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}

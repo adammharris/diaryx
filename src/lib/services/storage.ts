@@ -40,6 +40,10 @@ class StorageService {
 	private readonly fileExtension = '.md';
 	private readonly journalFolder = 'Diaryx';
 	private fileWatcher: (() => void) | null = null;
+	
+	// Concurrency control for cloud operations
+	private cloudOperationLocks = new Map<string, Promise<any>>();
+	private syncInProgress = false;
 
 	constructor() {
 		this.environment = this.detectEnvironment();
@@ -267,8 +271,13 @@ class StorageService {
 					// Extract event type (metadata or data)
 					let eventType = 'unknown';
 					if (hasModify) {
-						const modify = event.type.modify as any;
-						eventType = modify?.kind || 'modify';
+						// Safe access to modify property
+						if ('modify' in event.type) {
+							const modify = event.type.modify as any;
+							eventType = modify?.kind || 'modify';
+						} else {
+							eventType = 'modify';
+						}
 					} else if (hasCreate) {
 						eventType = 'create';
 					} else if (hasRemove) {
@@ -648,6 +657,80 @@ class StorageService {
 	// Cloud sync methods
 
 	/**
+	 * Check for conflicts before syncing an entry to cloud
+	 */
+	private async checkSyncConflicts(entryId: string, localModified: string): Promise<{ hasConflict: boolean; cloudEntry?: any }> {
+		try {
+			const cloudId = await this.getCloudId(entryId);
+			if (!cloudId) {
+				return { hasConflict: false };
+			}
+
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+				method: 'GET',
+				headers: {
+					...apiAuthService.getAuthHeaders()
+				}
+			});
+
+			if (!response.ok) {
+				if (response.status === 404) {
+					// Entry doesn't exist in cloud anymore
+					await this.removeCloudMapping(entryId);
+					return { hasConflict: false };
+				}
+				throw new Error(`Failed to check cloud entry: ${response.status}`);
+			}
+
+			const result = await response.json();
+			const cloudEntry = result.data;
+			const cloudModified = cloudEntry.updated_at;
+
+			// Check if cloud version is newer than local version
+			const localTime = new Date(localModified).getTime();
+			const cloudTime = new Date(cloudModified).getTime();
+
+			if (cloudTime > localTime) {
+				console.warn('Sync conflict detected - cloud version is newer', {
+					entryId,
+					localModified,
+					cloudModified
+				});
+				return { hasConflict: true, cloudEntry };
+			}
+
+			return { hasConflict: false };
+		} catch (error) {
+			console.error('Failed to check sync conflicts:', error);
+			return { hasConflict: false };
+		}
+	}
+
+	/**
+	 * Acquire a lock for cloud operations on a specific entry
+	 */
+	private async acquireCloudLock<T>(entryId: string, operation: () => Promise<T>): Promise<T> {
+		const lockKey = `cloud_${entryId}`;
+		
+		// If there's already an operation in progress for this entry, wait for it
+		if (this.cloudOperationLocks.has(lockKey)) {
+			await this.cloudOperationLocks.get(lockKey);
+		}
+
+		// Create a new lock for this operation
+		const operationPromise = operation();
+		this.cloudOperationLocks.set(lockKey, operationPromise);
+
+		try {
+			const result = await operationPromise;
+			return result;
+		} finally {
+			this.cloudOperationLocks.delete(lockKey);
+		}
+	}
+
+	/**
 	 * Publish an entry to the cloud with E2E encryption
 	 */
 	async publishEntry(entryId: string): Promise<boolean> {
@@ -663,97 +746,108 @@ class StorageService {
 			return false;
 		}
 
-		try {
-			// Get the entry to publish
-			const entry = await this.getEntry(entryId);
-			if (!entry) {
-				console.error('Entry not found:', entryId);
+		return this.acquireCloudLock(entryId, async () => {
+			try {
+				// Check if entry is already published
+				const existingCloudId = await this.getCloudId(entryId);
+				if (existingCloudId) {
+					console.log('Entry already published, updating instead');
+					return this.syncEntryToCloud(entryId);
+				}
+
+				// Get the entry to publish
+				const entry = await this.getEntry(entryId);
+				if (!entry) {
+					console.error('Entry not found:', entryId);
+					return false;
+				}
+
+				// Parse frontmatter from content
+				const parsedContent = FrontmatterService.parseContent(entry.content);
+				
+				// Prepare entry object for encryption
+				const entryObject: EntryObject = {
+					title: entry.title,
+					content: entry.content,
+					frontmatter: parsedContent.frontmatter,
+					tags: FrontmatterService.extractTags(parsedContent.frontmatter)
+				};
+
+				// Encrypt the entry using E2E encryption service
+				const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
+				if (!encryptedData) {
+					throw new Error('Failed to encrypt entry');
+				}
+
+				// Generate hashes using E2E encryption service
+				const hashes = e2eEncryptionService.generateHashes(entryObject);
+
+				// Get encryption metadata and include the content nonce
+				const encryptionMetadata = {
+					...e2eEncryptionService.createEncryptionMetadata(),
+					contentNonceB64: encryptedData.contentNonceB64
+				};
+
+				// Prepare API payload according to backend schema
+				// Note: We're using the same encrypted content for both title and content for now
+				// In a more sophisticated implementation, we might encrypt them separately
+				const apiPayload = {
+					encrypted_title: encryptedData.encryptedContentB64,
+					encrypted_content: encryptedData.encryptedContentB64,
+					encrypted_frontmatter: parsedContent.hasFrontmatter ? JSON.stringify(parsedContent.frontmatter) : null,
+					encryption_metadata: encryptionMetadata,
+					title_hash: hashes.titleHash,
+					content_preview_hash: hashes.previewHash,
+					is_published: true,
+					file_path: entry.file_path || `${entryId}.md`,
+					owner_encrypted_entry_key: encryptedData.encryptedEntryKeyB64,
+					owner_key_nonce: encryptedData.keyNonceB64,
+					// Include local modification time for conflict detection
+					client_modified_at: entry.modified_at
+				};
+
+				// Debug: Log the payload before sending
+				console.log('Frontend API payload:', {
+					...apiPayload,
+					encrypted_title: apiPayload.encrypted_title?.substring(0, 50) + '...',
+					encrypted_content: apiPayload.encrypted_content?.substring(0, 50) + '...',
+					owner_encrypted_entry_key: apiPayload.owner_encrypted_entry_key?.substring(0, 50) + '...'
+				});
+
+				// Call the API to publish
+				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+				const response = await fetch(`${apiUrl}/api/entries`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						...apiAuthService.getAuthHeaders()
+					},
+					body: JSON.stringify(apiPayload)
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(`Failed to publish entry: ${response.status} - ${errorText}`);
+				}
+
+				// Parse response to get cloud UUID
+				const result = await response.json();
+				const cloudId = result.data?.entry?.id;
+				
+				if (cloudId) {
+					// Store mapping between local ID and cloud UUID
+					await this.storeCloudMapping(entryId, cloudId);
+					console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId);
+				} else {
+					console.warn('Entry published but no cloud ID returned');
+				}
+				
+				return true;
+			} catch (error) {
+				console.error('Failed to publish entry:', error);
 				return false;
 			}
-
-			// Parse frontmatter from content
-			const parsedContent = FrontmatterService.parseContent(entry.content);
-			
-			// Prepare entry object for encryption
-			const entryObject: EntryObject = {
-				title: entry.title,
-				content: entry.content,
-				frontmatter: parsedContent.frontmatter,
-				tags: FrontmatterService.extractTags(parsedContent.frontmatter)
-			};
-
-			// Encrypt the entry using E2E encryption service
-			const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
-			if (!encryptedData) {
-				throw new Error('Failed to encrypt entry');
-			}
-
-			// Generate hashes using E2E encryption service
-			const hashes = e2eEncryptionService.generateHashes(entryObject);
-
-			// Get encryption metadata and include the content nonce
-			const encryptionMetadata = {
-				...e2eEncryptionService.createEncryptionMetadata(),
-				contentNonceB64: encryptedData.contentNonceB64
-			};
-
-			// Prepare API payload according to backend schema
-			// Note: We're using the same encrypted content for both title and content for now
-			// In a more sophisticated implementation, we might encrypt them separately
-			const apiPayload = {
-				encrypted_title: encryptedData.encryptedContentB64,
-				encrypted_content: encryptedData.encryptedContentB64,
-				encrypted_frontmatter: parsedContent.hasFrontmatter ? JSON.stringify(parsedContent.frontmatter) : null,
-				encryption_metadata: encryptionMetadata,
-				title_hash: hashes.titleHash,
-				content_preview_hash: hashes.previewHash,
-				is_published: true,
-				file_path: entry.file_path || `${entryId}.md`,
-				owner_encrypted_entry_key: encryptedData.encryptedEntryKeyB64,
-				owner_key_nonce: encryptedData.keyNonceB64
-			};
-
-			// Debug: Log the payload before sending
-			console.log('Frontend API payload:', {
-				...apiPayload,
-				encrypted_title: apiPayload.encrypted_title?.substring(0, 50) + '...',
-				encrypted_content: apiPayload.encrypted_content?.substring(0, 50) + '...',
-				owner_encrypted_entry_key: apiPayload.owner_encrypted_entry_key?.substring(0, 50) + '...'
-			});
-
-			// Call the API to publish
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...apiAuthService.getAuthHeaders()
-				},
-				body: JSON.stringify(apiPayload)
-			});
-
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Failed to publish entry: ${response.status} - ${errorText}`);
-			}
-
-			// Parse response to get cloud UUID
-			const result = await response.json();
-			const cloudId = result.data?.entry?.id;
-			
-			if (cloudId) {
-				// Store mapping between local ID and cloud UUID
-				await this.storeCloudMapping(entryId, cloudId);
-				console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId);
-			} else {
-				console.warn('Entry published but no cloud ID returned');
-			}
-			
-			return true;
-		} catch (error) {
-			console.error('Failed to publish entry:', error);
-			return false;
-		}
+		});
 	}
 
 	/**
@@ -854,79 +948,98 @@ class StorageService {
 			return false;
 		}
 
-		try {
-			// Get the cloud UUID for this entry
-			const cloudId = await this.getCloudId(entryId);
-			if (!cloudId) {
-				console.error('No cloud ID found for entry:', entryId);
+		return this.acquireCloudLock(entryId, async () => {
+			try {
+				// Get the cloud UUID for this entry
+				const cloudId = await this.getCloudId(entryId);
+				if (!cloudId) {
+					console.error('No cloud ID found for entry:', entryId);
+					return false;
+				}
+
+				// Get the local entry
+				const entry = await this.getEntry(entryId);
+				if (!entry) {
+					return false;
+				}
+
+				// Check for conflicts before syncing
+				const conflictCheck = await this.checkSyncConflicts(entryId, entry.modified_at);
+				if (conflictCheck.hasConflict) {
+					console.error('Sync conflict detected - cloud version is newer. Manual resolution required.');
+					// TODO: Implement conflict resolution UI
+					return false;
+				}
+
+				// Parse frontmatter from content
+				const parsedContent = FrontmatterService.parseContent(entry.content);
+				
+				// Prepare entry object for encryption
+				const entryObject: EntryObject = {
+					title: entry.title,
+					content: entry.content,
+					frontmatter: parsedContent.frontmatter,
+					tags: FrontmatterService.extractTags(parsedContent.frontmatter)
+				};
+
+				// Encrypt the entry using E2E encryption service
+				const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
+				if (!encryptedData) {
+					throw new Error('Failed to encrypt entry');
+				}
+
+				// Generate hashes using E2E encryption service
+				const hashes = e2eEncryptionService.generateHashes(entryObject);
+
+				// Get encryption metadata and include the content nonce
+				const encryptionMetadata = {
+					...e2eEncryptionService.createEncryptionMetadata(),
+					contentNonceB64: encryptedData.contentNonceB64
+				};
+
+				// Prepare API payload according to backend schema
+				const apiPayload = {
+					encrypted_title: encryptedData.encryptedContentB64,
+					encrypted_content: encryptedData.encryptedContentB64,
+					encrypted_frontmatter: parsedContent.hasFrontmatter ? JSON.stringify(parsedContent.frontmatter) : null,
+					encryption_metadata: encryptionMetadata,
+					title_hash: hashes.titleHash,
+					content_preview_hash: hashes.previewHash,
+					is_published: true,
+					file_path: entry.file_path || `${entryId}.md`,
+					// Include local modification time for conflict detection
+					client_modified_at: entry.modified_at,
+					// HTTP-style conditional header
+					if_unmodified_since: entry.modified_at
+				};
+
+				// Update the cloud entry
+				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+				const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						...apiAuthService.getAuthHeaders()
+					},
+					body: JSON.stringify(apiPayload)
+				});
+
+				if (!response.ok) {
+					if (response.status === 409) {
+						// Conflict detected by server
+						console.error('Server detected a sync conflict');
+						return false;
+					}
+					throw new Error(`Failed to sync entry: ${response.status}`);
+				}
+
+				console.log('Entry synced to cloud. Local ID:', entryId, 'Cloud ID:', cloudId);
+				return true;
+			} catch (error) {
+				console.error('Failed to sync entry to cloud:', error);
 				return false;
 			}
-
-			// Get the local entry
-			const entry = await this.getEntry(entryId);
-			if (!entry) {
-				return false;
-			}
-
-			// Parse frontmatter from content
-			const parsedContent = FrontmatterService.parseContent(entry.content);
-			
-			// Prepare entry object for encryption
-			const entryObject: EntryObject = {
-				title: entry.title,
-				content: entry.content,
-				frontmatter: parsedContent.frontmatter,
-				tags: FrontmatterService.extractTags(parsedContent.frontmatter)
-			};
-
-			// Encrypt the entry using E2E encryption service
-			const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
-			if (!encryptedData) {
-				throw new Error('Failed to encrypt entry');
-			}
-
-			// Generate hashes using E2E encryption service
-			const hashes = e2eEncryptionService.generateHashes(entryObject);
-
-			// Get encryption metadata and include the content nonce
-			const encryptionMetadata = {
-				...e2eEncryptionService.createEncryptionMetadata(),
-				contentNonceB64: encryptedData.contentNonceB64
-			};
-
-			// Prepare API payload according to backend schema
-			const apiPayload = {
-				encrypted_title: encryptedData.encryptedContentB64,
-				encrypted_content: encryptedData.encryptedContentB64,
-				encrypted_frontmatter: parsedContent.hasFrontmatter ? JSON.stringify(parsedContent.frontmatter) : null,
-				encryption_metadata: encryptionMetadata,
-				title_hash: hashes.titleHash,
-				content_preview_hash: hashes.previewHash,
-				is_published: true,
-				file_path: entry.file_path || `${entryId}.md`
-			};
-
-			// Update the cloud entry
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					...apiAuthService.getAuthHeaders()
-				},
-				body: JSON.stringify(apiPayload)
-			});
-
-			if (!response.ok) {
-				throw new Error(`Failed to sync entry: ${response.status}`);
-			}
-
-			console.log('Entry synced to cloud. Local ID:', entryId, 'Cloud ID:', cloudId);
-			return true;
-		} catch (error) {
-			console.error('Failed to sync entry to cloud:', error);
-			return false;
-		}
+		});
 	}
 
 	/**
@@ -963,144 +1076,187 @@ class StorageService {
 	 * Import cloud entries as local entries
 	 */
 	async importCloudEntries(): Promise<number> {
-		const cloudEntries = await this.fetchCloudEntries();
-		if (cloudEntries.length === 0) {
-			console.log('No cloud entries to import');
+		// Prevent concurrent import operations
+		if (this.syncInProgress) {
+			console.log('Import already in progress, skipping');
 			return 0;
 		}
 
-		console.log('Found', cloudEntries.length, 'cloud entries to import');
-
-		// Check if E2E encryption is available
-		const e2eSession = e2eEncryptionService.getCurrentSession();
-		if (!e2eSession || !e2eSession.isUnlocked) {
-			console.log('E2E encryption not unlocked - cannot decrypt entries');
-			return 0;
-		}
-
-		let importedCount = 0;
-
-		for (const cloudEntry of cloudEntries) {
-			try {
-				console.log('Debug - Processing cloud entry:', {
-					id: cloudEntry.id,
-					hasAccessKey: !!cloudEntry.access_key,
-					hasEncryptionMetadata: !!cloudEntry.encryption_metadata,
-					hasAuthor: !!cloudEntry.author,
-					authorPublicKey: cloudEntry.author?.public_key?.substring(0, 20) + '...'
-				});
-				
-				// Skip if we already have this entry locally (check by cloud ID)
-				const existingLocalId = await this.getLocalIdByCloudId(cloudEntry.id);
-				if (existingLocalId) {
-					console.log('Entry already exists locally, skipping:', cloudEntry.id);
-					continue;
-				}
-
-				// Check if we have access key for this entry
-				if (!cloudEntry.access_key?.encrypted_entry_key) {
-					console.log('No access key for entry, skipping:', cloudEntry.id);
-					continue;
-				}
-
-				// Parse encryption metadata to get content nonce
-				let encryptionMetadata;
-				try {
-					encryptionMetadata = typeof cloudEntry.encryption_metadata === 'string' 
-						? JSON.parse(cloudEntry.encryption_metadata) 
-						: cloudEntry.encryption_metadata;
-				} catch (error) {
-					console.log('Failed to parse encryption metadata, skipping:', cloudEntry.id);
-					continue;
-				}
-
-				// Get content nonce from encryption metadata
-				const contentNonceB64 = encryptionMetadata.contentNonceB64;
-				if (!contentNonceB64) {
-					console.log('No content nonce found in encryption metadata, skipping:', cloudEntry.id);
-					continue;
-				}
-
-				// Get author's public key
-				const authorPublicKey = cloudEntry.author?.public_key;
-				console.log('Debug - Entry:', cloudEntry.id, 'Author public key:', authorPublicKey, 'Type:', typeof authorPublicKey);
-				
-				if (!authorPublicKey || typeof authorPublicKey !== 'string') {
-					console.log('No valid author public key found, skipping:', cloudEntry.id);
-					continue;
-				}
-
-				// Try to decrypt the entry
-				console.log('Attempting decryption with:', {
-					hasEncryptedContent: !!cloudEntry.encrypted_content,
-					hasContentNonce: !!contentNonceB64,
-					hasEncryptedEntryKey: !!cloudEntry.access_key.encrypted_entry_key,
-					hasKeyNonce: !!cloudEntry.access_key.key_nonce,
-					hasAuthorPublicKey: !!authorPublicKey
-				});
-				
-				const decryptedEntry = e2eEncryptionService.decryptEntry({
-					encryptedContentB64: cloudEntry.encrypted_content,
-					contentNonceB64: contentNonceB64,
-					encryptedEntryKeyB64: cloudEntry.access_key.encrypted_entry_key,
-					keyNonceB64: cloudEntry.access_key.key_nonce
-				}, authorPublicKey);
-				
-				console.log('Decryption result:', decryptedEntry ? 'success' : 'failed');
-
-				if (!decryptedEntry) {
-					console.log('Failed to decrypt entry, skipping:', cloudEntry.id);
-					continue;
-				}
-
-				// Generate a local ID based on the title
-				const localId = await this.generateUniqueFilenameForImport(decryptedEntry.title || 'Untitled Entry');
-				
-				// Create the entry locally
-				const journalEntry: JournalEntry = {
-					id: localId,
-					title: decryptedEntry.title,
-					content: decryptedEntry.content,
-					created_at: cloudEntry.created_at,
-					modified_at: cloudEntry.updated_at,
-					file_path: `${localId}.md`
-				};
-
-				// Save to appropriate storage based on environment
-				if (this.environment === 'tauri') {
-					// Save to filesystem
-					const filePath = `${this.journalFolder}/${localId}${this.fileExtension}`;
-					await writeTextFile(filePath, journalEntry.content, { baseDir: this.baseDir });
-				} else {
-					// Save to IndexedDB
-					const db = await this.initDB();
-					await db.put('entries', journalEntry);
-				}
-
-				// Cache the entry metadata  
-				const metadata: JournalEntryMetadata = {
-					id: journalEntry.id,
-					title: journalEntry.title,
-					created_at: journalEntry.created_at,
-					modified_at: journalEntry.modified_at,
-					file_path: journalEntry.file_path,
-					preview: PreviewService.createPreview(journalEntry.content)
-				};
-				await this.cacheMetadata([metadata]);
-
-				// Store the cloud mapping
-				await this.storeCloudMapping(localId, cloudEntry.id);
-
-				console.log('Imported entry:', localId, 'from cloud ID:', cloudEntry.id);
-				importedCount++;
-
-			} catch (error) {
-				console.error('Failed to import entry:', cloudEntry.id, error);
+		this.syncInProgress = true;
+		
+		try {
+			const cloudEntries = await this.fetchCloudEntries();
+			if (cloudEntries.length === 0) {
+				console.log('No cloud entries to import');
+				return 0;
 			}
-		}
 
-		console.log('Successfully imported', importedCount, 'entries from cloud');
-		return importedCount;
+			console.log('Found', cloudEntries.length, 'cloud entries to import');
+
+			// Check if E2E encryption is available
+			const e2eSession = e2eEncryptionService.getCurrentSession();
+			if (!e2eSession || !e2eSession.isUnlocked) {
+				console.log('E2E encryption not unlocked - cannot decrypt entries');
+				return 0;
+			}
+
+			let importedCount = 0;
+
+			for (const cloudEntry of cloudEntries) {
+				try {
+					console.log('Debug - Processing cloud entry:', {
+						id: cloudEntry.id,
+						hasAccessKey: !!cloudEntry.access_key,
+						hasEncryptionMetadata: !!cloudEntry.encryption_metadata,
+						hasAuthor: !!cloudEntry.author,
+						authorPublicKey: cloudEntry.author?.public_key?.substring(0, 20) + '...'
+					});
+					
+					// Skip if we already have this entry locally (check by cloud ID)
+					const existingLocalId = await this.getLocalIdByCloudId(cloudEntry.id);
+					if (existingLocalId) {
+						// Check if we should update the local entry with newer cloud version
+						const localEntry = await this.getEntry(existingLocalId);
+						if (localEntry) {
+							const localTime = new Date(localEntry.modified_at).getTime();
+							const cloudTime = new Date(cloudEntry.updated_at).getTime();
+							
+							if (cloudTime > localTime) {
+								console.log('Cloud version is newer, updating local entry:', existingLocalId);
+								// Continue with import to update the local entry
+							} else {
+								console.log('Local version is up to date, skipping:', cloudEntry.id);
+								continue;
+							}
+						} else {
+							console.log('Entry mapping exists but local entry not found, reimporting:', cloudEntry.id);
+						}
+					}
+
+					// Check if we have access key for this entry
+					if (!cloudEntry.access_key?.encrypted_entry_key) {
+						console.log('No access key for entry, skipping:', cloudEntry.id);
+						continue;
+					}
+
+					// Parse encryption metadata to get content nonce
+					let encryptionMetadata;
+					try {
+						encryptionMetadata = typeof cloudEntry.encryption_metadata === 'string' 
+							? JSON.parse(cloudEntry.encryption_metadata) 
+							: cloudEntry.encryption_metadata;
+					} catch (error) {
+						console.log('Failed to parse encryption metadata, skipping:', cloudEntry.id);
+						continue;
+					}
+
+					// Get content nonce from encryption metadata
+					const contentNonceB64 = encryptionMetadata.contentNonceB64;
+					if (!contentNonceB64) {
+						console.log('No content nonce found in encryption metadata, skipping:', cloudEntry.id);
+						continue;
+					}
+
+					// Get author's public key
+					const authorPublicKey = cloudEntry.author?.public_key;
+					console.log('Debug - Entry:', cloudEntry.id, 'Author public key:', authorPublicKey, 'Type:', typeof authorPublicKey);
+					
+					if (!authorPublicKey || typeof authorPublicKey !== 'string') {
+						console.log('No valid author public key found, skipping:', cloudEntry.id);
+						continue;
+					}
+
+					// Try to decrypt the entry
+					console.log('Attempting decryption with:', {
+						hasEncryptedContent: !!cloudEntry.encrypted_content,
+						hasContentNonce: !!contentNonceB64,
+						hasEncryptedEntryKey: !!cloudEntry.access_key.encrypted_entry_key,
+						hasKeyNonce: !!cloudEntry.access_key.key_nonce,
+						hasAuthorPublicKey: !!authorPublicKey
+					});
+
+					// Validate encrypted data integrity before attempting decryption
+					const encryptedData = {
+						encryptedContentB64: cloudEntry.encrypted_content,
+						contentNonceB64: contentNonceB64,
+						encryptedEntryKeyB64: cloudEntry.access_key.encrypted_entry_key,
+						keyNonceB64: cloudEntry.access_key.key_nonce
+					};
+
+					if (!this.validateEncryptedData(encryptedData)) {
+						console.error('Encrypted data validation failed for entry:', cloudEntry.id);
+						continue;
+					}
+					
+					const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, authorPublicKey);
+					
+					console.log('Decryption result:', decryptedEntry ? 'success' : 'failed');
+
+					if (!decryptedEntry) {
+						console.log('Failed to decrypt entry, skipping:', cloudEntry.id);
+						continue;
+					}
+
+					// Validate decrypted content
+					if (!decryptedEntry.content || typeof decryptedEntry.content !== 'string') {
+						console.error('Invalid decrypted content for entry:', cloudEntry.id);
+						continue;
+					}
+
+					// Use existing local ID if updating, otherwise generate new one
+					let localId = existingLocalId;
+					if (!localId) {
+						localId = await this.generateUniqueFilenameForImport(decryptedEntry.title || 'Untitled Entry');
+					}
+					
+					// Create the entry locally
+					const journalEntry: JournalEntry = {
+						id: localId,
+						title: decryptedEntry.title,
+						content: decryptedEntry.content,
+						created_at: cloudEntry.created_at,
+						modified_at: cloudEntry.updated_at,
+						file_path: `${localId}.md`
+					};
+
+					// Save to appropriate storage based on environment
+					if (this.environment === 'tauri') {
+						// Save to filesystem
+						const filePath = `${this.journalFolder}/${localId}${this.fileExtension}`;
+						await writeTextFile(filePath, journalEntry.content, { baseDir: this.baseDir });
+					} else {
+						// Save to IndexedDB
+						const db = await this.initDB();
+						await db.put('entries', journalEntry);
+					}
+
+					// Cache the entry metadata  
+					const metadata: JournalEntryMetadata = {
+						id: journalEntry.id,
+						title: journalEntry.title,
+						created_at: journalEntry.created_at,
+						modified_at: journalEntry.modified_at,
+						file_path: journalEntry.file_path,
+						preview: PreviewService.createPreview(journalEntry.content)
+					};
+					await this.cacheMetadata([metadata]);
+
+					// Store the cloud mapping
+					await this.storeCloudMapping(localId, cloudEntry.id);
+
+					console.log('Imported entry:', localId, 'from cloud ID:', cloudEntry.id);
+					importedCount++;
+
+				} catch (error) {
+					console.error('Failed to import entry:', cloudEntry.id, error);
+				}
+			}
+
+			console.log('Successfully imported', importedCount, 'entries from cloud');
+			return importedCount;
+		} finally {
+			this.syncInProgress = false;
+		}
 	}
 
 	/**
@@ -1146,8 +1302,139 @@ class StorageService {
 	}
 
 	/**
-	 * Generate unique filename for importing entries (works in both Tauri and web)
+	 * Perform bidirectional sync between local and cloud entries
 	 */
+	async performBidirectionalSync(): Promise<{ imported: number; uploaded: number; conflicts: number }> {
+		if (this.syncInProgress) {
+			console.log('Sync already in progress');
+			return { imported: 0, uploaded: 0, conflicts: 0 };
+		}
+
+		this.syncInProgress = true;
+		let imported = 0;
+		let uploaded = 0;
+		let conflicts = 0;
+
+		try {
+			// First, import any new or updated entries from cloud
+			imported = await this.importCloudEntries();
+
+			// Then, sync any local changes to cloud
+			const localEntries = await this.getAllEntries();
+			
+			for (const localEntry of localEntries) {
+				try {
+					const cloudId = await this.getCloudId(localEntry.id);
+					
+					if (!cloudId) {
+						// Local entry not published yet - could auto-publish here if desired
+						continue;
+					}
+
+					// Check if local version is newer than cloud
+					const conflictCheck = await this.checkSyncConflicts(localEntry.id, localEntry.modified_at);
+					
+					if (conflictCheck.hasConflict) {
+						console.warn('Sync conflict for entry:', localEntry.id);
+						conflicts++;
+						// TODO: Store conflict info for user resolution
+						continue;
+					}
+
+					// Sync local changes to cloud
+					const syncResult = await this.syncEntryToCloud(localEntry.id);
+					if (syncResult) {
+						uploaded++;
+					}
+				} catch (error) {
+					console.error('Failed to sync local entry to cloud:', localEntry.id, error);
+				}
+			}
+
+			console.log('Bidirectional sync completed:', { imported, uploaded, conflicts });
+			return { imported, uploaded, conflicts };
+		} finally {
+			this.syncInProgress = false;
+		}
+	}
+
+	/**
+	 * Validate encrypted data integrity before processing
+	 */
+	private validateEncryptedData(encryptedData: {
+		encryptedContentB64: string;
+		contentNonceB64: string;
+		encryptedEntryKeyB64: string;
+		keyNonceB64: string;
+	}): boolean {
+		try {
+			// Check that all required fields are present and are valid Base64
+			if (!encryptedData.encryptedContentB64 || !encryptedData.contentNonceB64 ||
+				!encryptedData.encryptedEntryKeyB64 || !encryptedData.keyNonceB64) {
+				console.error('Missing required encrypted data fields');
+				return false;
+			}
+
+			// Validate Base64 format
+			const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+			const fields = [
+				encryptedData.encryptedContentB64,
+				encryptedData.contentNonceB64,
+				encryptedData.encryptedEntryKeyB64,
+				encryptedData.keyNonceB64
+			];
+
+			for (const field of fields) {
+				if (!base64Regex.test(field)) {
+					console.error('Invalid Base64 format detected');
+					return false;
+				}
+			}
+
+			// Check minimum lengths for security
+			if (encryptedData.contentNonceB64.length < 16 || // Minimum 12 bytes encoded
+				encryptedData.keyNonceB64.length < 16 ||
+				encryptedData.encryptedContentB64.length < 20 || // Some minimum content
+				encryptedData.encryptedEntryKeyB64.length < 40) { // Minimum key size
+				console.error('Encrypted data fields too short');
+				return false;
+			}
+
+			return true;
+		} catch (error) {
+			console.error('Error validating encrypted data:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Create a checksum for entry data to detect corruption
+	 */
+	private async createDataChecksum(data: string): Promise<string> {
+		try {
+			// Use crypto.subtle if available (modern browsers)
+			if (typeof crypto !== 'undefined' && crypto.subtle) {
+				const encoder = new TextEncoder();
+				const dataBuffer = encoder.encode(data);
+				const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+				const hashArray = Array.from(new Uint8Array(hashBuffer));
+				return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+			} else {
+				// Fallback to simple hash for older environments
+				let hash = 0;
+				for (let i = 0; i < data.length; i++) {
+					const char = data.charCodeAt(i);
+					hash = ((hash << 5) - hash) + char;
+					hash = hash & hash; // Convert to 32-bit integer
+				}
+				return Math.abs(hash).toString(16);
+			}
+		} catch (error) {
+			console.error('Error creating checksum:', error);
+			// Fallback to length + first/last chars
+			return `${data.length}_${data.charAt(0)}_${data.charAt(data.length - 1)}`;
+		}
+	}
 	private async generateUniqueFilenameForImport(baseTitle: string): Promise<string> {
 		const safeTitle = this.titleToSafeFilename(baseTitle);
 		let filename = safeTitle;
@@ -1223,6 +1510,25 @@ class StorageService {
 	private async removeCloudMapping(localId: string): Promise<void> {
 		const db = await this.initDB();
 		await db.delete('cloudMappings', localId);
+	}
+
+	/**
+	 * Get current sync status
+	 */
+	public getSyncStatus(): { inProgress: boolean; activeOperations: string[] } {
+		return {
+			inProgress: this.syncInProgress,
+			activeOperations: Array.from(this.cloudOperationLocks.keys())
+		};
+	}
+
+	/**
+	 * Cancel all ongoing sync operations (emergency stop)
+	 */
+	public cancelSyncOperations(): void {
+		console.warn('Cancelling all sync operations');
+		this.syncInProgress = false;
+		this.cloudOperationLocks.clear();
 	}
 }
 

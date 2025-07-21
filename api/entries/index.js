@@ -8,6 +8,52 @@ import { requireAuth } from '../lib/middleware.js';
 import { queryWithUser, transactionWithUser } from '../lib/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Validate encrypted data format and integrity
+ */
+function validateEncryptedData(data) {
+  const { encrypted_title, encrypted_content, encryption_metadata, title_hash, owner_encrypted_entry_key } = data;
+  
+  // Check required fields
+  if (!encrypted_title || !encrypted_content || !encryption_metadata || !title_hash || !owner_encrypted_entry_key) {
+    return { valid: false, error: 'Missing required encrypted fields' };
+  }
+  
+  // Validate Base64 format
+  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+  if (!base64Regex.test(encrypted_title) || 
+      !base64Regex.test(encrypted_content) || 
+      !base64Regex.test(owner_encrypted_entry_key)) {
+    return { valid: false, error: 'Invalid Base64 format in encrypted data' };
+  }
+  
+  // Check minimum lengths for security
+  if (encrypted_title.length < 20 || 
+      encrypted_content.length < 20 || 
+      owner_encrypted_entry_key.length < 40) {
+    return { valid: false, error: 'Encrypted data too short' };
+  }
+  
+  // Validate encryption metadata structure
+  try {
+    const metadata = typeof encryption_metadata === 'string' 
+      ? JSON.parse(encryption_metadata) 
+      : encryption_metadata;
+    
+    if (!metadata.contentNonceB64 || !metadata.version) {
+      return { valid: false, error: 'Invalid encryption metadata structure' };
+    }
+    
+    if (!base64Regex.test(metadata.contentNonceB64)) {
+      return { valid: false, error: 'Invalid nonce format in metadata' };
+    }
+  } catch (error) {
+    return { valid: false, error: 'Invalid encryption metadata JSON' };
+  }
+  
+  return { valid: true };
+}
+
 export default async function handler(req, res) {
   const { method } = req;
   
@@ -28,6 +74,7 @@ export default async function handler(req, res) {
 /**
  * Create a new encrypted entry
  * Expects: encrypted content + owner's encrypted entry key
+ * Includes data validation and integrity checks
  */
 async function createEntry(req, res) {
   try {
@@ -43,7 +90,8 @@ async function createEntry(req, res) {
       file_path,
       owner_encrypted_entry_key,
       owner_key_nonce,
-      tag_ids = []
+      tag_ids = [],
+      client_modified_at // For potential future conflict detection
     } = req.body;
     
     // Validate required fields (NOT NULL in database schema)
@@ -67,6 +115,32 @@ async function createEntry(req, res) {
         error: 'Missing or invalid required fields',
         missing,
         note: 'Required fields cannot be null, empty, or the string "null"'
+      });
+    }
+
+    // Validate encrypted data integrity
+    const validation = validateEncryptedData({
+      encrypted_title,
+      encrypted_content,
+      encryption_metadata,
+      title_hash,
+      owner_encrypted_entry_key
+    });
+    
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid encrypted data',
+        details: validation.error
+      });
+    }
+
+    // Validate owner_key_nonce format
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(owner_key_nonce) || owner_key_nonce.length < 16) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid key nonce format'
       });
     }
     

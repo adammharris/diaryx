@@ -8,6 +8,48 @@
 import { requireAuth } from '../lib/middleware.js';
 import { queryWithUser, transactionWithUser } from '../lib/database.js';
 
+/**
+ * Validate encrypted data format and integrity
+ */
+function validateEncryptedData(data) {
+  const { encrypted_title, encrypted_content, encryption_metadata, title_hash } = data;
+  
+  // Check required fields
+  if (!encrypted_title || !encrypted_content || !encryption_metadata || !title_hash) {
+    return { valid: false, error: 'Missing required encrypted fields' };
+  }
+  
+  // Validate Base64 format
+  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+  if (!base64Regex.test(encrypted_title) || !base64Regex.test(encrypted_content)) {
+    return { valid: false, error: 'Invalid Base64 format in encrypted data' };
+  }
+  
+  // Check minimum lengths for security
+  if (encrypted_title.length < 20 || encrypted_content.length < 20) {
+    return { valid: false, error: 'Encrypted data too short' };
+  }
+  
+  // Validate encryption metadata structure
+  try {
+    const metadata = typeof encryption_metadata === 'string' 
+      ? JSON.parse(encryption_metadata) 
+      : encryption_metadata;
+    
+    if (!metadata.contentNonceB64 || !metadata.version) {
+      return { valid: false, error: 'Invalid encryption metadata structure' };
+    }
+    
+    if (!base64Regex.test(metadata.contentNonceB64)) {
+      return { valid: false, error: 'Invalid nonce format in metadata' };
+    }
+  } catch (error) {
+    return { valid: false, error: 'Invalid encryption metadata JSON' };
+  }
+  
+  return { valid: true };
+}
+
 export default async function handler(req, res) {
   const { method, query } = req;
   const { id } = query;
@@ -37,6 +79,7 @@ export default async function handler(req, res) {
 
 /**
  * Get entry with decryption key and metadata
+ * Includes additional conflict detection metadata
  */
 async function getEntry(req, res) {
   try {
@@ -49,10 +92,12 @@ async function getEntry(req, res) {
       SELECT 
         e.*,
         eak.encrypted_entry_key,
+        eak.key_nonce,
         eak.created_at as access_granted_at,
         up.name as author_name,
         up.username as author_username,
-        up.public_key as author_public_key
+        up.public_key as author_public_key,
+        EXTRACT(EPOCH FROM e.updated_at) as updated_at_timestamp
       FROM entries e
       LEFT JOIN entry_access_keys eak ON e.id = eak.entry_id AND eak.user_id = $2
       LEFT JOIN user_profiles up ON e.author_id = up.id
@@ -95,8 +140,10 @@ async function getEntry(req, res) {
         file_path: entry.file_path,
         created_at: entry.created_at,
         updated_at: entry.updated_at,
+        updated_at_timestamp: entry.updated_at_timestamp, // For conflict detection
         access_key: entry.encrypted_entry_key ? {
           encrypted_entry_key: entry.encrypted_entry_key,
+          key_nonce: entry.key_nonce,
           granted_at: entry.access_granted_at
         } : null,
         author: {
@@ -126,6 +173,7 @@ async function getEntry(req, res) {
 
 /**
  * Update entry (only authors can update their entries - enforced by RLS)
+ * Includes conflict detection and optimistic locking
  */
 async function updateEntry(req, res) {
   try {
@@ -140,8 +188,79 @@ async function updateEntry(req, res) {
       content_preview_hash,
       is_published,
       file_path,
-      tag_ids
+      tag_ids,
+      client_modified_at, // Client's last known modification time for conflict detection
+      if_unmodified_since // HTTP-style conditional update
     } = req.body;
+
+    // Validate encrypted data if provided
+    if (encrypted_title || encrypted_content || encryption_metadata || title_hash) {
+      const validation = validateEncryptedData({
+        encrypted_title: encrypted_title || 'dummy', // Use dummy for validation if not updating
+        encrypted_content: encrypted_content || 'dummy',
+        encryption_metadata: encryption_metadata || '{"contentNonceB64":"dummy","version":"1"}',
+        title_hash: title_hash || 'dummy'
+      });
+      
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid encrypted data',
+          details: validation.error
+        });
+      }
+    }
+
+    // First, get current entry state for conflict detection
+    const currentEntryQuery = 'SELECT updated_at, encrypted_content FROM entries WHERE id = $1';
+    const currentEntryResult = await queryWithUser(userId, currentEntryQuery, [id]);
+    
+    if (currentEntryResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Entry not found or unauthorized'
+      });
+    }
+    
+    const currentEntry = currentEntryResult.rows[0];
+    const serverModifiedTime = new Date(currentEntry.updated_at);
+    
+    // Conflict detection: Check if client's version is stale
+    if (client_modified_at) {
+      const clientModifiedTime = new Date(client_modified_at);
+      
+      if (serverModifiedTime > clientModifiedTime) {
+        console.warn('Sync conflict detected:', {
+          entryId: id,
+          serverTime: serverModifiedTime.toISOString(),
+          clientTime: clientModifiedTime.toISOString()
+        });
+        
+        return res.status(409).json({
+          success: false,
+          error: 'Conflict detected',
+          message: 'Entry has been modified by another client',
+          server_modified_at: serverModifiedTime.toISOString(),
+          client_modified_at: client_modified_at,
+          conflict_type: 'modification_time'
+        });
+      }
+    }
+    
+    // HTTP-style conditional update support
+    if (if_unmodified_since) {
+      const ifUnmodifiedTime = new Date(if_unmodified_since);
+      
+      if (serverModifiedTime > ifUnmodifiedTime) {
+        return res.status(412).json({
+          success: false,
+          error: 'Precondition failed',
+          message: 'Entry has been modified since the specified time',
+          server_modified_at: serverModifiedTime.toISOString(),
+          if_unmodified_since: if_unmodified_since
+        });
+      }
+    }
     
     // Build update query dynamically
     const updates = [];
@@ -208,13 +327,16 @@ async function updateEntry(req, res) {
     // Update entry if there are field changes
     if (updates.length > 0) {
       paramCount++;
+      paramCount++; // For the WHERE condition timestamp check
       values.push(id);
+      values.push(serverModifiedTime.toISOString()); // Optimistic locking
       
+      // Use optimistic locking by checking updated_at hasn't changed
       queries.push({
         text: `
           UPDATE entries 
           SET ${updates.join(', ')}, updated_at = NOW()
-          WHERE id = $${paramCount}
+          WHERE id = $${paramCount - 1} AND updated_at = $${paramCount}
           RETURNING *
         `,
         params: values
@@ -250,10 +372,27 @@ async function updateEntry(req, res) {
     const entry = results[0].rows[0];
     
     if (!entry) {
-      return res.status(404).json({
-        success: false,
-        error: 'Entry not found or unauthorized'
-      });
+      // Check if this was due to optimistic locking failure
+      const recheckQuery = 'SELECT updated_at FROM entries WHERE id = $1';
+      const recheckResult = await queryWithUser(userId, recheckQuery, [id]);
+      
+      if (recheckResult.rows.length > 0) {
+        // Entry exists but optimistic lock failed
+        const currentTime = recheckResult.rows[0].updated_at;
+        return res.status(409).json({
+          success: false,
+          error: 'Concurrent modification detected',
+          message: 'Entry was modified during update operation',
+          server_modified_at: currentTime,
+          conflict_type: 'concurrent_modification'
+        });
+      } else {
+        // Entry not found or unauthorized
+        return res.status(404).json({
+          success: false,
+          error: 'Entry not found or unauthorized'
+        });
+      }
     }
     
     return res.status(200).json({
