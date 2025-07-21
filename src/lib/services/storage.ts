@@ -844,6 +844,13 @@ class StorageService {
 			return false;
 		}
 
+		// Check if E2E encryption is available
+		const e2eSession = e2eEncryptionService.getCurrentSession();
+		if (!e2eSession || !e2eSession.isUnlocked) {
+			console.error('Cannot sync: E2E encryption not unlocked');
+			return false;
+		}
+
 		try {
 			// Get the cloud UUID for this entry
 			const cloudId = await this.getCloudId(entryId);
@@ -858,19 +865,50 @@ class StorageService {
 				return false;
 			}
 
+			// Parse frontmatter from content
+			const parsedContent = FrontmatterService.parseContent(entry.content);
+			
+			// Prepare entry object for encryption
+			const entryObject: EntryObject = {
+				title: entry.title,
+				content: entry.content,
+				frontmatter: parsedContent.frontmatter,
+				tags: FrontmatterService.extractTags(parsedContent.frontmatter)
+			};
+
+			// Encrypt the entry using E2E encryption service
+			const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
+			if (!encryptedData) {
+				throw new Error('Failed to encrypt entry');
+			}
+
+			// Generate hashes using E2E encryption service
+			const hashes = e2eEncryptionService.generateHashes(entryObject);
+
+			// Get encryption metadata
+			const encryptionMetadata = e2eEncryptionService.createEncryptionMetadata();
+
+			// Prepare API payload according to backend schema
+			const apiPayload = {
+				encrypted_title: encryptedData.encryptedContentB64,
+				encrypted_content: encryptedData.encryptedContentB64,
+				encrypted_frontmatter: parsedContent.hasFrontmatter ? JSON.stringify(parsedContent.frontmatter) : null,
+				encryption_metadata: encryptionMetadata,
+				title_hash: hashes.titleHash,
+				content_preview_hash: hashes.previewHash,
+				is_published: true,
+				file_path: entry.file_path || `${entryId}.md`
+			};
+
 			// Update the cloud entry
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
-				method: 'PATCH',
+				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
 					...apiAuthService.getAuthHeaders()
 				},
-				body: JSON.stringify({
-					title: entry.title,
-					content: entry.content,
-					modified_at: entry.modified_at
-				})
+				body: JSON.stringify(apiPayload)
 			});
 
 			if (!response.ok) {
