@@ -303,6 +303,26 @@ export class E2EEncryptionService {
       console.log('Author public key B64:', authorPublicKeyB64);
       console.log('Is self-encrypted entry:', this.currentSession.publicKeyB64 === authorPublicKeyB64);
       
+      // Quick validation test - encrypt and decrypt a test entry to verify the system works
+      if (this.currentSession.publicKeyB64 === authorPublicKeyB64) {
+        console.log('=== Running encryption system validation test ===');
+        try {
+          const testEntry = { title: 'Test', content: 'Test content' };
+          const testEncrypted = EntryCryptor.encryptEntry(testEntry, this.currentSession.userKeyPair);
+          const testDecrypted = EntryCryptor.decryptEntry(
+            testEncrypted,
+            this.currentSession.userKeyPair.secretKey,
+            this.currentSession.userKeyPair.publicKey
+          );
+          console.log('Encryption system validation:', testDecrypted ? 'PASS' : 'FAIL');
+          if (testDecrypted) {
+            console.log('Test decrypted content:', testDecrypted.content);
+          }
+        } catch (testError) {
+          console.error('Encryption system validation failed:', testError);
+        }
+      }
+      
       const result = EntryCryptor.decryptEntry(
         encryptedData,
         this.currentSession.userKeyPair.secretKey,
@@ -465,6 +485,55 @@ export class E2EEncryptionService {
    */
   get store() {
     return this.sessionStore;
+  }
+
+  /**
+   * Debug method: Test encryption/decryption round-trip
+   */
+  testEncryptionRoundTrip(): boolean {
+    if (!this.currentSession || !this.currentSession.isUnlocked) {
+      console.error('Cannot test encryption - session not unlocked');
+      return false;
+    }
+
+    try {
+      const testEntry = {
+        title: 'Encryption Test Entry',
+        content: 'This is a test entry to validate encryption/decryption works correctly.'
+      };
+
+      console.log('=== Encryption Round-Trip Test ===');
+      console.log('Original entry:', testEntry);
+
+      // Encrypt
+      const encrypted = EntryCryptor.encryptEntry(testEntry, this.currentSession.userKeyPair);
+      console.log('Encryption successful, data lengths:', {
+        encryptedContent: encrypted.encryptedContentB64.length,
+        contentNonce: encrypted.contentNonceB64.length,
+        encryptedEntryKey: encrypted.encryptedEntryKeyB64.length,
+        keyNonce: encrypted.keyNonceB64.length
+      });
+
+      // Decrypt
+      const decrypted = EntryCryptor.decryptEntry(
+        encrypted,
+        this.currentSession.userKeyPair.secretKey,
+        this.currentSession.userKeyPair.publicKey
+      );
+
+      console.log('Decryption result:', decrypted);
+      
+      if (decrypted && decrypted.title === testEntry.title && decrypted.content === testEntry.content) {
+        console.log('✅ Encryption round-trip test PASSED');
+        return true;
+      } else {
+        console.error('❌ Encryption round-trip test FAILED - content mismatch');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Encryption round-trip test FAILED with error:', error);
+      return false;
+    }
   }
 
   /**

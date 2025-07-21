@@ -186,6 +186,15 @@ export class EntryCryptor {
       // Use the decrypted entry key to decrypt the content (symmetric decryption)
       const decryptedContentBytes = nacl.secretbox.open(encryptedContent, contentNonce, entryKey);
       
+      console.log('=== Symmetric Decryption Detailed Debug ===');
+      console.log('Entry key (first 16 bytes):', uint8ArrayToHex(entryKey.slice(0, 16)));
+      console.log('Content nonce (first 16 bytes):', uint8ArrayToHex(contentNonce.slice(0, 16)));
+      console.log('Encrypted content (first 32 bytes):', uint8ArrayToHex(encryptedContent.slice(0, 32)));
+      console.log('Encrypted content (last 16 bytes):', uint8ArrayToHex(encryptedContent.slice(-16)));
+      console.log('Total encrypted content length:', encryptedContent.length);
+      console.log('NaCl secretbox overhead:', nacl.secretbox.overheadLength);
+      console.log('Expected plaintext length:', encryptedContent.length - nacl.secretbox.overheadLength);
+      
       console.log('Decryption debug:', {
         entryKeyLength: entryKey?.length,
         encryptedContentLength: encryptedContent?.length,
