@@ -18,7 +18,8 @@ import type {
 	JournalEntry,
 	JournalEntryMetadata,
 	DBSchema,
-	StorageEnvironment
+	StorageEnvironment,
+	CloudEntryMapping
 } from '../storage/types';
 import { PreviewService } from '../storage/preview.service';
 import { TitleService } from '../storage/title.service';
@@ -34,7 +35,7 @@ class StorageService {
 	public environment: StorageEnvironment;
 	private db: IDBPDatabase<DBSchema> | null = null;
 	private readonly dbName = 'diaryx-journal';
-	private readonly dbVersion = 1;
+	private readonly dbVersion = 2;
 	private readonly baseDir = BaseDirectory.Document;
 	private readonly fileExtension = '.md';
 	private readonly journalFolder = 'Diaryx';
@@ -81,6 +82,9 @@ class StorageService {
 					if (!db.objectStoreNames.contains('metadata')) {
 						const metadataStore = db.createObjectStore('metadata', { keyPath: 'id' });
 						metadataStore.createIndex('by-date', 'modified_at');
+					}
+					if (!db.objectStoreNames.contains('cloudMappings')) {
+						db.createObjectStore('cloudMappings', { keyPath: 'localId' });
 					}
 				}
 			});
@@ -730,7 +734,18 @@ class StorageService {
 				throw new Error(`Failed to publish entry: ${response.status} - ${errorText}`);
 			}
 
-			console.log('Entry published successfully:', entryId);
+			// Parse response to get cloud UUID
+			const result = await response.json();
+			const cloudId = result.data?.entry?.id;
+			
+			if (cloudId) {
+				// Store mapping between local ID and cloud UUID
+				await this.storeCloudMapping(entryId, cloudId);
+				console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId);
+			} else {
+				console.warn('Entry published but no cloud ID returned');
+			}
+			
 			return true;
 		} catch (error) {
 			console.error('Failed to publish entry:', error);
@@ -748,9 +763,16 @@ class StorageService {
 		}
 
 		try {
+			// Get the cloud UUID for this entry
+			const cloudId = await this.getCloudId(entryId);
+			if (!cloudId) {
+				console.error('No cloud ID found for entry:', entryId);
+				return false;
+			}
+
 			// Call the API to unpublish
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
+			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'PATCH',
 				headers: {
 					'Content-Type': 'application/json',
@@ -765,7 +787,9 @@ class StorageService {
 				throw new Error(`Failed to unpublish entry: ${response.status}`);
 			}
 
-			console.log('Entry unpublished successfully:', entryId);
+			// Remove the cloud mapping since entry is unpublished
+			await this.removeCloudMapping(entryId);
+			console.log('Entry unpublished successfully. Local ID:', entryId, 'Cloud ID:', cloudId);
 			return true;
 		} catch (error) {
 			console.error('Failed to unpublish entry:', error);
@@ -782,8 +806,15 @@ class StorageService {
 		}
 
 		try {
+			// Get the cloud UUID for this entry
+			const cloudId = await this.getCloudId(entryId);
+			if (!cloudId) {
+				// No cloud mapping means entry was never published
+				return false;
+			}
+
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
+			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'GET',
 				headers: {
 					...apiAuthService.getAuthHeaders()
@@ -791,12 +822,14 @@ class StorageService {
 			});
 
 			if (!response.ok) {
-				// Entry doesn't exist in cloud - not published
+				// Entry doesn't exist in cloud - not published anymore
+				// Remove stale mapping
+				await this.removeCloudMapping(entryId);
 				return false;
 			}
 
 			const data = await response.json();
-			return data.is_published || false;
+			return data.data?.is_published || false;
 		} catch (error) {
 			console.error('Failed to get entry publish status:', error);
 			return null;
@@ -812,6 +845,13 @@ class StorageService {
 		}
 
 		try {
+			// Get the cloud UUID for this entry
+			const cloudId = await this.getCloudId(entryId);
+			if (!cloudId) {
+				console.error('No cloud ID found for entry:', entryId);
+				return false;
+			}
+
 			// Get the local entry
 			const entry = await this.getEntry(entryId);
 			if (!entry) {
@@ -820,7 +860,7 @@ class StorageService {
 
 			// Update the cloud entry
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${entryId}`, {
+			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'PATCH',
 				headers: {
 					'Content-Type': 'application/json',
@@ -837,12 +877,42 @@ class StorageService {
 				throw new Error(`Failed to sync entry: ${response.status}`);
 			}
 
-			console.log('Entry synced to cloud:', entryId);
+			console.log('Entry synced to cloud. Local ID:', entryId, 'Cloud ID:', cloudId);
 			return true;
 		} catch (error) {
 			console.error('Failed to sync entry to cloud:', error);
 			return false;
 		}
+	}
+
+	/**
+	 * Store mapping between local entry ID and cloud UUID
+	 */
+	private async storeCloudMapping(localId: string, cloudId: string): Promise<void> {
+		const db = await this.initDB();
+		const mapping: CloudEntryMapping = {
+			localId,
+			cloudId,
+			publishedAt: new Date().toISOString()
+		};
+		await db.put('cloudMappings', mapping);
+	}
+
+	/**
+	 * Get cloud UUID for a local entry ID
+	 */
+	private async getCloudId(localId: string): Promise<string | null> {
+		const db = await this.initDB();
+		const mapping = await db.get('cloudMappings', localId);
+		return mapping?.cloudId || null;
+	}
+
+	/**
+	 * Remove cloud mapping when entry is unpublished
+	 */
+	private async removeCloudMapping(localId: string): Promise<void> {
+		const db = await this.initDB();
+		await db.delete('cloudMappings', localId);
 	}
 }
 

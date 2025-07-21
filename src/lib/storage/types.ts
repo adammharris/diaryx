@@ -64,6 +64,12 @@ export interface IWebStorage {
     createDefaultEntriesForWeb(): Promise<void>;
 }
 
+export interface CloudEntryMapping {
+    localId: string;
+    cloudId: string;
+    publishedAt: string;
+}
+
 export interface DBSchema {
     entries: {
         key: string;
@@ -74,6 +80,10 @@ export interface DBSchema {
         key: string;
         value: JournalEntryMetadata;
         indexes: { 'by-date': string };
+    };
+    cloudMappings: {
+        key: string;
+        value: CloudEntryMapping;
     };
 }
 
