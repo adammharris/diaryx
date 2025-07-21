@@ -405,6 +405,8 @@ export class E2EEncryptionService {
    */
   async restoreKeysFromCloud(userId: string, password: string): Promise<boolean> {
     try {
+      console.log('=== Restoring keys from cloud for user:', userId);
+      
       const { apiAuthService } = await import('./api-auth.service');
       
       if (!apiAuthService.isAuthenticated()) {
@@ -413,6 +415,8 @@ export class E2EEncryptionService {
       }
 
       const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      console.log('Fetching user profile from:', `${apiUrl}/api/users/${userId}`);
+      
       const response = await fetch(`${apiUrl}/api/users/${userId}`, {
         method: 'GET',
         headers: {
@@ -421,23 +425,35 @@ export class E2EEncryptionService {
       });
 
       if (!response.ok) {
+        console.error('API request failed:', response.status, response.statusText);
         throw new Error(`Failed to get user profile: ${response.status}`);
       }
 
       const result = await response.json();
       const userData = result.data;
       
+      console.log('User profile fetched:', {
+        hasPublicKey: !!userData?.public_key,
+        hasEncryptedPrivateKey: !!userData?.encrypted_private_key,
+        publicKeyLength: userData?.public_key?.length,
+        encryptedPrivateKeyLength: userData?.encrypted_private_key?.length
+      });
+      
       if (!userData?.public_key || !userData?.encrypted_private_key) {
-        console.log('No cloud encryption keys found');
+        console.log('No cloud encryption keys found in user profile');
         return false;
       }
 
+      console.log('Attempting to decrypt private key with provided password...');
+      
       // Try to decrypt the private key with the provided password
       const secretKey = KeyManager.decryptSecretKey(userData.encrypted_private_key, password);
       if (!secretKey) {
-        console.error('Failed to decrypt private key - invalid password');
+        console.error('Failed to decrypt private key - invalid password or corrupted key');
         return false;
       }
+
+      console.log('Private key decrypted successfully');
 
       // Store the keys locally
       const storedKeys: StoredUserKeys = {
@@ -448,6 +464,7 @@ export class E2EEncryptionService {
       
       if (browser) {
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(storedKeys));
+        console.log('Keys stored in localStorage');
       }
       
       // Create active session
@@ -455,6 +472,13 @@ export class E2EEncryptionService {
         publicKey: KeyManager.publicKeyFromB64(userData.public_key),
         secretKey: secretKey
       };
+      
+      // Validate the restored key pair
+      if (!KeyManager.validateKeyPair(userKeyPair)) {
+        console.error('Restored key pair validation failed');
+        KeyManager.clearKeyPair(userKeyPair);
+        return false;
+      }
       
       this.currentSession = {
         userId,
@@ -465,7 +489,8 @@ export class E2EEncryptionService {
       
       this.sessionStore.set(this.currentSession);
       
-      console.log('Successfully restored encryption keys from cloud');
+      console.log('=== Successfully restored encryption keys from cloud ===');
+      console.log('Public key (first 20 chars):', userData.public_key.substring(0, 20));
       return true;
     } catch (error) {
       console.error('Failed to restore keys from cloud:', error);

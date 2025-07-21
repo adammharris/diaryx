@@ -55,7 +55,10 @@
             }
         } catch (error) {
             console.error('Failed to check cloud keys:', error);
-            setupStep = 'intro';
+            // If we can't check cloud keys, assume they might exist and show existing flow
+            // This is safer because it prevents accidentally creating new keys
+            console.log('Error checking cloud keys - defaulting to existing flow to be safe');
+            setupStep = 'existing';
         }
     }
 

@@ -63,10 +63,21 @@ class ApiAuthService {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(session));
       
       // Trigger post-login sync after a short delay to ensure everything is initialized
+      // But only if E2E encryption is already set up - otherwise let the user set it up first
       setTimeout(async () => {
         try {
-          const { storageService } = await import('./storage');
-          await storageService.syncAfterLogin();
+          const { e2eEncryptionService } = await import('./e2e-encryption.service');
+          const isUnlocked = e2eEncryptionService.isUnlocked();
+          
+          console.log('Post-login check: E2E encryption unlocked?', isUnlocked);
+          
+          if (isUnlocked) {
+            console.log('E2E encryption ready, performing sync...');
+            const { storageService } = await import('./storage');
+            await storageService.syncAfterLogin();
+          } else {
+            console.log('E2E encryption not set up - sync will be triggered after encryption setup');
+          }
         } catch (error) {
           console.error('Post-login sync failed:', error);
         }
