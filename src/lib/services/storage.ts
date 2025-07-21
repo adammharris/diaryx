@@ -982,6 +982,14 @@ class StorageService {
 
 		for (const cloudEntry of cloudEntries) {
 			try {
+				console.log('Debug - Processing cloud entry:', {
+					id: cloudEntry.id,
+					hasAccessKey: !!cloudEntry.access_key,
+					hasEncryptionMetadata: !!cloudEntry.encryption_metadata,
+					hasAuthor: !!cloudEntry.author,
+					authorPublicKey: cloudEntry.author?.public_key?.substring(0, 20) + '...'
+				});
+				
 				// Skip if we already have this entry locally (check by cloud ID)
 				const existingLocalId = await this.getLocalIdByCloudId(cloudEntry.id);
 				if (existingLocalId) {
@@ -1015,8 +1023,10 @@ class StorageService {
 
 				// Get author's public key
 				const authorPublicKey = cloudEntry.author?.public_key;
-				if (!authorPublicKey) {
-					console.log('No author public key found, skipping:', cloudEntry.id);
+				console.log('Debug - Entry:', cloudEntry.id, 'Author public key:', authorPublicKey, 'Type:', typeof authorPublicKey);
+				
+				if (!authorPublicKey || typeof authorPublicKey !== 'string') {
+					console.log('No valid author public key found, skipping:', cloudEntry.id);
 					continue;
 				}
 
