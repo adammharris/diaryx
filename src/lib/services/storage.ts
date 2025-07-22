@@ -761,7 +761,9 @@ class StorageService {
 			}
 
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+			const fullUrl = `${apiUrl}/api/entries/${cloudId}`;
+			console.log("Fetching from:", fullUrl);
+			const response = await fetch(fullUrl, {
 				method: 'GET',
 				headers: {
 					...apiAuthService.getAuthHeaders()
@@ -964,6 +966,7 @@ class StorageService {
 
 			// Call the API to unpublish
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			console.log("Fetching from:", `${import.meta.env.VITE_API_BASE_URL}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'PATCH',
 				headers: {
@@ -1006,6 +1009,7 @@ class StorageService {
 			}
 
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			console.log("Fetching from:", `${import.meta.env.VITE_API_BASE_URL}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'GET',
 				headers: {
@@ -1122,6 +1126,7 @@ class StorageService {
 				});
 
 				// Update the cloud entry
+				console.log("Fetching from:", `${import.meta.env.VITE_API_BASE_URL}/api/entries/${cloudId}`);
 				const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 					method: 'PUT',
 					headers: {
@@ -1170,6 +1175,7 @@ class StorageService {
 
 		try {
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			console.log("Fetching from:", `${apiUrl}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries`, {
 				method: 'GET',
 				headers: {

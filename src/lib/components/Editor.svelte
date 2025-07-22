@@ -4,7 +4,10 @@
     import { apiAuthService } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
+    import { isEncrypted } from '../utils/crypto.js';
+    import { encryptionService } from '../services/encryption.js';
     import InfoModal from './InfoModal.svelte';
+    import PasswordPrompt from './PasswordPrompt.svelte';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -35,6 +38,12 @@
     let isPublished = $state(false);
     let showInfo = $state(false);
     
+    // Encryption state
+    let isEntryEncrypted = $state(false);
+    let isEntryLocked = $state(false);
+    let showPasswordPrompt = $state(false);
+    let lastPasswordAttemptFailed = $state(false);
+    
     // Mobile detection
     let isMobile = $state(false);
     let textareaFocused = $state(false);
@@ -43,6 +52,7 @@
     // E2E encryption state
     let e2eSession = $derived($e2eSessionStore);
     let canPublish = $derived(apiAuthService.isAuthenticated() && e2eSession?.isUnlocked);
+    let canEdit = $derived(!isEntryLocked); // Can edit if entry is not locked
     
     // Simplified: removed complex cache system
 
@@ -107,6 +117,10 @@
             editableTitle = preloadedEntry.title;
             content = preloadedEntry.content;
             
+            // Check if entry is encrypted and locked
+            isEntryEncrypted = isEncrypted(preloadedEntry.content);
+            isEntryLocked = isEntryEncrypted && !encryptionService.hasCachedPassword(entryId);
+            
             // Get publish status from cloud API if authenticated
             if (apiAuthService.isAuthenticated()) {
                 const publishStatus = await storageService.getEntryPublishStatus(entryId);
@@ -129,6 +143,10 @@
             entry = rawEntry;
             editableTitle = rawEntry.title;
             content = rawEntry.content;
+            
+            // Check if entry is encrypted and locked
+            isEntryEncrypted = isEncrypted(rawEntry.content);
+            isEntryLocked = isEntryEncrypted && !encryptionService.hasCachedPassword(entryId);
             
             // Get publish status from cloud API when authenticated
             if (apiAuthService.isAuthenticated()) {
@@ -346,6 +364,49 @@
     function handleCloseInfo() {
         showInfo = false;
     }
+
+    function handleUnlockEntry() {
+        if (!isEntryEncrypted || !entryId) return;
+        showPasswordPrompt = true;
+        lastPasswordAttemptFailed = false;
+    }
+
+    async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
+        if (!entry || !entryId) return;
+        
+        const { password } = event.detail;
+        
+        try {
+            // Try to decrypt the entry with the provided password
+            const decryptedContent = await encryptionService.decryptEntry(entry.content, password);
+            
+            if (decryptedContent) {
+                // Success! Update the entry content and unlock it
+                content = decryptedContent;
+                entry.content = decryptedContent;
+                isEntryLocked = false;
+                showPasswordPrompt = false;
+                lastPasswordAttemptFailed = false;
+                
+                // Update the title in case it was also encrypted
+                await storageService.updateDecryptedTitle(entryId, decryptedContent);
+                
+                console.log('Entry unlocked successfully');
+            } else {
+                // Wrong password
+                lastPasswordAttemptFailed = true;
+                console.log('Incorrect password for entry:', entryId);
+            }
+        } catch (error) {
+            console.error('Error unlocking entry:', error);
+            lastPasswordAttemptFailed = true;
+        }
+    }
+
+    function handlePasswordCancel() {
+        showPasswordPrompt = false;
+        lastPasswordAttemptFailed = false;
+    }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -385,19 +446,30 @@
                 </button>
             </div>
             <div class="editor-controls">
-                <button 
-                    class="btn btn-publish"
-                    class:published={isPublished}
-                    onclick={togglePublish}
-                    title={isPublished ? 'Published - Click to unpublish' : canPublish ? 'Draft - Click to publish' : 'Sign in and unlock encryption to publish'}
-                    disabled={!canPublish}
-                >
-                    {#if isPublished}
-                        <img src="/material-symbols--public.svg" class="icon" alt="Published" />
-                    {:else}
-                        <img src="/material-symbols--draft.svg" class="icon" alt="Draft" />
-                    {/if}
-                </button>
+                {#if isEntryLocked}
+                    <button 
+                        class="btn btn-unlock"
+                        onclick={handleUnlockEntry}
+                        title="Unlock encrypted entry"
+                    >
+                        <img src="/material-symbols--lock.svg" class="icon" alt="Locked" />
+                        Unlock
+                    </button>
+                {:else}
+                    <button 
+                        class="btn btn-publish"
+                        class:published={isPublished}
+                        onclick={togglePublish}
+                        title={isPublished ? 'Published - Click to unpublish' : canPublish ? 'Draft - Click to publish' : 'Sign in and unlock encryption to publish'}
+                        disabled={!canPublish}
+                    >
+                        {#if isPublished}
+                            <img src="/material-symbols--public.svg" class="icon" alt="Published" />
+                        {:else}
+                            <img src="/material-symbols--draft.svg" class="icon" alt="Draft" />
+                        {/if}
+                    </button>
+                {/if}
                 <button 
                     class="btn btn-info"
                     onclick={handleShowInfo}
@@ -408,6 +480,8 @@
                 <button 
                     class="btn btn-secondary"
                     onclick={() => isPreview = !isPreview}
+                    disabled={isEntryLocked}
+                    title={isEntryLocked ? 'Unlock entry to preview' : (isPreview ? 'Switch to edit mode' : 'Switch to preview mode')}
                 >
                     {isPreview ? 'Edit' : 'Preview'}
                 </button>
@@ -418,6 +492,21 @@
         <div class="editor-content-area">
             {#if isLoading}
                 <div class="loading">Loading...</div>
+            {:else if isEntryLocked}
+                <div class="locked-entry">
+                    <div class="locked-icon">
+                        <img src="/material-symbols--lock.svg" class="lock-icon" alt="Locked" />
+                    </div>
+                    <h3>Entry is Encrypted</h3>
+                    <p>This entry is encrypted and requires a password to view or edit.</p>
+                    <button 
+                        class="btn btn-unlock-large"
+                        onclick={handleUnlockEntry}
+                    >
+                        <img src="/material-symbols--lock-open-right.svg" class="icon" alt="Unlock" />
+                        Unlock Entry
+                    </button>
+                </div>
             {:else if isPreview}
                 <div class="preview-container">
                     <SvelteMarkdown source={content} />
@@ -433,13 +522,17 @@
                     onblur={handleTextareaBlur}
                     oninput={handleTextareaInput}
                     onclick={handleTextareaClick}
+                    disabled={isEntryLocked}
                 ></textarea>
             {/if}
         </div>
 
         <div class="editor-status" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
             <span class="publish-status">
-                {#if canPublish}
+                {#if isEntryLocked}
+                    <img src="/material-symbols--lock.svg" class="status-icon" alt="Locked" />
+                    Locked
+                {:else if canPublish}
                     {#if isPublished}
                         <img src="/material-symbols--public.svg" class="status-icon" alt="Published" />
                         Published
@@ -486,6 +579,14 @@
     isVisible={showInfo}
     onclose={handleCloseInfo}
 />
+
+<!-- Password Prompt Modal -->
+{#if showPasswordPrompt}
+    <PasswordPrompt 
+        on:submit={handlePasswordSubmit}
+        on:cancel={handlePasswordCancel}
+    />
+{/if}
 
 
 <style>
@@ -915,6 +1016,66 @@
             padding: 1rem;
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
+        }
+
+        /* Locked entry styles */
+        .locked-entry {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem 1.5rem;
+            text-align: center;
+            color: var(--color-textSecondary);
+            background: var(--color-background);
+            border-radius: 8px;
+            margin: 1rem;
+        }
+
+        .locked-entry img {
+            width: 48px;
+            height: 48px;
+            opacity: 0.6;
+            margin-bottom: 1rem;
+        }
+
+        .locked-entry h3 {
+            margin: 0 0 0.5rem 0;
+            color: var(--color-text);
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .locked-entry p {
+            margin: 0 0 1.5rem 0;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }
+
+        .unlock-button {
+            background: var(--color-primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .unlock-button:hover {
+            background: var(--color-primaryDark);
+            transform: translateY(-1px);
+        }
+
+        .unlock-button img {
+            width: 16px;
+            height: 16px;
+            opacity: 0.9;
         }
     }
 </style>

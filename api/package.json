@@ -4,7 +4,8 @@
   "description": "Diaryx Backend API for Vercel",
   "main": "index.js",
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "bun run server.js",
+    "start": "node server.js",
     "build": "echo 'No build step needed'",
     "deploy": "vercel --prod"
   },
@@ -12,7 +13,9 @@
     "@neondatabase/serverless": "^0.9.1",
     "cors": "^2.8.5",
     "jsonwebtoken": "^9.0.2",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "hono": "^4.0.0",
+    "@hono/node-server": "^1.8.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

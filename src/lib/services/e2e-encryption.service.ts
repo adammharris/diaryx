@@ -685,7 +685,9 @@ export class E2EEncryptionService {
       }
 
       const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-      const response = await fetch(`${apiUrl}/api/users/${userId}`, {
+      const fullUrl = `${apiUrl}/api/users/${userId}`;
+      console.log("Fetching from:", fullUrl);
+      const response = await fetch(fullUrl, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -844,7 +846,9 @@ export class E2EEncryptionService {
       }
 
       const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-      const response = await fetch(`${apiUrl}/api/users/${userId}`, {
+      const fullUrl = `${apiUrl}/api/users/${userId}`;
+      console.log("Fetching from:", fullUrl);
+      const response = await fetch(fullUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

@@ -13,41 +13,9 @@ const config: UserConfig = {
         "**/.svelte-kit/**",
         "**/src-tauri/target/**", // Crucial for Tauri projects
       ],
-    },
+    }
   },
 };
-
-// If the environment is NOT Vercel, add the Tauri-specific server options.
-// Note: This will overwrite the `server` config above, which is fine
-// because the Tauri dev environment is different.
-if (!process.env.VERCEL) {
-  // @ts-expect-error process is a nodejs global
-  const host = process.env.TAURI_DEV_HOST;
-
-  config.server = {
-    fs: {
-      allow: ["static"],
-    },
-    port: 1420,
-    strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    // We also add the ignored paths here for consistency when running `tauri dev`
-    watch: {
-      ignored: [
-        "**/node_modules/**",
-        "**/.svelte-kit/**",
-        "**/src-tauri/**",
-      ],
-    },
-  };
-}
 
 // Export the final configuration object directly
 export default defineConfig(config);

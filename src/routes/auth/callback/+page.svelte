@@ -22,7 +22,11 @@
 
         if (code) {
           // Exchange code for token via your backend API
-          fetch('/api/auth/google', {
+          const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+          const apiUrl = apiBaseUrl ? `${apiBaseUrl}api/auth/google` : '/api/auth/google';
+          
+          console.log('Making auth request to:', apiUrl);
+          fetch(apiUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
