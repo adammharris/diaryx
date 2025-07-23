@@ -8,6 +8,7 @@
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
   import { isKeyboardVisible, keyboardHeight } from '../lib/stores/keyboard.js';
+  import { apiAuthService } from '../lib/services/api-auth.service.js';
 
   let entries: JournalEntryMetadata[] = $state([]);
   let preloadedEntry: JournalEntry | null = $state(null); // Store preloaded entry to avoid double-loading
@@ -80,11 +81,19 @@
       storageService = module.storageService;
       isTauri = storageService.environment === 'tauri'; // Set isTauri after storageService is available
       loadEntries();
+      
+      // Reload auth session from localStorage when page becomes visible
+      // This handles the case where OAuth completes in another tab/redirect
+      apiAuthService.reloadFromStorage();
 
       // Start file watching once when in Tauri mode
       if (isTauri) {
         console.log('Setting up file watcher...');
         storageService.startFileWatching(handleFileChange);
+        
+        // Set up global deep link handling for OAuth callbacks
+        console.log('Setting up global deep link handler...');
+        setupDeepLinkHandler();
         
         // Cleanup function to stop watching when component is destroyed
         // This return is for the inner effect, not the outer one
@@ -92,6 +101,11 @@
         return () => {
           if (storageService) {
             storageService.stopFileWatching();
+          }
+          
+          // Clean up deep link listener
+          if ((window as any).__deeplink_unlisten) {
+            (window as any).__deeplink_unlisten();
           }
           
           // Clear any pending timeout
@@ -197,6 +211,52 @@
     
     console.log('Reloading entries due to external file change');
     loadEntries();
+  }
+
+  // Set up global deep link handler for OAuth callbacks
+  async function setupDeepLinkHandler() {
+    try {
+      // Dynamically import the deep link module
+      const { onOpenUrl } = await import('@tauri-apps/plugin-deep-link');
+      
+      console.log('Setting up deep link listener...');
+      
+      // Listen for deep link activations
+      const unlisten = await onOpenUrl((urls) => {
+        console.log('Deep link received:', urls);
+        
+        const url = urls[0];
+        if (url && url.startsWith('diaryx://auth/callback')) {
+          console.log('OAuth callback deep link received - user returned to app');
+          
+          // Give the auth service a moment to load the session from localStorage
+          setTimeout(() => {
+            const currentSession = apiAuthService.getCurrentSession();
+            if (currentSession && currentSession.isAuthenticated) {
+              showDialog({
+                title: 'Welcome Back!',
+                message: 'You have been successfully signed in.',
+                type: 'info'
+              });
+            } else {
+              showDialog({
+                title: 'Authentication Complete',
+                message: 'Please refresh the app to see your signed-in status.',
+                type: 'info'
+              });
+            }
+          }, 1000);
+        } else {
+          console.log('Deep link received but not an OAuth callback:', url);
+        }
+      });
+      
+      // Store the unlisten function for cleanup
+      (window as any).__deeplink_unlisten = unlisten;
+      
+    } catch (error) {
+      console.warn('Deep link plugin not available:', error);
+    }
   }
 
   
@@ -553,7 +613,6 @@
           {:else}
             {#each filteredEntries as entry (entry.id)}
               <EntryCard 
-                {storageService}
                 {entry} 
                 onselect={handleSelectEntry}
                 ondelete={handleDeleteEntry}

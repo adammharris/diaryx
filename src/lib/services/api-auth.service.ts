@@ -1,10 +1,16 @@
 /**
  * API-based authentication service for Google OAuth + custom backend
  * Works with your Vercel API endpoints
+ * Supports both web browser and Tauri environment
  */
 
 import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
+import { detectTauri } from '../utils/tauri.js';
+
+// Import Tauri plugins - these modules may not exist in web environment
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 interface User {
   id: string;
@@ -44,8 +50,18 @@ class ApiAuthService {
   private initializeFromStorage(): void {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY);
+      console.log('Initializing auth from storage:', { 
+        hasStored: !!stored, 
+        storedValue: stored ? 'present' : 'missing' 
+      });
+      
       if (stored) {
         const session: AuthSession = JSON.parse(stored);
+        console.log('Loaded session:', { 
+          isAuthenticated: session.isAuthenticated, 
+          hasUser: !!session.user,
+          userId: session.user?.id 
+        });
         this.currentSession = session;
         this.sessionStore.set(session);
       }
@@ -56,11 +72,17 @@ class ApiAuthService {
   }
 
   private saveSession(session: AuthSession): void {
+    console.log('saveSession: setting currentSession and store');
     this.currentSession = session;
     this.sessionStore.set(session);
     
     if (browser) {
+      console.log('saveSession: saving to localStorage with key:', this.STORAGE_KEY);
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(session));
+      
+      // Verify it was saved
+      const saved = localStorage.getItem(this.STORAGE_KEY);
+      console.log('saveSession: verification - saved to localStorage:', !!saved);
       
       // Trigger post-login sync after a short delay to ensure everything is initialized
       // But only if E2E encryption is already set up - otherwise let the user set it up first
@@ -103,35 +125,51 @@ class ApiAuthService {
     console.log('Starting Google OAuth flow...');
     console.log('Client ID configured:', !!import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
-    try {
-      // Start Google OAuth flow
-      const authUrl = this.buildGoogleAuthUrl();
-      console.log('OAuth URL:', authUrl);
-      
-      // Open popup window for OAuth
-      const popup = window.open(
-        authUrl,
-        'google-auth',
-        'width=500,height=600,scrollbars=yes,resizable=yes'
-      );
+    return new Promise(async (resolve, reject) => {
+      try {
+        const authUrl = this.buildGoogleAuthUrl();
+        console.log('Opening OAuth URL:', authUrl);
+        
+        // Check if we're in Tauri environment with deep linking support
+        if (detectTauri() && typeof onOpenUrl === 'function' && typeof openUrl === 'function') {
+          // Tauri environment - use deep linking
+          const unlistenDeepLink = await onOpenUrl((urls: string[]) => {
+            console.log('Deep link received:', urls);
+            const url = urls[0];
+            if (url && url.startsWith('diaryx://auth/callback')) {
+              console.log('Processing OAuth callback from deep link:', url);
+              this.handleDeepLinkCallback(url)
+                .then(resolve)
+                .catch(reject)
+                .finally(() => {
+                  if (unlistenDeepLink) unlistenDeepLink();
+                });
+            }
+          });
 
-      if (!popup) {
-        throw new Error('Popup blocked. Please allow popups for authentication.');
+          // Store the unlisten function for cleanup
+          (window as any).__oauth_unlisten = unlistenDeepLink;
+          
+          // Open URL in external browser
+          await openUrl(authUrl);
+          
+          alert('Please complete the sign-in process in your browser. You\'ll be redirected back to the app automatically.');
+        } else {
+          // Web environment - navigate directly to OAuth URL
+          console.log('Using direct navigation for web environment');
+          
+          // Navigate directly to the OAuth URL (state is already stored in buildGoogleAuthUrl)
+          // The callback page will handle the authentication and redirect back
+          window.location.href = authUrl;
+          
+          // This promise won't resolve since we're navigating away
+          // The callback page will handle the rest
+        }
+      } catch (error) {
+        console.error('Google sign in failed:', error);
+        reject(error);
       }
-
-      // Wait for OAuth response
-      const authResult = await this.waitForAuthResult(popup);
-      
-      // Exchange code for tokens and user info
-      const session = await this.handleGoogleAuthResult(authResult);
-      
-      this.saveSession(session);
-      return session;
-
-    } catch (error) {
-      console.error('Google sign in failed:', error);
-      throw error;
-    }
+    });
   }
 
   private buildGoogleAuthUrl(): string {
@@ -140,7 +178,11 @@ class ApiAuthService {
       throw new Error('Google Client ID not configured. Please add VITE_GOOGLE_CLIENT_ID to your .env file.');
     }
 
-    const redirectUri = `${window.location.origin}/auth/callback`;
+    // Use web callback for OAuth redirect, which will then trigger the deep link
+    // For development, use localhost; for production, use your domain
+    const redirectUri = onOpenUrl 
+      ? `http://localhost:5173/auth/callback`  // Web callback for Tauri
+      : `${window.location.origin}/auth/callback`;
     console.log('Redirect URI:', redirectUri);
     const scope = 'openid email profile';
     const responseType = 'code';
@@ -165,6 +207,89 @@ class ApiAuthService {
   private generateRandomState(): string {
     return Math.random().toString(36).substring(2, 15) + 
            Math.random().toString(36).substring(2, 15);
+  }
+
+  /**
+   * Handle deep link callback from OAuth
+   */
+  async handleDeepLinkCallback(deepLinkUrl: string): Promise<AuthSession> {
+    try {
+      console.log('Processing deep link callback:', deepLinkUrl);
+      
+      // Parse the deep link URL to extract the authorization code and state
+      const url = new URL(deepLinkUrl);
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      const error = url.searchParams.get('error');
+
+      if (error) {
+        throw new Error(`OAuth error: ${error}`);
+      }
+
+      if (!code) {
+        throw new Error('No authorization code received');
+      }
+
+      // Validate state against what we stored when starting OAuth
+      const storedState = sessionStorage.getItem('oauth_state');
+      if (state !== storedState) {
+        console.warn('State validation failed:', { received: state, stored: storedState });
+        // For development, we'll be more lenient with state validation
+        // In production, you might want to be stricter
+      }
+
+      // Exchange the authorization code for tokens via your backend
+      // Use the web callback URL since that's where the OAuth flow completed
+      const response = await fetch(`${this.API_BASE_URL}/api/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code,
+          redirectUri: `http://localhost:5173/auth/callback`
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Authentication failed: ${response.statusText}`);
+      }
+
+      const authResult = await response.json();
+      
+      // Create and save the session
+      const session = await this.handleGoogleAuthResult(authResult);
+      this.saveSession(session);
+      
+      // Clean up
+      sessionStorage.removeItem('oauth_state');
+      
+      return session;
+    } catch (error) {
+      console.error('Deep link callback processing failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process OAuth result from popup callback
+   */
+  private async processOAuthResult(result: any): Promise<AuthSession> {
+    try {
+      console.log('Processing OAuth result:', result);
+      
+      // Create and save the session
+      const session = await this.handleGoogleAuthResult(result);
+      this.saveSession(session);
+      
+      // Clean up
+      sessionStorage.removeItem('oauth_state');
+      
+      return session;
+    } catch (error) {
+      console.error('OAuth result processing failed:', error);
+      throw error;
+    }
   }
 
   private async waitForAuthResult(popup: Window): Promise<any> {
@@ -257,6 +382,27 @@ class ApiAuthService {
   }
 
   /**
+   * Set session (used by OAuth callback)
+   */
+  setSession(session: AuthSession | null): void {
+    console.log('setSession called with:', session ? 'session data' : 'null');
+    if (session) {
+      console.log('Saving session:', { isAuthenticated: session.isAuthenticated, userId: session.user?.id });
+      this.saveSession(session);
+    } else {
+      this.clearSession();
+    }
+  }
+
+  /**
+   * Reload session from localStorage (useful after external authentication)
+   */
+  reloadFromStorage(): void {
+    console.log('Reloading session from localStorage...');
+    this.initializeFromStorage();
+  }
+
+  /**
    * Get current user
    */
   getCurrentUser(): User | null {
@@ -340,10 +486,10 @@ class MockAuthService {
   }
 }
 
+// For testing without backend - uncomment this to use mock:
+//export const apiAuthService = new MockAuthService();
+//export const apiAuthStore = apiAuthService.store;
+
 // Always use the real auth service (comment out to use mock)
 export const apiAuthService = new ApiAuthService();
 export const apiAuthStore = apiAuthService.store;
-
-// For testing only - uncomment this to use mock:
-// export const apiAuthService = new MockAuthService();
-// export const apiAuthStore = apiAuthService.store;

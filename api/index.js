@@ -92,3 +92,29 @@ app.onError((err, c) => {
 
 // Export for Vercel
 export default app.fetch;
+
+// Local development server (when run directly)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { serve } = await import('@hono/node-server');
+  const port = process.env.PORT || 3001;
+
+  console.log(`🔥 Hono server starting on port ${port}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Database URL: ${process.env.DATABASE_URL ? 'configured' : 'not configured'}`);
+  console.log(`\nAvailable routes:`);
+  console.log(`  GET    http://localhost:${port}/api/health`);
+  console.log(`  GET    http://localhost:${port}/api/entries`);
+  console.log(`  POST   http://localhost:${port}/api/entries`);
+  console.log(`  GET    http://localhost:${port}/api/entries/:id`);
+  console.log(`  PUT    http://localhost:${port}/api/entries/:id`);
+  console.log(`  DELETE http://localhost:${port}/api/entries/:id`);
+  console.log(`  GET    http://localhost:${port}/api/users`);
+  console.log(`  GET    http://localhost:${port}/api/users/:id`);
+  console.log(`  PUT    http://localhost:${port}/api/users/:id`);
+  console.log(`  POST   http://localhost:${port}/api/auth/google`);
+
+  serve({
+    fetch: app.fetch,
+    port
+  });
+}

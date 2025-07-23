@@ -23,8 +23,7 @@ import type {
 } from '../storage/types';
 import { PreviewService } from '../storage/preview.service';
 import { TitleService } from '../storage/title.service';
-import { isEncrypted } from '../utils/crypto';
-import { encryptionService } from './encryption';
+// Removed old crypto and encryption service imports - using E2E encryption system now
 import { metadataStore } from '../stores/metadata';
 import { apiAuthService } from './api-auth.service';
 import { e2eEncryptionService } from './e2e-encryption.service';
@@ -51,10 +50,7 @@ class StorageService {
 			this.initDB();
 		}
 		
-		// Set up encryption service callback to avoid circular dependency
-		encryptionService.setMetadataUpdateCallback((entryId: string, decryptedContent: string) => {
-			this.updateDecryptedTitle(entryId, decryptedContent);
-		});
+		// Removed old encryption service callback setup
 	}
 
 	public getJournalPath(): string {
@@ -464,7 +460,19 @@ class StorageService {
 		const title = this.createTitleFromId(id);
 		const preview = PreviewService.createPreview(content);
 		const now = new Date().toISOString();
-		return { id, title, created_at: now, modified_at: now, file_path: filePath, preview };
+		
+		// Check publish status if authenticated (cache it for performance)
+		let isPublished: boolean | undefined = undefined;
+		if (apiAuthService.isAuthenticated()) {
+			try {
+				isPublished = await this.getEntryPublishStatus(id) || false;
+			} catch (error) {
+				console.warn('Failed to get publish status for metadata cache:', error);
+				isPublished = false;
+			}
+		}
+		
+		return { id, title, created_at: now, modified_at: now, file_path: filePath, preview, isPublished };
 	}
 
 	// Web-specific methods
@@ -523,48 +531,9 @@ class StorageService {
 		const store = tx.objectStore('metadata');
 
 		for (const entry of entries) {
-			const existing = existingMap.get(entry.id);
-			let finalEntry = entry;
-
-			// If we have a cached entry and the new entry has encrypted preview text
-			if (existing && entry.preview && entry.preview.includes('encrypted and requires a password')) {
-				// Check if we have a cached password for this entry
-				const hasPassword = encryptionService.hasCachedPassword(entry.id);
-				
-				if (hasPassword) {
-					// Preserve the decrypted metadata if it exists and looks valid
-					let preserveTitle = false;
-					let preservePreview = false;
-
-					// Preserve the cached title if it looks like a proper decrypted title
-					if (
-						existing.title !== entry.title &&
-						!existing.title.match(/^[A-Za-z0-9+/=]{20,}/) &&
-						!existing.title.startsWith('Encrypted')
-					) {
-						preserveTitle = true;
-					}
-
-					// Preserve the cached preview if it looks like decrypted content
-					if (
-						existing.preview !== entry.preview &&
-						!existing.preview.includes('encrypted and requires a password') &&
-						!existing.preview.includes('encrypted') &&
-						existing.preview.length > 10
-					) {
-						preservePreview = true;
-					}
-
-					if (preserveTitle || preservePreview) {
-						finalEntry = {
-							...entry,
-							...(preserveTitle && { title: existing.title }),
-							...(preservePreview && { preview: existing.preview })
-						};
-					}
-				}
-			}
-			await store.put(finalEntry);
+			// No longer using individual entry encryption - entries are handled by E2E encryption service
+			// Just cache the metadata as-is
+			await store.put(entry);
 		}
 
 		// Remove metadata for entries that no longer exist in the filesystem
@@ -655,38 +624,51 @@ class StorageService {
 
 	// Utility methods
 	private async updateMetadataFromEntry(entry: JournalEntry): Promise<void> {
-		const hasPassword = encryptionService.hasCachedPassword(entry.id);
 		const db = await this.initDB();
-		const existingMetadata = await db.get('metadata', entry.id);
-
-		if (
-			hasPassword &&
-			existingMetadata &&
-			isEncrypted(entry.content)
-		) {
-			// For encrypted entries with cached passwords, preserve the decrypted metadata
-			const preservedMetadata: JournalEntryMetadata = {
-				...existingMetadata,
-				modified_at: entry.modified_at,
-				file_path: entry.file_path
-			};
-			await db.put('metadata', preservedMetadata);
-			metadataStore.updateEntryMetadata(entry.id, preservedMetadata);
-			return;
-		}
-
+		
+		// Generate metadata for entries
 		const preview = PreviewService.createPreview(entry.content);
 		const displayTitle = TitleService.createFallbackTitle(entry);
+		
+		// Check publish status if authenticated (cache it for performance)
+		let isPublished: boolean | undefined = undefined;
+		if (apiAuthService.isAuthenticated()) {
+			try {
+				isPublished = await this.getEntryPublishStatus(entry.id) || false;
+			} catch (error) {
+				console.warn('Failed to get publish status for metadata cache:', error);
+				isPublished = false;
+			}
+		}
+		
 		const metadata: JournalEntryMetadata = {
 			id: entry.id,
 			title: displayTitle,
 			created_at: entry.created_at,
 			modified_at: entry.modified_at,
 			file_path: entry.file_path,
-			preview
+			preview,
+			isPublished
 		};
 		await db.put('metadata', metadata);
 		metadataStore.updateEntryMetadata(entry.id, metadata);
+	}
+
+	/**
+	 * Update the publish status in cached metadata
+	 */
+	private async updateEntryPublishStatusInMetadata(entryId: string, isPublished: boolean): Promise<void> {
+		try {
+			const db = await this.initDB();
+			const metadata = await db.get('metadata', entryId);
+			if (metadata) {
+				const updatedMetadata = { ...metadata, isPublished };
+				await db.put('metadata', updatedMetadata);
+				metadataStore.updateEntryMetadata(entryId, updatedMetadata);
+			}
+		} catch (error) {
+			console.warn('Failed to update publish status in metadata cache:', error);
+		}
 	}
 
 	private titleToSafeFilename(title: string): string {
@@ -830,7 +812,15 @@ class StorageService {
 	 * Publish an entry to the cloud with E2E encryption
 	 */
 	async publishEntry(entryId: string): Promise<boolean> {
-		if (!apiAuthService.isAuthenticated()) {
+		const isAuth = apiAuthService.isAuthenticated();
+		const currentSession = apiAuthService.getCurrentSession();
+		console.log('Publishing check:', { 
+			isAuth, 
+			hasSession: !!currentSession, 
+			sessionAuth: currentSession?.isAuthenticated 
+		});
+		
+		if (!isAuth) {
 			console.error('Cannot publish: user not authenticated');
 			return false;
 		}
@@ -934,6 +924,10 @@ class StorageService {
 				if (cloudId) {
 					// Store mapping between local ID and cloud UUID with server timestamp
 					await this.storeCloudMapping(entryId, cloudId, serverTimestamp);
+					
+					// Update metadata to reflect published status
+					await this.updateEntryPublishStatusInMetadata(entryId, true);
+					
 					console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId, 'Server timestamp:', serverTimestamp);
 				} else {
 					console.warn('Entry published but no cloud ID returned');
@@ -984,6 +978,10 @@ class StorageService {
 
 			// Remove the cloud mapping since entry is unpublished
 			await this.removeCloudMapping(entryId);
+			
+			// Update metadata to reflect unpublished status
+			await this.updateEntryPublishStatusInMetadata(entryId, false);
+			
 			console.log('Entry unpublished successfully. Local ID:', entryId, 'Cloud ID:', cloudId);
 			return true;
 		} catch (error) {
@@ -1360,7 +1358,8 @@ class StorageService {
 						created_at: journalEntry.created_at,
 						modified_at: journalEntry.modified_at,
 						file_path: journalEntry.file_path,
-						preview: PreviewService.createPreview(journalEntry.content)
+						preview: PreviewService.createPreview(journalEntry.content),
+						isPublished: true // Entries imported from cloud are by definition published
 					};
 					await this.cacheMetadata([metadata]);
 
@@ -1533,34 +1532,6 @@ class StorageService {
 		}
 	}
 
-	/**
-	 * Create a checksum for entry data to detect corruption
-	 */
-	private async createDataChecksum(data: string): Promise<string> {
-		try {
-			// Use crypto.subtle if available (modern browsers)
-			if (typeof crypto !== 'undefined' && crypto.subtle) {
-				const encoder = new TextEncoder();
-				const dataBuffer = encoder.encode(data);
-				const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-				const hashArray = Array.from(new Uint8Array(hashBuffer));
-				return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-			} else {
-				// Fallback to simple hash for older environments
-				let hash = 0;
-				for (let i = 0; i < data.length; i++) {
-					const char = data.charCodeAt(i);
-					hash = ((hash << 5) - hash) + char;
-					hash = hash & hash; // Convert to 32-bit integer
-				}
-				return Math.abs(hash).toString(16);
-			}
-		} catch (error) {
-			console.error('Error creating checksum:', error);
-			// Fallback to length + first/last chars
-			return `${data.length}_${data.charAt(0)}_${data.charAt(data.length - 1)}`;
-		}
-	}
 	private async generateUniqueFilenameForImport(baseTitle: string): Promise<string> {
 		const safeTitle = this.titleToSafeFilename(baseTitle);
 		let filename = safeTitle;

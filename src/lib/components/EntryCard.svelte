@@ -1,16 +1,15 @@
 <script lang="ts">
     import type { JournalEntryMetadata } from '../storage/types.ts';
-    import { encryptionService } from '../services/encryption.js';
     import { metadataStore } from '../stores/metadata.js';
+    import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
 
     interface Props {
-        storageService: any; // The storage service instance
         entry: JournalEntryMetadata;
         onselect?: (event: { id: string }) => void;
         ondelete?: (event: { id: string }) => void;
     }
 
-    let { storageService, entry, onselect, ondelete }: Props = $props();
+    let { entry, onselect, ondelete }: Props = $props();
 
     // Get reactive metadata from the store - this will update when metadata changes
     let currentEntry = $derived(() => {
@@ -19,65 +18,19 @@
         return storeEntry || entry;
     });
 
-    // Check if entry has encrypted preview (locked state)
-    let hasEncryptedPreview = $derived(() => {
-        const currentMeta = currentEntry();
-        return currentMeta.preview.includes('encrypted and requires a password');
-    });
+    // Get E2E encryption session state
+    let e2eSession = $derived($e2eSessionStore);
     
-    // Check if we have a cached password for this entry
-    let hasPassword = $derived(() => {
-        const entryId = currentEntry().id;
-        return encryptionService.hasCachedPassword(entryId);
-    });
-    
-    // For web mode, check if content is encrypted when preview doesn't show encrypted state
-    let contentEncryptionState = $state<'unknown' | 'encrypted' | 'unencrypted'>('unknown');
-    
-    // Effect to check content encryption when needed
-    $effect(() => {
-        const currentMeta = currentEntry();
-        const needsContentCheck = !hasEncryptedPreview() && !hasPassword();
-        
-        if (needsContentCheck && storageService) {
-            storageService.getEntry(currentMeta.id).then(fullEntry => {
-                if (fullEntry && encryptionService.isContentEncrypted(fullEntry.content)) {
-                    contentEncryptionState = 'encrypted';
-                    
-                    // Update the metadata to show proper encrypted preview
-                    const updatedMetadata = {
-                        ...currentMeta,
-                        preview: 'This entry is encrypted and requires a password to view'
-                    };
-                    
-                    // Update the metadata store to reflect the change
-                    metadataStore.updateEntryMetadata(currentMeta.id, updatedMetadata);
-                } else {
-                    contentEncryptionState = 'unencrypted';
-                }
-            }).catch(() => {
-                contentEncryptionState = 'unencrypted';
-            });
-        } else {
-            contentEncryptionState = 'unknown';
-        }
-    });
-    
-    // Determine the encryption state for display
+    // Determine encryption state based on cached publish status
     let encryptionState = $derived(() => {
-        if (hasEncryptedPreview()) {
-            // Entry is locked (encrypted preview visible)
+        const currentMeta = currentEntry();
+        
+        // Entry is locked if it's published AND E2E encryption exists but is not unlocked
+        if (currentMeta.isPublished && e2eEncryptionService.hasStoredKeys() && !e2eSession?.isUnlocked) {
             return 'locked';
-        } else if (hasPassword()) {
-            // Entry has a cached password but no encrypted preview = unlocked
-            return 'unlocked';
-        } else if (contentEncryptionState === 'encrypted') {
-            // Entry content is encrypted but no cached password = locked
-            return 'locked';
-        } else {
-            // No encryption or still checking
-            return 'none';
         }
+        
+        return 'none';
     });
     
     // Display appropriate preview - use reactive metadata from store
@@ -128,9 +81,7 @@
     <div class="entry-meta">
         <div class="entry-date-with-icon">
             {#if encryptionState() === 'locked'}
-                <img src="/material-symbols--lock.svg" class="lock-icon locked" alt="Locked" title="This entry is encrypted and locked" />
-            {:else if encryptionState() === 'unlocked'}
-                <img src="/material-symbols--lock-open-right.svg" class="lock-icon unlocked" alt="Unlocked" title="This entry is encrypted but unlocked" />
+                <img src="/material-symbols--lock.svg" class="lock-icon locked" alt="Locked" title="Published entry - E2E encryption required to edit" />
             {/if}
             <span class="entry-date">{formatDate(currentEntry().modified_at)}</span>
         </div>
@@ -238,10 +189,6 @@
     
     .lock-icon.locked {
         filter: invert(14%) sepia(95%) saturate(7462%) hue-rotate(7deg) brightness(92%) contrast(90%); /* Red for locked */
-    }
-    
-    .lock-icon.unlocked {
-        filter: invert(43%) sepia(96%) saturate(1352%) hue-rotate(87deg) brightness(119%) contrast(119%); /* Green for unlocked */
     }
 
     .entry-preview.encrypted {

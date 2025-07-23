@@ -20,9 +20,7 @@
     "fs:allow-watch",
     "fs:allow-unwatch",
     "os:default",
-    "os:default",
-    "os:default",
     "dialog:default",
-    "dialog:default"
+    "deep-link:default"
   ]
 }

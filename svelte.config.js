@@ -4,7 +4,7 @@ import adapterVercel from "@sveltejs/adapter-vercel";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
 // Use Vercel adapter when deploying to Vercel, static adapter for Tauri
-const isVercelBuild = process.env.VERCEL || process.env.NODE_ENV === 'production';
+const isVercelBuild = process.env.VERCEL;
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {

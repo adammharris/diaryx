@@ -1161,6 +1161,12 @@ async function exchangeCodeForTokens(code, redirectUri) {
     throw new Error('Google OAuth credentials not configured');
   }
 
+  console.log('OAuth Token Exchange Debug:');
+  console.log('- Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'MISSING');
+  console.log('- Client Secret:', clientSecret ? 'SET' : 'MISSING');
+  console.log('- Redirect URI:', redirectUri);
+  console.log('- Code length:', code ? code.length : 'MISSING');
+
   const tokenUrl = 'https://oauth2.googleapis.com/token';
   const tokenParams = new URLSearchParams({
     code,
@@ -1169,6 +1175,8 @@ async function exchangeCodeForTokens(code, redirectUri) {
     redirect_uri: redirectUri,
     grant_type: 'authorization_code'
   });
+
+  console.log('Token request payload:', tokenParams.toString());
 
   const response = await fetch(tokenUrl, {
     method: 'POST',
@@ -1180,10 +1188,31 @@ async function exchangeCodeForTokens(code, redirectUri) {
 
   if (!response.ok) {
     const errorData = await response.text();
+    console.log('Google OAuth Error Details:');
+    console.log('- Status:', response.status);
+    console.log('- Status Text:', response.statusText);
+    console.log('- Response Headers:', Object.fromEntries(response.headers.entries()));
+    console.log('- Error Data:', errorData);
+    
+    // Parse error data if it's JSON
+    try {
+      const errorJson = JSON.parse(errorData);
+      console.log('- Parsed Error:', errorJson);
+    } catch (e) {
+      console.log('- Error data is not JSON');
+    }
+    
     throw new Error(`Token exchange failed: ${response.status} ${errorData}`);
   }
 
-  return await response.json();
+  const tokenResponse = await response.json();
+  console.log('Token exchange successful:', { 
+    access_token: tokenResponse.access_token ? 'present' : 'missing',
+    refresh_token: tokenResponse.refresh_token ? 'present' : 'missing',
+    expires_in: tokenResponse.expires_in 
+  });
+  
+  return tokenResponse;
 }
 
 async function getUserInfoFromGoogle(accessToken) {

@@ -18,6 +18,7 @@ export interface JournalEntryMetadata {
     modified_at: string;
     file_path: string;
     preview: string;
+    isPublished?: boolean; // Cloud publish status - cached for performance
 }
 
 export interface StorageResult<T> {

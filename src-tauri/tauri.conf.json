@@ -5,7 +5,7 @@
   "identifier": "net.diaryx.journal",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../build",
     "removeUnusedCommands": true
@@ -34,5 +34,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["diaryx"]
+      }
+    }
   }
 }

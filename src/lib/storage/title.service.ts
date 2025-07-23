@@ -2,21 +2,15 @@
  * Service for handling entry titles (filename-based)
  */
 
-import { isEncrypted } from '../utils/crypto.js';
 import type { JournalEntry } from './types.js';
 
 export class TitleService {
-    private static readonly ENCRYPTED_TITLE_PREFIX = '';
-
     /**
-     * Creates a fallback title for encrypted entries
+     * Creates a fallback title for entries
      */
     static createFallbackTitle(entry: JournalEntry): string {
         // Since titles are now filename-based, just return the entry title
-        // Add encryption indicator if needed
-        if (isEncrypted(entry.content) && !entry.title.startsWith(this.ENCRYPTED_TITLE_PREFIX)) {
-            return `${this.ENCRYPTED_TITLE_PREFIX} ${entry.title}`;
-        }
+        // Individual entry encryption has been removed - now using E2E encryption system
         return entry.title;
     }
 
@@ -35,24 +29,18 @@ export class TitleService {
 
 
     /**
-     * Gets display title for UI (with encryption indicator)
+     * Gets display title for UI
      */
     static getDisplayTitle(entry: JournalEntry): string {
-        const title = this.createFallbackTitle(entry);
-        
-        // If it's encrypted and doesn't already have the indicator, add it
-        if (isEncrypted(entry.content) && !title.startsWith(this.ENCRYPTED_TITLE_PREFIX)) {
-            return `${this.ENCRYPTED_TITLE_PREFIX} ${title}`;
-        }
-        
-        return title;
+        // No longer using individual entry encryption - titles are just returned as-is
+        return this.createFallbackTitle(entry);
     }
 
     /**
-     * Cleans title by removing encryption indicators
+     * Cleans title (no longer needed but kept for compatibility)
      */
     static cleanTitle(title: string): string {
-        return title.replace(new RegExp(`^${this.ENCRYPTED_TITLE_PREFIX}\\s*`), '');
+        return title;
     }
 
     /**

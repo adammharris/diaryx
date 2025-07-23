@@ -1,13 +1,12 @@
 <script lang="ts">
         import SvelteMarkdown from 'svelte-markdown';
     import type { JournalEntry } from '../storage/types';
-    import { apiAuthService } from '../services/api-auth.service.js';
+    import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import { isKeyboardVisible, keyboardHeight } from '../stores/keyboard.js';
-    import { isEncrypted } from '../utils/crypto.js';
-    import { encryptionService } from '../services/encryption.js';
+    import { metadataStore } from '../stores/metadata.js';
+    // Removed old crypto imports - now using E2E encryption service
     import InfoModal from './InfoModal.svelte';
-    import PasswordPrompt from './PasswordPrompt.svelte';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -38,11 +37,8 @@
     let isPublished = $state(false);
     let showInfo = $state(false);
     
-    // Encryption state
-    let isEntryEncrypted = $state(false);
+    // Entry locking state (for E2E encryption)
     let isEntryLocked = $state(false);
-    let showPasswordPrompt = $state(false);
-    let lastPasswordAttemptFailed = $state(false);
     
     // Mobile detection
     let isMobile = $state(false);
@@ -51,7 +47,13 @@
     
     // E2E encryption state
     let e2eSession = $derived($e2eSessionStore);
-    let canPublish = $derived(apiAuthService.isAuthenticated() && e2eSession?.isUnlocked);
+    let authSession = $derived($apiAuthStore);
+    let canPublish = $derived.by(() => {
+        const auth = authSession?.isAuthenticated;
+        const e2e = e2eSession?.isUnlocked;
+        console.log('canPublish check:', { auth, e2e, canPublish: auth && e2e });
+        return auth && e2e;
+    });
     let canEdit = $derived(!isEntryLocked); // Can edit if entry is not locked
     
     // Simplified: removed complex cache system
@@ -117,16 +119,15 @@
             editableTitle = preloadedEntry.title;
             content = preloadedEntry.content;
             
-            // Check if entry is encrypted and locked
-            isEntryEncrypted = isEncrypted(preloadedEntry.content);
-            isEntryLocked = isEntryEncrypted && !encryptionService.hasCachedPassword(entryId);
+            // Get cached publish status from metadata store (no async call needed!)
+            const metadata = $metadataStore.entries[entryId];
+            isPublished = metadata?.isPublished || false;
             
-            // Get publish status from cloud API if authenticated
-            if (apiAuthService.isAuthenticated()) {
-                const publishStatus = await storageService.getEntryPublishStatus(entryId);
-                isPublished = publishStatus || false;
+            // Entry is locked only if it's published (from cloud) AND E2E encryption exists but is not unlocked
+            if (isPublished && e2eEncryptionService.hasStoredKeys() && !e2eSession?.isUnlocked) {
+                isEntryLocked = true;
             } else {
-                isPublished = false;
+                isEntryLocked = false;
             }
             
             isLoading = false;
@@ -144,16 +145,15 @@
             editableTitle = rawEntry.title;
             content = rawEntry.content;
             
-            // Check if entry is encrypted and locked
-            isEntryEncrypted = isEncrypted(rawEntry.content);
-            isEntryLocked = isEntryEncrypted && !encryptionService.hasCachedPassword(entryId);
+            // Get cached publish status from metadata store (no async call needed!)
+            const metadata = $metadataStore.entries[entryId];
+            isPublished = metadata?.isPublished || false;
             
-            // Get publish status from cloud API when authenticated
-            if (apiAuthService.isAuthenticated()) {
-                const publishStatus = await storageService.getEntryPublishStatus(entryId);
-                isPublished = publishStatus || false;
+            // Entry is locked only if it's published (from cloud) AND E2E encryption exists but is not unlocked
+            if (isPublished && e2eEncryptionService.hasStoredKeys() && !e2eSession?.isUnlocked) {
+                isEntryLocked = true;
             } else {
-                isPublished = false;
+                isEntryLocked = false;
             }
         } catch (error) {
             console.error('Failed to load entry:', error);
@@ -366,47 +366,15 @@
     }
 
     function handleUnlockEntry() {
-        if (!isEntryEncrypted || !entryId) return;
-        showPasswordPrompt = true;
-        lastPasswordAttemptFailed = false;
+        // With E2E encryption, unlocking an entry means prompting for E2E password
+        // This will redirect to settings to unlock E2E encryption
+        onerror?.({
+            title: 'Unlock Required',
+            message: 'This entry requires E2E encryption to be unlocked. Please go to Settings to enter your encryption password.'
+        });
     }
 
-    async function handlePasswordSubmit(event: CustomEvent<{ password: string }>) {
-        if (!entry || !entryId) return;
-        
-        const { password } = event.detail;
-        
-        try {
-            // Try to decrypt the entry with the provided password
-            const decryptedContent = await encryptionService.decryptEntry(entry.content, password);
-            
-            if (decryptedContent) {
-                // Success! Update the entry content and unlock it
-                content = decryptedContent;
-                entry.content = decryptedContent;
-                isEntryLocked = false;
-                showPasswordPrompt = false;
-                lastPasswordAttemptFailed = false;
-                
-                // Update the title in case it was also encrypted
-                await storageService.updateDecryptedTitle(entryId, decryptedContent);
-                
-                console.log('Entry unlocked successfully');
-            } else {
-                // Wrong password
-                lastPasswordAttemptFailed = true;
-                console.log('Incorrect password for entry:', entryId);
-            }
-        } catch (error) {
-            console.error('Error unlocking entry:', error);
-            lastPasswordAttemptFailed = true;
-        }
-    }
-
-    function handlePasswordCancel() {
-        showPasswordPrompt = false;
-        lastPasswordAttemptFailed = false;
-    }
+    // Removed old password prompt handlers - no longer needed with E2E encryption
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -580,13 +548,7 @@
     onclose={handleCloseInfo}
 />
 
-<!-- Password Prompt Modal -->
-{#if showPasswordPrompt}
-    <PasswordPrompt 
-        on:submit={handlePasswordSubmit}
-        on:cancel={handlePasswordCancel}
-    />
-{/if}
+<!-- Password prompt no longer needed with E2E encryption -->
 
 
 <style>

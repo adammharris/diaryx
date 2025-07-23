@@ -75,23 +75,4 @@ Object.defineProperty(global, 'indexedDB', {
   configurable: true
 });
 
-// Mock crypto module for tests that don't want real encryption
-vi.mock('../utils/crypto', async () => {
-  const actual = await vi.importActual('../utils/crypto') as any;
-  return {
-    ...actual,
-    encrypt: vi.fn().mockImplementation(async (content: string, password: string) => {
-      return `encrypted:${content}:${password}`;
-    }),
-    decrypt: vi.fn().mockImplementation(async (encrypted: string, password: string) => {
-      const parts = encrypted.split(':');
-      if (parts[0] !== 'encrypted' || parts[2] !== password) {
-        throw new Error('Invalid password');
-      }
-      return parts[1];
-    }),
-    isEncrypted: vi.fn().mockImplementation((content: string) => {
-      return content.startsWith('encrypted:');
-    })
-  };
-});
+// Old crypto module mock removed - individual entry encryption system has been replaced with E2E encryption
