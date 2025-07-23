@@ -1,0 +1,410 @@
+/* ===== BUTTON SYSTEM ===== */
+/* Consolidated button styles extracted from Diaryx components */
+
+/* Base Button Class */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  border: none;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  text-align: center;
+  white-space: nowrap;
+  min-height: 44px; /* Touch target minimum */
+  box-sizing: border-box;
+}
+
+/* Button Variants */
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+  box-shadow: 0 2px 4px var(--color-primaryShadow);
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px var(--color-secondaryShadow);
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid transparent;
+}
+
+.btn-info {
+  background: var(--color-accent);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+/* Specialized Button Types */
+.btn-publish {
+  background: var(--color-secondary);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  min-height: 36px;
+}
+
+.btn-publish.published {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.btn-unlock {
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  min-height: 28px;
+  border-radius: 4px;
+}
+
+.btn-unlock-large {
+  background: var(--color-primary);
+  color: white;
+  font-size: 1rem;
+  padding: 0.75rem 1.5rem;
+  min-height: 44px;
+}
+
+.btn-danger-text {
+  background: transparent;
+  color: #ef4444;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  text-decoration: underline;
+}
+
+/* Button Sizes */
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  min-height: 36px;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.125rem;
+  min-height: 52px;
+}
+
+/* Close Button */
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--color-textSecondary);
+  padding: 0.5rem;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+/* Authentication Buttons */
+.user-button {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 0.5rem;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sign-in-button {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 44px;
+}
+
+/* Theme Selection Buttons */
+.theme-option {
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+  padding: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 80px;
+}
+
+.theme-option.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+}
+
+/* Dropdown Items */
+.dropdown-item {
+  background: none;
+  border: none;
+  color: var(--color-text);
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  min-height: 40px;
+}
+
+/* Button States */
+.btn:disabled,
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Hover Effects (only on devices that support hover) */
+@media (hover: hover) {
+  .btn-primary:hover {
+    background: var(--color-primaryHover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px var(--color-primaryShadow);
+  }
+
+  .btn-secondary:hover {
+    background: var(--color-background);
+    border-color: var(--color-primary);
+    transform: translateY(-1px);
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.4);
+  }
+
+  .btn-ghost:hover {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+
+  .btn-info:hover {
+    background: var(--color-surface);
+    border-color: var(--color-primary);
+  }
+
+  .btn-publish:hover {
+    background: var(--color-background);
+    border-color: var(--color-primary);
+  }
+
+  .btn-publish.published:hover {
+    background: var(--color-primaryHover);
+  }
+
+  .btn-unlock:hover,
+  .btn-unlock-large:hover {
+    background: var(--color-primaryHover);
+  }
+
+  .btn-danger-text:hover {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .close-btn:hover {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .user-button:hover {
+    background: var(--color-background);
+    border-color: var(--color-primary);
+  }
+
+  .sign-in-button:hover {
+    background: var(--color-primaryHover);
+    transform: translateY(-1px);
+  }
+
+  .theme-option:hover:not(.selected) {
+    border-color: var(--color-primary);
+    background: var(--color-background);
+  }
+
+  .dropdown-item:hover {
+    background: var(--color-surface);
+  }
+}
+
+/* Focus States for Accessibility */
+.btn:focus-visible,
+.close-btn:focus-visible,
+.user-button:focus-visible,
+.theme-option:focus-visible,
+.dropdown-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Icon Integration */
+.btn svg,
+.close-btn svg,
+.user-button svg,
+.dropdown-item svg {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+/* Icon filters for different button variants */
+.btn-primary svg,
+.btn-danger svg,
+.btn-unlock svg,
+.btn-unlock-large svg,
+.sign-in-button svg {
+  filter: brightness(0) invert(1); /* White icons */
+}
+
+.btn-secondary svg,
+.btn-ghost svg,
+.btn-info svg,
+.user-button svg,
+.dropdown-item svg {
+  filter: none; /* Use theme colors */
+}
+
+/* Loading State */
+.btn.loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn.loading::after {
+  content: '';
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Button Groups */
+.btn-group {
+  display: inline-flex;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.btn-group .btn {
+  border-radius: 0;
+  border-right-width: 0;
+}
+
+.btn-group .btn:first-child {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.btn-group .btn:last-child {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  border-right-width: 1px;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  .btn {
+    min-height: 48px; /* Larger touch targets on mobile */
+    padding: 0.875rem 1.25rem;
+  }
+
+  .btn-small {
+    min-height: 40px;
+    padding: 0.625rem 1rem;
+  }
+
+  .btn-large {
+    min-height: 56px;
+    padding: 1.125rem 2rem;
+  }
+
+  .close-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1.25rem;
+  }
+
+  .user-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .theme-option {
+    min-height: 100px;
+    padding: 1.25rem;
+  }
+
+  .dropdown-item {
+    min-height: 48px;
+    padding: 1rem;
+  }
+}
+
+/* Touch Action for Better Mobile Performance */
+.btn,
+.close-btn,
+.user-button,
+.theme-option,
+.dropdown-item {
+  touch-action: manipulation;
+}
