@@ -181,7 +181,7 @@ class ApiAuthService {
     // Use web callback for OAuth redirect, which will then trigger the deep link
     // For development, use localhost; for production, use your domain
     const redirectUri = onOpenUrl 
-      ? `http://localhost:5173/auth/callback`  // Web callback for Tauri
+      ? `https://www.diaryx.net/auth/callback`  // Web callback for Tauri
       : `${window.location.origin}/auth/callback`;
     console.log('Redirect URI:', redirectUri);
     const scope = 'openid email profile';
