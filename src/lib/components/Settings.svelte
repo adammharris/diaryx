@@ -101,13 +101,12 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div 
-    class="settings-overlay" 
-    class:mobile={isMobile}
+    class="modal-overlay"
     onclick={isMobile ? undefined : handleClose}
     role="presentation"
 >
     <div 
-        class="settings-modal" 
+        class="modal-content settings-modal"
         class:mobile={isMobile}
         onclick={(e: Event) => e.stopPropagation()}
         onkeydown={(e: KeyboardEvent) => e.stopPropagation()}
@@ -116,9 +115,9 @@
         aria-labelledby="settings-title"
         tabindex="-1"
     >
-        <div class="settings-header">
-            <h2 class="settings-title">Settings</h2>
-            <button class="close-btn" class:mobile={isMobile} onclick={handleClose} aria-label="Close settings">
+        <div class="modal-header">
+            <h2 style="color: var(--text-color);">Settings</h2>
+            <button class="close-btn" onclick={handleClose} aria-label="Close settings">
                 {#if isMobile}
                     ← Back
                 {:else}
@@ -127,12 +126,12 @@
             </button>
         </div>
 
-        <div class="settings-content">
-            <div class="setting-section">
-                <h3 class="section-title">Appearance</h3>
-                <p class="section-description">Choose a color theme for the interface</p>
+        <div class="modal-body">
+            <div class="form-section">
+                <h3>Appearance</h3>
+                <p>Choose a color theme for the interface</p>
 
-                <div class="theme-grid">
+                <div class="grid grid-cols-4 gap-4 mobile:grid-cols-2">
                     {#each Object.entries(themes) as [key, theme] (key)}
                         <button
                             class="theme-option"
@@ -163,17 +162,17 @@
                 </div>
             </div>
 
-            <div class="setting-section">
-                <h3 class="section-title">Account & Sync</h3>
-                <p class="section-description">Manage your account and enable cloud sync with end-to-end encryption</p>
+            <div class="form-section">
+                <h3>Account & Sync</h3>
+                <p>Manage your account and enable cloud sync with end-to-end encryption</p>
 
                 {#if !isAuthenticated}
-                    <div class="auth-section">
-                        <p class="auth-description">
+                    <div class="mb-4">
+                        <p class="text-secondary mb-4">
                             Sign in to sync your entries across devices with end-to-end encryption.
                             Your data is encrypted client-side and only you can decrypt it.
                         </p>
-                        <div class="auth-buttons">
+                        <div class="flex gap-2">
                             <button class="btn btn-primary" onclick={handleGoogleSignIn}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right: 0.5rem;">
                                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -186,28 +185,28 @@
                         </div>
                     </div>
                 {:else}
-                    <div class="user-section">
-                        <div class="user-info">
-                            <div class="user-avatar">
+                    <div class="bg-surface p-4 rounded-lg">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-full overflow-hidden bg-accent flex items-center justify-center">
                                 {#if authSession?.user.avatar}
-                                    <img src={authSession.user.avatar} alt="Profile" />
+                                    <img src={authSession.user.avatar} alt="Profile" class="w-full h-full object-cover" />
                                 {:else}
-                                    <div class="avatar-fallback">
+                                    <div class="text-lg font-semibold text-white">
                                         {authSession?.user.name?.[0] || authSession?.user.email?.[0] || 'U'}
                                     </div>
                                 {/if}
                             </div>
-                            <div class="user-details">
-                                <h4 class="user-name">{authSession?.user.name || 'Anonymous User'}</h4>
-                                <p class="user-email">{authSession?.user.email}</p>
-                                <p class="user-provider">via {authSession?.user.provider || 'Unknown'}</p>
+                            <div class="flex-1">
+                                <h4 class="font-semibold text-base">{authSession?.user.name || 'Anonymous User'}</h4>
+                                <p class="text-secondary text-sm">{authSession?.user.email}</p>
+                                <p class="text-secondary text-xs">via {authSession?.user.provider || 'Unknown'}</p>
                             </div>
                         </div>
 
-                        <div class="encryption-status">
-                            <div class="status-row">
-                                <span class="status-label">Encryption Status:</span>
-                                <span class="status-badge" class:unlocked={isE2EUnlocked} class:setup-needed={!hasStoredKeys}>
+                        <div class="bg-background p-3 rounded border mb-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-medium">Encryption Status:</span>
+                                <span class="px-2 py-1 rounded text-sm font-medium" class:bg-success={isE2EUnlocked} class:bg-warning={!hasStoredKeys} class:text-white={isE2EUnlocked || !hasStoredKeys}>
                                     {#if !hasStoredKeys}
                                         ⚠️ Not Set Up
                                     {:else if isE2EUnlocked}
@@ -219,8 +218,8 @@
                             </div>
                             
                             {#if !hasStoredKeys}
-                                <div class="setup-prompt">
-                                    <p class="setup-description">
+                                <div class="mt-3">
+                                    <p class="text-secondary text-sm mb-3">
                                         Set up end-to-end encryption to securely sync your entries to the cloud.
                                     </p>
                                     <button class="btn btn-primary btn-small" onclick={showE2ESetupModal}>
@@ -228,8 +227,8 @@
                                     </button>
                                 </div>
                             {:else if !isE2EUnlocked}
-                                <div class="unlock-prompt">
-                                    <p class="unlock-description">
+                                <div class="mt-3">
+                                    <p class="text-secondary text-sm mb-3">
                                         Your encryption is set up but locked. Unlock it to publish entries.
                                     </p>
                                     <button class="btn btn-secondary btn-small" onclick={showE2ESetupModal}>
@@ -237,8 +236,8 @@
                                     </button>
                                 </div>
                             {:else}
-                                <div class="encryption-ready">
-                                    <p class="ready-description">
+                                <div class="mt-3">
+                                    <p class="text-success text-sm">
                                         🎉 Ready to publish encrypted entries to the cloud!
                                     </p>
                                 </div>
@@ -246,8 +245,8 @@
                         </div>
 
                         {#if isE2EUnlocked}
-                            <div class="sync-info">
-                                <p class="sync-description">
+                            <div class="bg-success bg-opacity-10 p-3 rounded text-sm">
+                                <p class="text-success leading-relaxed">
                                     ✅ Cloud sync enabled<br>
                                     🔐 End-to-end encrypted<br>
                                     📱 Available on all your devices
@@ -262,9 +261,9 @@
                 {/if}
             </div>
 
-            <div class="setting-section">
-                <h3 class="section-title">About</h3>
-                <p class="about-text">
+            <div class="form-section">
+                <h3>About</h3>
+                <p class="text-secondary text-sm leading-relaxed">
                     Diaryx - Personal Journal<br>
                     A beautiful journaling app built with Tauri and Svelte.<br>
                     <br>
@@ -301,128 +300,7 @@
 
 
 <style>
-    .settings-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        backdrop-filter: blur(4px);
-    }
-
-    .settings-modal {
-        background: var(--color-surface, white);
-        border-radius: 12px;
-        width: 90%;
-        max-width: 600px;
-        max-height: 80vh;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        border: 1px solid var(--color-border, #e5e7eb);
-        display: flex;
-        flex-direction: column;
-    }
-
-    .settings-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1.5rem;
-        border-bottom: 1px solid var(--color-border, #e5e7eb);
-        background: var(--color-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
-        color: white;
-        border-radius: 12px 12px 0 0;
-    }
-
-    .settings-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin: 0;
-    }
-
-    .close-btn {
-        background: none;
-        border: none;
-        color: white;
-        font-size: 1.25rem;
-        cursor: pointer;
-        padding: 0.5rem;
-        border-radius: 6px;
-        transition: background-color 0.2s ease;
-        line-height: 1;
-        touch-action: manipulation;
-    }
-
-    @media (hover: hover) {
-        .close-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-    }
-
-    .settings-content {
-        padding: 1.5rem;
-        flex: 1;
-        overflow-y: auto;
-    }
-
-    .setting-section {
-        margin-bottom: 2rem;
-    }
-
-    .setting-section:last-child {
-        margin-bottom: 0;
-    }
-
-    .section-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--color-text, #1f2937);
-        margin: 0 0 0.5rem 0;
-    }
-
-    .section-description {
-        color: var(--color-textSecondary, #6b7280);
-        font-size: 0.875rem;
-        margin: 0 0 1rem 0;
-    }
-
-    .theme-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 1rem;
-    }
-
-    .theme-option {
-        background: var(--color-surface, white);
-        border: 2px solid var(--color-border, #e5e7eb);
-        border-radius: 8px;
-        padding: 1rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    @media (hover: hover) {
-        .theme-option:hover {
-            border-color: var(--color-primary, #3b82f6);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-    }
-
-    .theme-option.selected {
-        border-color: var(--color-primary, #3b82f6);
-        background: var(--color-background, #f8fafc);
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-
+    /* Component-specific styles - theme preview elements */
     .theme-preview {
         width: 100%;
         height: 40px;
@@ -445,270 +323,7 @@
     .theme-name {
         font-size: 0.875rem;
         font-weight: 500;
-        color: var(--color-text, #1f2937);
+        color: var(--color-text);
         text-align: center;
-    }
-
-    .about-text {
-        color: var(--color-textSecondary, #6b7280);
-        font-size: 0.875rem;
-        line-height: 1.5;
-        margin: 0;
-    }
-
-    /* Mobile-specific styles */
-    .settings-overlay.mobile {
-        align-items: flex-start;
-        justify-content: flex-start;
-        background: none;
-        backdrop-filter: none;
-    }
-
-    .settings-modal.mobile {
-        width: 100%;
-        max-width: none;
-        height: 100vh;
-        max-height: none;
-        border-radius: 0;
-        border: none;
-        box-shadow: none;
-        overflow-y: auto;
-    }
-
-    .close-btn.mobile {
-        padding: 0.75rem 1rem;
-        font-size: 0.875rem;
-        background: none;
-        border: none;
-        color: white; /* Changed to white for better visibility */
-        cursor: pointer;
-        border-radius: 6px;
-        transition: background-color 0.2s ease;
-    }
-
-    @media (hover: hover) {
-        .close-btn.mobile:hover {
-            background: white; /* Make box white on hover */
-            color: black; /* Make text black on hover */
-        }
-    }
-
-    /* Mobile safe area adjustments */
-    .settings-modal.mobile .settings-header {
-        padding-top: calc(1.5rem + env(safe-area-inset-top));
-        padding-left: calc(1.5rem + env(safe-area-inset-left));
-        padding-right: calc(1.5rem + env(safe-area-inset-right));
-        border-radius: 0;
-    }
-
-    .settings-modal.mobile .settings-content {
-        padding-left: calc(1.5rem + env(safe-area-inset-left));
-        padding-right: calc(1.5rem + env(safe-area-inset-right));
-        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
-    }
-
-    @media (max-width: 640px) {
-        .settings-modal:not(.mobile) {
-            width: 95%;
-            margin: 1rem;
-        }
-
-        .theme-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    /* Auth Section Styles */
-    .auth-section, .user-section {
-        background: var(--color-background, #f8fafc);
-        border-radius: 8px;
-        padding: 1.5rem;
-        border: 1px solid var(--color-border, #e5e7eb);
-    }
-
-    .auth-description {
-        color: var(--color-textSecondary, #6b7280);
-        font-size: 0.875rem;
-        line-height: 1.5;
-        margin: 0 0 1rem 0;
-    }
-
-    .auth-buttons {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .btn {
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border: none;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 36px;
-    }
-
-    .btn-primary {
-        background: var(--color-primary, #3b82f6);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background: var(--color-primaryDark, #2563eb);
-    }
-
-    .btn-secondary {
-        background: var(--color-surface, white);
-        color: var(--color-text, #1f2937);
-        border: 1px solid var(--color-border, #e5e7eb);
-    }
-
-    .btn-secondary:hover {
-        background: var(--color-background, #f8fafc);
-    }
-
-    .btn-danger {
-        background: #dc2626;
-        color: white;
-    }
-
-    .btn-danger:hover {
-        background: #b91c1c;
-    }
-
-    .btn-small {
-        padding: 0.375rem 0.75rem;
-        font-size: 0.75rem;
-    }
-
-    .user-info {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .user-avatar {
-        width: 3rem;
-        height: 3rem;
-        border-radius: 50%;
-        overflow: hidden;
-        border: 2px solid var(--color-border, #e5e7eb);
-    }
-
-    .user-avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .avatar-fallback {
-        width: 100%;
-        height: 100%;
-        background: var(--color-primary, #3b82f6);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 1.25rem;
-    }
-
-    .user-details {
-        flex: 1;
-    }
-
-    .user-name {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--color-text, #1f2937);
-        margin: 0 0 0.25rem 0;
-    }
-
-    .user-email {
-        font-size: 0.875rem;
-        color: var(--color-textSecondary, #6b7280);
-        margin: 0 0 0.25rem 0;
-    }
-
-    .user-provider {
-        font-size: 0.75rem;
-        color: var(--color-textSecondary, #6b7280);
-        margin: 0;
-    }
-
-    .encryption-status {
-        margin-bottom: 1.5rem;
-        padding: 1rem;
-        background: var(--color-surface, white);
-        border-radius: 6px;
-        border: 1px solid var(--color-border, #e5e7eb);
-    }
-
-    .status-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 0.5rem;
-    }
-
-    .status-label {
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--color-text, #1f2937);
-    }
-
-    .status-badge {
-        font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        background: #fee2e2;
-        color: #dc2626;
-        border: 1px solid #fecaca;
-    }
-
-    .status-badge.unlocked {
-        background: #dcfce7;
-        color: #166534;
-        border-color: #bbf7d0;
-    }
-
-    .status-badge.setup-needed {
-        background: #fef3cd;
-        color: #92400e;
-        border-color: #fde68a;
-    }
-
-    .sync-info {
-        margin-bottom: 1.5rem;
-    }
-
-    .sync-description {
-        color: var(--color-textSecondary, #6b7280);
-        font-size: 0.875rem;
-        line-height: 1.5;
-        margin: 0;
-    }
-
-    .setup-prompt, .unlock-prompt, .encryption-ready {
-        margin-top: 0.75rem;
-    }
-
-    .setup-description, .unlock-description, .ready-description {
-        font-size: 0.875rem;
-        color: var(--color-textSecondary, #6b7280);
-        margin: 0 0 0.75rem 0;
-        line-height: 1.4;
-    }
-
-    .ready-description {
-        color: #166534;
-        font-weight: 500;
     }
 </style>

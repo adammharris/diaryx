@@ -91,11 +91,11 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div 
-    class="auth-modal-backdrop" 
+    class="modal-overlay" 
     onclick={handleBackdropClick}
   >
-    <div class="auth-modal">
-      <div class="auth-modal-header">
+    <div class="modal-content modal-medium">
+      <div class="modal-header">
         <h2>{mode === 'signup' ? 'Create Account' : 'Sign In'}</h2>
         <button 
           class="close-btn" 
@@ -106,17 +106,17 @@
         </button>
       </div>
       
-      <div class="auth-modal-content">
+      <div class="modal-body">
         {#if error}
-          <div class="error-message">
+          <div class="form-error">
             {error}
           </div>
         {/if}
         
         <!-- Social Login Buttons -->
-        <div class="social-auth">
+        <div class="flex flex-col gap-3 mb-6">
           <button 
-            class="social-btn google-btn"
+            class="btn btn-secondary social-btn"
             onclick={handleGoogleSignIn}
             disabled={loading}
           >
@@ -130,7 +130,7 @@
           </button>
           
           <button 
-            class="social-btn github-btn"
+            class="btn btn-secondary social-btn"
             onclick={handleGitHubSignIn}
             disabled={loading}
           >
@@ -141,13 +141,13 @@
           </button>
         </div>
         
-        <div class="divider">
+        <div class="form-divider">
           <span>or</span>
         </div>
         
         <!-- Email/Password Form -->
-        <form onsubmit|preventDefault={handleEmailAuth} class="email-form">
-          <div class="form-group">
+        <form onsubmit|preventDefault={handleEmailAuth} class="flex flex-col gap-4">
+          <div class="form-field">
             <label for="email">Email</label>
             <input 
               id="email"
@@ -159,7 +159,7 @@
             />
           </div>
           
-          <div class="form-group">
+          <div class="form-field">
             <label for="password">Password</label>
             <input 
               id="password"
@@ -173,17 +173,17 @@
           
           <button 
             type="submit" 
-            class="submit-btn"
+            class="btn btn-primary"
             disabled={loading || !email || !password}
           >
             {loading ? 'Please wait...' : mode === 'signup' ? 'Create Account' : 'Sign In'}
           </button>
         </form>
         
-        <div class="auth-toggle">
+        <div class="text-center mt-6 text-sm text-secondary">
           {mode === 'signup' ? 'Already have an account?' : "Don't have an account?"}
           <button 
-            class="toggle-btn"
+            class="btn-link text-primary underline ml-1"
             onclick={() => mode = mode === 'signup' ? 'signin' : 'signup'}
             disabled={loading}
           >
@@ -196,214 +196,9 @@
 {/if}
 
 <style>
-  .auth-modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-  
-  .auth-modal {
-    background: var(--surface-color, #ffffff);
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-    width: 100%;
-    max-width: 400px;
-    max-height: 90vh;
-    overflow-y: auto;
-  }
-  
-  .auth-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem 1.5rem 0;
-  }
-  
-  .auth-modal-header h2 {
-    margin: 0;
-    color: var(--text-color, #000000);
-    font-size: 1.5rem;
-    font-weight: 600;
-  }
-  
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-color-muted, #666666);
-    padding: 0;
-    width: 2rem;
-    height: 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-  }
-  
-  .close-btn:hover {
-    background: var(--hover-color, #f0f0f0);
-  }
-  
-  .auth-modal-content {
-    padding: 1.5rem;
-  }
-  
-  .error-message {
-    background: #fee;
-    color: #c33;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    font-size: 0.875rem;
-  }
-  
-  .social-auth {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
-  
+  /* Component-specific styles for AuthModal */
   .social-btn {
-    display: flex;
-    align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border-color, #e0e0e0);
-    border-radius: 6px;
-    background: var(--surface-color, #ffffff);
-    color: var(--text-color, #000000);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  
-  .social-btn:hover:not(:disabled) {
-    background: var(--hover-color, #f8f9fa);
-    border-color: var(--border-color-hover, #d0d0d0);
-  }
-  
-  .social-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  .divider {
-    text-align: center;
-    margin: 1.5rem 0;
-    position: relative;
-    color: var(--text-color-muted, #666666);
-    font-size: 0.875rem;
-  }
-  
-  .divider::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: var(--border-color, #e0e0e0);
-  }
-  
-  .divider span {
-    background: var(--surface-color, #ffffff);
-    padding: 0 1rem;
-  }
-  
-  .email-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .form-group label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-color, #000000);
-  }
-  
-  .form-group input {
-    padding: 0.75rem;
-    border: 1px solid var(--border-color, #e0e0e0);
-    border-radius: 6px;
-    font-size: 0.875rem;
-    background: var(--surface-color, #ffffff);
-    color: var(--text-color, #000000);
-  }
-  
-  .form-group input:focus {
-    outline: none;
-    border-color: var(--accent-color, #007acc);
-    box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
-  }
-  
-  .form-group input:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  .submit-btn {
-    padding: 0.75rem;
-    background: var(--accent-color, #007acc);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-  }
-  
-  .submit-btn:hover:not(:disabled) {
-    background: var(--accent-color-hover, #005a9e);
-  }
-  
-  .submit-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  .auth-toggle {
-    text-align: center;
-    margin-top: 1.5rem;
-    font-size: 0.875rem;
-    color: var(--text-color-muted, #666666);
-  }
-  
-  .toggle-btn {
-    background: none;
-    border: none;
-    color: var(--accent-color, #007acc);
-    cursor: pointer;
-    font-size: inherit;
-    text-decoration: underline;
-    margin-left: 0.25rem;
-  }
-  
-  .toggle-btn:hover:not(:disabled) {
-    color: var(--accent-color-hover, #005a9e);
-  }
-  
-  .toggle-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 </style>

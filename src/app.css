@@ -1,7 +1,9 @@
 /* src/app.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Import consolidated style systems - must come first */
+@import './lib/styles/buttons.css';
+@import './lib/styles/modals.css';
+@import './lib/styles/forms.css';
+@import './lib/styles/utilities.css';
 
 body {
     background-color: var(--color-background);

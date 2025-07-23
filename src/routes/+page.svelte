@@ -583,12 +583,12 @@
             placeholder="New journal entry title..."
             bind:value={newEntryTitle}
             onkeydown={handleKeydownCreate}
-            class="new-entry-input"
+            class="flex-1"
           />
           <button
             onclick={handleCreateEntry}
             disabled={isCreating || !newEntryTitle.trim()}
-            class="new-entry-btn"
+            class="btn btn-primary px-4 py-3 text-base font-medium min-w-12 touch-manipulation"
           >
             {isCreating ? '...' : '+'}
           </button>
@@ -599,25 +599,27 @@
             type="text"
             placeholder="Search entries..."
             bind:value={searchQuery}
-            class="search-input"
+            class="w-full"
           />
         </div>
 
-        <div class="entries-container">
+        <div class="flex-1 overflow-y-auto p-4">
           {#if isLoading}
-            <div class="loading">Loading entries...</div>
+            <div class="flex items-center justify-center p-8 text-secondary text-center text-sm">Loading entries...</div>
           {:else if filteredEntries.length === 0}
-            <div class="no-entries">
+            <div class="flex items-center justify-center p-8 text-secondary text-center text-sm leading-relaxed">
               {searchQuery ? 'No entries match your search' : 'No journal entries found. Create your first entry above!'}
             </div>
           {:else}
-            {#each filteredEntries as entry (entry.id)}
-              <EntryCard 
-                {entry} 
-                onselect={handleSelectEntry}
-                ondelete={handleDeleteEntry}
-              />
-            {/each}
+            <div class="flex flex-col">
+              {#each filteredEntries as entry (entry.id)}
+                <EntryCard 
+                  {entry} 
+                  onselect={handleSelectEntry}
+                  ondelete={handleDeleteEntry}
+                />
+              {/each}
+            </div>
           {/if}
         </div>
       </div>
@@ -637,7 +639,7 @@
             onkeyboardtoggle={handleKeyboardToggle}
           />
         {:else}
-          <div class="loading">Loading storage service...</div>
+          <div class="flex items-center justify-center p-8 text-secondary text-center text-sm">Loading storage service...</div>
         {/if}
       </div>
     {:else if mobileView === 'settings'}
@@ -671,12 +673,12 @@
           placeholder="New journal entry title..."
           bind:value={newEntryTitle}
           onkeydown={handleKeydownCreate}
-          class="new-entry-input"
+          class="flex-1"
         />
         <button
           onclick={handleCreateEntry}
           disabled={isCreating || !newEntryTitle.trim()}
-          class="new-entry-btn"
+          class="btn btn-primary px-4 py-3 text-base font-medium min-w-12 touch-manipulation"
         >
           {isCreating ? '...' : '+'}
         </button>
@@ -687,30 +689,32 @@
           type="text"
           placeholder="Search entries..."
           bind:value={searchQuery}
-          class="search-input"
+          class="w-full"
         />
       </div>
 
-      <div class="entries-container">
+      <div class="flex-1 overflow-y-auto p-4">
         {#if isLoading}
-          <div class="loading">Loading entries...</div>
+          <div class="flex items-center justify-center p-8 text-secondary text-center text-sm">Loading entries...</div>
         {:else if filteredEntries.length === 0}
-          <div class="no-entries">
+          <div class="flex items-center justify-center p-8 text-secondary text-center text-sm leading-relaxed">
             {searchQuery ? 'No entries match your search' : 'No journal entries found. Create your first entry above!'}
           </div>
         {:else}
-          {#each filteredEntries as entry (entry.id)}
-            <EntryCard 
-              {entry} 
-              onselect={handleSelectEntry}
-              ondelete={handleDeleteEntry}
-            />
-          {/each}
+          <div class="flex flex-col">
+            {#each filteredEntries as entry (entry.id)}
+              <EntryCard 
+                {entry} 
+                onselect={handleSelectEntry}
+                ondelete={handleDeleteEntry}
+              />
+            {/each}
+          </div>
         {/if}
       </div>
     </aside>
 
-    <main class="main-content">
+    <main class="flex-1 p-4 overflow-hidden">
       {#if storageService}
         <Editor 
           {storageService}
@@ -724,7 +728,7 @@
           onkeyboardtoggle={handleKeyboardToggle}
         />
       {:else}
-        <div class="loading">Loading storage service...</div>
+        <div class="flex items-center justify-center p-8 text-secondary text-center text-sm">Loading storage service...</div>
       {/if}
     </main>
   {/if}
@@ -748,6 +752,8 @@
 />
 
 <style>
+  /* Main page styles with extracted CSS integration */
+  
   :global(body) {
     margin: 0;
     padding: 0;
@@ -770,6 +776,7 @@
   .app-container.mobile {
     /* Height set dynamically via JavaScript for keyboard handling */
     min-height: 0; /* Allow container to shrink when keyboard appears */
+    flex-direction: column;
   }
   
   /* Smooth keyboard animation for iOS Tauri */
@@ -831,7 +838,7 @@
     justify-content: center;
     min-width: 2.5rem;
     height: 2.5rem;
-    touch-action: manipulation; /* Add this line */
+    touch-action: manipulation;
   }
 
   @media (hover: hover) {
@@ -846,104 +853,22 @@
     filter: invert(1);
   }
 
+  /* Form inputs - utilizing forms.css styles where possible */
   .new-entry {
     display: flex;
     padding: 1rem;
     gap: 0.5rem;
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
-  }
-
-  .new-entry-input {
-    flex: 1;
-    padding: 0.75rem;
-    border: 1px solid var(--color-border, #d1d5db);
-    border-radius: 6px;
-    font-size: 0.875rem;
-    outline: none;
-    transition: border-color 0.2s ease;
-  }
-
-  .new-entry-input:focus {
-    border-color: var(--color-primary, #3b82f6);
-  }
-
-  .new-entry-btn {
-    padding: 0.75rem 1rem;
-    background: var(--color-primary, #3b82f6);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
-    transition: background-color 0.2s ease;
-    min-width: 3rem;
-    touch-action: manipulation; /* Add this line */
-  }
-
-  @media (hover: hover) {
-    .new-entry-btn:hover:not(:disabled) {
-      background: var(--color-primaryHover, #2563eb);
-    }
-  }
-
-  .new-entry-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .search-container {
     padding: 1rem;
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
+    border-bottom: 1px solid var(--color-border);
   }
 
-  .search-input {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--color-border, #d1d5db);
-    border-radius: 6px;
-    font-size: 0.875rem;
-    outline: none;
-    transition: border-color 0.2s ease;
-    box-sizing: border-box;
-  }
-
-  .search-input:focus {
-    border-color: var(--color-primary, #3b82f6);
-  }
-
-  .entries-container {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1rem;
-  }
-
-  .main-content {
-    flex: 1;
-    padding: 1rem;
-    overflow: hidden;
-  }
-
-  .loading,
-  .no-entries {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    color: var(--color-textSecondary, #6b7280);
-    text-align: center;
-    font-size: 0.875rem;
-  }
-
-  .no-entries {
-    line-height: 1.5;
-  }
+  /* Utility classes replace loading, no-entries, main-content, entries-container */
 
   /* Mobile-specific styles */
-  .app-container.mobile {
-    flex-direction: column;
-  }
-
   .mobile-view {
     width: 100%;
     height: 100%; /* Inherit height from app-container */
@@ -973,21 +898,7 @@
     padding-right: calc(1.5rem + env(safe-area-inset-right));
   }
 
-  .mobile-view .new-entry {
-    padding-left: calc(1rem + env(safe-area-inset-left));
-    padding-right: calc(1rem + env(safe-area-inset-right));
-  }
-
-  .mobile-view .search-container {
-    padding-left: calc(1rem + env(safe-area-inset-left));
-    padding-right: calc(1rem + env(safe-area-inset-right));
-  }
-
-  .mobile-view .entries-container {
-    padding-left: calc(1rem + env(safe-area-inset-left));
-    padding-right: calc(1rem + env(safe-area-inset-right));
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-  }
+  /* Mobile safe area will be handled inline since we need to preserve the current structure */
 
   /* Responsive design - fallback for older approach */
   @media (max-width: 768px) {
@@ -1000,7 +911,7 @@
       height: 50vh;
     }
 
-    .app-container:not(.mobile) .main-content {
+    .app-container:not(.mobile) main {
       height: 50vh;
     }
   }

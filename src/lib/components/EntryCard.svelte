@@ -57,18 +57,18 @@
 </script>
 
 <div 
-    class="entry-card" 
+    class="bg-surface border rounded-lg p-3 mb-3 cursor-pointer transition-all duration-200 shadow-sm hover:border-primary hover:shadow-md hover:transform hover:-translate-y-px touch-manipulation" 
     onclick={handleSelect}
     role="button"
     tabindex="0"
     onkeydown={(e) => e.key === 'Enter' && handleSelect()}
 >
-    <div class="entry-header">
-        <h3 class="entry-title">
+    <div class="flex justify-between items-start mb-2">
+        <h3 class="text-lg font-semibold text-left flex-1 leading-tight m-0">
             {currentEntry().title}
         </h3>
         <button 
-            class="delete-btn" 
+            class="bg-transparent border-0 text-secondary p-1 rounded cursor-pointer opacity-0 hover:opacity-100 transition-all duration-200 hover:bg-red-100 hover:text-red-600" 
             onclick={handleDelete}
             aria-label="Delete entry"
         >
@@ -76,111 +76,30 @@
         </button>
     </div>
     
-    <p class="entry-preview" class:encrypted={encryptionState() === 'locked'}>{displayPreview}</p>
+    <p class="text-secondary text-sm leading-relaxed mb-2 line-clamp-2 overflow-hidden" class:encrypted={encryptionState() === 'locked'}>{displayPreview}</p>
     
-    <div class="entry-meta">
-        <div class="entry-date-with-icon">
+    <div class="flex justify-between items-center">
+        <div class="flex items-center gap-2">
             {#if encryptionState() === 'locked'}
                 <img src="/material-symbols--lock.svg" class="lock-icon locked" alt="Locked" title="Published entry - E2E encryption required to edit" />
             {/if}
-            <span class="entry-date">{formatDate(currentEntry().modified_at)}</span>
+            <span class="text-xs text-secondary">{formatDate(currentEntry().modified_at)}</span>
         </div>
     </div>
 </div>
 
 <style>
-    .entry-card {
-        background: var(--color-surface, white);
-        border: 1px solid var(--color-border, #e5e7eb);
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 0.75rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        touch-action: manipulation;
-    }
-
-    @media (hover: hover) {
-        .entry-card:hover {
-            border-color: var(--color-primary, #3b82f6);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transform: translateY(-1px);
-        }
-    }
-
-    .entry-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 0.5rem;
-    }
-
-    .entry-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: var(--color-text, #1f2937);
-        margin: 0;
-        line-height: 1.25;
-        flex: 1;
-        margin-right: 0.5rem;
-    }
-
-    .delete-btn {
-        background: none;
-        border: none;
-        color: var(--color-textSecondary, #9ca3af);
-        font-size: 1rem;
-        cursor: pointer;
-        padding: 0.25rem;
-        border-radius: 4px;
-        opacity: 0;
-        transition: all 0.2s ease;
-        line-height: 1;
-    }
-
-    @media (hover: hover) {
-        .entry-card:hover .delete-btn {
-            opacity: 1;
-        }
-    }
-
-    @media (hover: hover) {
-        .delete-btn:hover {
-            background: #fee2e2;
-            color: #dc2626;
-        }
-    }
-
-    .entry-preview {
-        color: var(--color-textSecondary, #6b7280);
-        font-size: 0.875rem;
-        line-height: 1.5;
-        margin: 0 0 0.75rem 0;
+    /* Component-specific styles - EntryCard uses extracted utility classes */
+    
+    /* Line clamp for preview text */
+    .line-clamp-2 {
         display: -webkit-box;
         -webkit-line-clamp: 2;
         line-clamp: 2;
         -webkit-box-orient: vertical;
-        overflow: hidden;
     }
-
-    .entry-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .entry-date-with-icon {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .entry-date {
-        font-size: 0.75rem;
-        color: var(--color-textSecondary, #9ca3af);
-    }
-
+    
+    /* Lock icon styling */
     .lock-icon {
         width: 12px;
         height: 12px;
@@ -190,10 +109,17 @@
     .lock-icon.locked {
         filter: invert(14%) sepia(95%) saturate(7462%) hue-rotate(7deg) brightness(92%) contrast(90%); /* Red for locked */
     }
-
-    .entry-preview.encrypted {
-        color: var(--color-textSecondary, #6b7280);
+    
+    /* Encrypted preview styling */
+    .encrypted {
         font-style: italic;
         opacity: 0.8;
+    }
+    
+    /* Hover states - only on devices that support hover */
+    @media (hover: hover) {
+        .bg-surface:hover .opacity-0 {
+            opacity: 1;
+        }
     }
 </style>

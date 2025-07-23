@@ -125,7 +125,7 @@
 
 {#if isVisible && entry}
     <div
-        class="modal-backdrop"
+        class="modal-overlay"
         role="button"
         tabindex="0"
         onclick={handleBackdropClick}
@@ -133,9 +133,9 @@
             if (e.key === "Escape" || e.key === "Enter") handleBackdropClick();
         }}
     >
-        <div class="modal-content">
+        <div class="modal-content modal-medium">
             <div class="modal-header">
-                <h2 class="modal-title">Entry Information</h2>
+                <h2>Entry Information</h2>
                 <button class="close-btn" onclick={handleClose} title="Close">
                     ×
                 </button>
@@ -143,32 +143,32 @@
 
             <div class="modal-body">
                 <!-- Basic Entry Info -->
-                <section class="info-section">
+                <section class="form-section">
                     <h3>Basic Information</h3>
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">Title:</span>
-                            <span class="info-value">{entry.title}</span>
+                    <div class="grid grid-cols-1 gap-3">
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">Title:</span>
+                            <span class="text-right">{entry.title}</span>
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">Created:</span>
-                            <span class="info-value"
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">Created:</span>
+                            <span class="text-right text-sm"
                                 >{new Date(
                                     entry.created_at,
                                 ).toLocaleString()}</span
                             >
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">Modified:</span>
-                            <span class="info-value"
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">Modified:</span>
+                            <span class="text-right text-sm"
                                 >{new Date(
                                     entry.modified_at,
                                 ).toLocaleString()}</span
                             >
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">File Path:</span>
-                            <span class="info-value file-path"
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">File Path:</span>
+                            <span class="text-right text-sm font-mono truncate max-w-xs"
                                 >{entry.file_path || "N/A"}</span
                             >
                         </div>
@@ -176,24 +176,24 @@
                 </section>
 
                 <!-- Content Statistics -->
-                <section class="info-section">
+                <section class="form-section">
                     <h3>Content Statistics</h3>
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">Word Count:</span>
-                            <span class="info-value"
+                    <div class="grid grid-cols-1 gap-3">
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">Word Count:</span>
+                            <span class="text-right font-mono"
                                 >{wordCount.toLocaleString()}</span
                             >
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">Character Count:</span>
-                            <span class="info-value"
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">Character Count:</span>
+                            <span class="text-right font-mono"
                                 >{characterCount.toLocaleString()}</span
                             >
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">Has Frontmatter:</span>
-                            <span class="info-value"
+                        <div class="flex justify-between">
+                            <span class="font-medium text-secondary">Has Frontmatter:</span>
+                            <span class="text-right"
                                 >{parsedContent?.hasFrontmatter
                                     ? "Yes"
                                     : "No"}</span
@@ -204,11 +204,11 @@
 
                 <!-- Tags Section -->
                 {#if tags.length > 0}
-                    <section class="info-section">
+                    <section class="form-section">
                         <h3>Tags</h3>
-                        <div class="tags-container">
+                        <div class="flex flex-wrap gap-2">
                             {#each tags as tag}
-                                <span class="tag">{tag}</span>
+                                <span class="px-2 py-1 bg-accent text-sm rounded border">{tag}</span>
                             {/each}
                         </div>
                     </section>
@@ -216,16 +216,15 @@
 
                 <!-- Frontmatter Metadata -->
                 {#if metadataInfo.length > 0}
-                    <section class="info-section">
+                    <section class="form-section">
                         <h3>Frontmatter Metadata</h3>
-                        <div class="info-grid">
+                        <div class="grid grid-cols-1 gap-3">
                             {#each metadataInfo as meta}
-                                <div class="info-item">
-                                    <span class="info-label">{meta.key}:</span>
+                                <div class="flex justify-between">
+                                    <span class="font-medium text-secondary">{meta.key}:</span>
                                     <span
-                                        class="info-value"
-                                        class:array-value={meta.type ===
-                                            "array"}
+                                        class="text-right text-sm"
+                                        class:font-mono={meta.type === "array"}
                                     >
                                         {meta.value}
                                     </span>
@@ -237,9 +236,9 @@
 
                 <!-- Raw Frontmatter (for debugging) -->
                 {#if parsedContent?.hasFrontmatter && Object.keys(parsedContent.frontmatter).length > 0}
-                    <section class="info-section">
+                    <section class="form-section">
                         <h3>Raw Frontmatter</h3>
-                        <pre class="raw-frontmatter">{JSON.stringify(
+                        <pre class="bg-background p-3 rounded text-sm font-mono overflow-x-auto">{JSON.stringify(
                                 parsedContent.frontmatter,
                                 null,
                                 2,
@@ -249,292 +248,26 @@
             </div>
 
             <div class="modal-footer">
-                <div class="footer-buttons">
-                    <button
-                        class="btn btn-primary"
-                        onclick={exportAsMarkdown}
-                        title="Export this entry as a Markdown file"
-                    >
-                        <img
-                            src="/material-symbols--download.svg"
-                            alt="Export"
-                            class="btn-icon"
-                        />
-                        Export as Markdown
-                    </button>
-                    <button class="btn btn-secondary" onclick={handleClose}>
-                        Close
-                    </button>
-                </div>
+                <button
+                    class="btn btn-primary"
+                    onclick={exportAsMarkdown}
+                    title="Export this entry as a Markdown file"
+                >
+                    <img
+                        src="/material-symbols--download.svg"
+                        alt="Export"
+                        class="icon"
+                    />
+                    Export as Markdown
+                </button>
+                <button class="btn btn-secondary" onclick={handleClose}>
+                    Close
+                </button>
             </div>
         </div>
     </div>
 {/if}
 
 <style>
-    .modal-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-        padding: 1rem;
-    }
-
-    .modal-content {
-        background: var(--color-surface);
-        border-radius: 12px;
-        max-width: 600px;
-        width: 100%;
-        max-height: 90vh;
-        overflow: hidden;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-        display: flex;
-        flex-direction: column;
-    }
-
-    .modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1.5rem;
-        border-bottom: 1px solid var(--color-border);
-        background: var(--color-background);
-    }
-
-    .modal-title {
-        margin: 0;
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--color-text);
-    }
-
-    .close-btn {
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        padding: 0.25rem;
-        border-radius: 4px;
-        color: var(--color-textSecondary);
-        transition: background-color 0.2s ease;
-    }
-
-    @media (hover: hover) {
-        .close-btn:hover {
-            background: var(--color-border);
-            color: var(--color-text);
-        }
-    }
-
-    .modal-body {
-        flex: 1;
-        overflow-y: auto;
-        padding: 1.5rem;
-        padding-left: calc(1.5rem + env(safe-area-inset-left));
-        padding-right: calc(1.5rem + env(safe-area-inset-right));
-    }
-
-    .info-section {
-        margin-bottom: 2rem;
-    }
-
-    .info-section:last-child {
-        margin-bottom: 0;
-    }
-
-    .info-section h3 {
-        margin: 0 0 1rem 0;
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--color-text);
-        border-bottom: 1px solid var(--color-border);
-        padding-bottom: 0.5rem;
-    }
-
-    .info-grid {
-        display: grid;
-        gap: 0.75rem;
-    }
-
-    .info-item {
-        display: grid;
-        grid-template-columns: 1fr 2fr;
-        gap: 1rem;
-        align-items: start;
-    }
-
-    .info-label {
-        font-weight: 500;
-        color: var(--color-textSecondary);
-    }
-
-    .info-value {
-        color: var(--color-text);
-        word-break: break-word;
-    }
-
-    .file-path {
-        font-family:
-            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-            "Courier New", monospace;
-        font-size: 0.875rem;
-        color: var(--color-textSecondary);
-    }
-
-    .array-value {
-        font-style: italic;
-        color: var(--color-primary);
-    }
-
-    .tags-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    .tag {
-        background: var(--color-primary);
-        color: var(--color-surface);
-        padding: 0.25rem 0.75rem;
-        border-radius: 9999px;
-        font-size: 0.875rem;
-        font-weight: 500;
-    }
-
-    .raw-frontmatter {
-        background: var(--color-background);
-        border: 1px solid var(--color-border);
-        border-radius: 6px;
-        padding: 1rem;
-        font-family:
-            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-            "Courier New", monospace;
-        font-size: 0.875rem;
-        color: var(--color-text);
-        overflow-x: auto;
-        margin: 0;
-    }
-
-    .modal-footer {
-        padding: 1.5rem;
-        border-top: 1px solid var(--color-border);
-        background: var(--color-background);
-    }
-
-    .footer-buttons {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: flex-end;
-    }
-
-    @media (max-width: 480px) {
-        .footer-buttons {
-            flex-direction: column;
-        }
-    }
-
-    .btn {
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border: 1px solid transparent;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .btn-icon {
-        width: 1rem;
-        height: 1rem;
-        filter: brightness(0) saturate(100%) invert(100%);
-    }
-
-    .btn-primary {
-        background: var(--color-primary);
-        color: var(--color-surface);
-        border-color: var(--color-primary);
-    }
-
-    .btn-primary .btn-icon {
-        filter: brightness(0) saturate(100%) invert(100%);
-    }
-
-    .btn-secondary {
-        background: var(--color-surface);
-        color: var(--color-text);
-        border-color: var(--color-border);
-    }
-
-    .btn-secondary .btn-icon {
-        filter: brightness(0) saturate(100%) invert(50%);
-    }
-
-    @media (hover: hover) {
-        .btn-primary:hover {
-            background: var(
-                --color-primaryHover,
-                color-mix(in srgb, var(--color-primary) 90%, black)
-            );
-            border-color: var(
-                --color-primaryHover,
-                color-mix(in srgb, var(--color-primary) 90%, black)
-            );
-        }
-
-        .btn-secondary:hover {
-            background: var(--color-background);
-            border-color: var(--color-textSecondary);
-        }
-    }
-
-    /* Mobile responsiveness */
-    @media (max-width: 768px) {
-        .modal-backdrop {
-            padding: 0;
-        }
-
-        .modal-content {
-            max-height: 100vh;
-            border-radius: 0;
-            width: 100%;
-            height: 100%;
-            background: var(--color-surface);
-        }
-
-        .info-item {
-            grid-template-columns: 1fr;
-            gap: 0.25rem;
-        }
-
-        .info-label {
-            font-size: 0.875rem;
-        }
-
-        .modal-body {
-            padding: 1rem;
-        }
-
-        .modal-header {
-            padding-top: calc(1rem + env(safe-area-inset-top));
-            padding-left: calc(1rem + env(safe-area-inset-left));
-            padding-right: calc(1rem + env(safe-area-inset-right));
-            padding-bottom: 1rem;
-        }
-
-        .modal-footer {
-            padding-top: 1rem;
-            padding-left: calc(1rem + env(safe-area-inset-left));
-            padding-right: calc(1rem + env(safe-area-inset-right));
-            padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-        }
-    }
+    /* Component-specific styles that can't be replaced with utility classes - InfoModal uses extracted styles */
 </style>

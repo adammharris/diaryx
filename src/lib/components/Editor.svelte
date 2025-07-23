@@ -380,29 +380,29 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if entry}
-    <div class="editor-container">
-        <div class="editor-header">
-            <div class="editor-title-row">
+    <div class="flex flex-col h-full bg-surface rounded-lg shadow-lg overflow-hidden">
+        <div class="flex justify-between items-center p-6 border-b bg-background">
+            <div class="flex items-center flex-1">
                 {#if isEditingTitle}
                     <input 
-                        class="editor-title-input"
+                        class="title-input flex-1 mr-2"
                         bind:value={editableTitle}
                         onkeydown={handleTitleKeydown}
                         onblur={handleTitleSave}
                     />
                 {:else}
                     <button 
-                        class="editor-title"
+                        class="text-xl font-semibold text-left bg-transparent border-0 p-1 m-0 font-inherit cursor-pointer rounded transition-colors hover:bg-surface"
                         onclick={() => isEditingTitle = true}
                         title="Click to edit title"
                         type="button"
+                        style="color: var(--color-text); font-family: inherit;"
                     >
                         {entry.title}
                     </button>
                 {/if}
                 <button 
-                    class="btn btn-ghost btn-close-mobile"
-                    class:mobile-close={isMobile}
+                    class="close-btn"
                     onclick={handleClose}
                     title={isMobile ? 'Back to entries' : 'Close'}
                 >
@@ -413,7 +413,7 @@
                     {/if}
                 </button>
             </div>
-            <div class="editor-controls">
+            <div class="flex gap-2 items-center">
                 {#if isEntryLocked}
                     <button 
                         class="btn btn-unlock"
@@ -457,16 +457,19 @@
             </div>
         </div>
 
-        <div class="editor-content-area">
+        <div class="flex flex-col flex-1 min-h-0">
             {#if isLoading}
-                <div class="loading">Loading...</div>
+                <div class="flex items-center justify-center p-8">
+                    <div class="spinner mr-2"></div>
+                    <span class="text-secondary">Loading...</span>
+                </div>
             {:else if isEntryLocked}
-                <div class="locked-entry">
-                    <div class="locked-icon">
-                        <img src="/material-symbols--lock.svg" class="lock-icon" alt="Locked" />
+                <div class="flex flex-col items-center justify-center p-8 text-center">
+                    <div class="mb-4">
+                        <img src="/material-symbols--lock.svg" class="icon-xl opacity-50" alt="Locked" />
                     </div>
-                    <h3>Entry is Encrypted</h3>
-                    <p>This entry is encrypted and requires a password to view or edit.</p>
+                    <h3 class="text-xl font-semibold mb-2">Entry is Encrypted</h3>
+                    <p class="text-secondary mb-6">This entry is encrypted and requires a password to view or edit.</p>
                     <button 
                         class="btn btn-unlock-large"
                         onclick={handleUnlockEntry}
@@ -476,13 +479,14 @@
                     </button>
                 </div>
             {:else if isPreview}
-                <div class="preview-container">
+                <div class="preview-container p-6 overflow-y-auto flex-1">
                     <SvelteMarkdown source={content} />
                 </div>
             {:else}
                 <textarea
                     bind:this={textareaElement}
-                    class="editor-textarea"
+                    class="w-full flex-1 p-6 border-0 resize-none font-mono text-sm leading-relaxed bg-surface outline-none text-base"
+                    style="color: var(--color-text); font-family: 'SF Mono', 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace;"
                     bind:value={content}
                     placeholder="Start writing your journal entry..."
                     spellcheck="true"
@@ -495,8 +499,8 @@
             {/if}
         </div>
 
-        <div class="editor-status" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
-            <span class="publish-status">
+        <div class="flex justify-between items-center px-6 py-2 border-t bg-background text-sm" class:keyboard-animating={isMobile && $isKeyboardVisible && $keyboardHeight > 0} style={isMobile && $isKeyboardVisible && $keyboardHeight > 0 ? 'padding-bottom: 0.5rem;' : 'padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));'}>
+            <span class="text-secondary">
                 {#if isEntryLocked}
                     <img src="/material-symbols--lock.svg" class="status-icon" alt="Locked" />
                     Locked
@@ -534,10 +538,13 @@
         </div>
     </div>
 {:else if entryId}
-    <div class="loading">Loading entry...</div>
+    <div class="flex items-center justify-center p-8">
+        <div class="spinner mr-2"></div>
+        <span class="text-secondary">Loading entry...</span>
+    </div>
 {:else}
-    <div class="no-entry">
-        <p>Select an entry to start editing</p>
+    <div class="flex items-center justify-center p-8 text-center">
+        <p class="text-secondary">Select an entry to start editing</p>
     </div>
 {/if}
 
@@ -552,195 +559,9 @@
 
 
 <style>
-    .editor-container {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        background: var(--color-surface);
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-    }
+    /* Component-specific styles that can't be replaced with utility classes */
 
-    .editor-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid var(--color-border);
-        background: var(--color-background);
-        flex-shrink: 0;
-    }
-
-    .editor-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--color-text);
-        margin: 0;
-        cursor: pointer;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        transition: background-color 0.2s ease;
-        background: none;
-        border: none;
-        font-family: inherit;
-        text-align: left;
-    }
-
-    @media (hover: hover) {
-        .editor-title:hover {
-            background-color: var(--color-border);
-        }
-    }
-
-    .editor-title-input {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--color-text);
-        margin: 0;
-        padding: 0.25rem 0.5rem;
-        border: 2px solid var(--color-primary);
-        border-radius: 4px;
-        background: var(--color-surface);
-        outline: none;
-        flex: 1;
-        margin-right: 0.5rem;
-    }
-
-    .editor-controls {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-    }
-
-    .btn {
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border: 1px solid transparent;
-    }
-
-    
-
-    .btn-secondary {
-        background: var(--color-surface);
-        color: var(--color-text);
-        border-color: var(--color-border);
-    }
-
-    @media (hover: hover) {
-        .btn-secondary:hover {
-            background: var(--color-background);
-            border-color: var(--color-textSecondary);
-        }
-    }
-
-    .btn-ghost {
-        background: transparent;
-        color: var(--color-textSecondary);
-        padding: 0.5rem;
-    }
-
-    @media (hover: hover) {
-        .btn-ghost:hover {
-            background: var(--color-border);
-            color: var(--color-text);
-        }
-    }
-
-    .btn-ghost.mobile-close {
-        padding: 0.75rem 1rem;
-        font-size: 0.875rem;
-        min-width: auto;
-    }
-
-    .btn-close-mobile {
-        padding: 0.5rem 0.75rem;
-        font-size: 0.8rem;
-        flex-shrink: 0;
-    }
-
-    .btn-publish {
-        background: var(--color-border);
-        color: var(--color-textSecondary);
-        border-color: var(--color-border);
-        transition: all 0.2s ease;
-    }
-
-    .btn-publish:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    @media (hover: hover) {
-        .btn-publish:hover:not(:disabled) {
-            background: var(--color-textSecondary);
-            color: var(--color-text);
-        }
-    }
-
-    .btn-publish.published {
-        background: #10b981;
-        color: white;
-        border-color: #10b981;
-    }
-
-    @media (hover: hover) {
-        .btn-publish.published:hover {
-            background: #059669;
-            border-color: #059669;
-        }
-    }
-
-    .btn-info {
-        background: var(--color-border);
-        color: var(--color-textSecondary);
-        border-color: var(--color-border);
-        transition: all 0.2s ease;
-    }
-
-    @media (hover: hover) {
-        .btn-info:hover {
-            background: var(--color-textSecondary);
-            color: var(--color-text);
-            border-color: var(--color-textSecondary);
-        }
-    }
-
-    .editor-content-area {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        min-height: 0; /* Allow flex item to shrink and enable child scrolling */
-    }
-
-    .editor-textarea {
-        width: 100%;
-        flex: 1;
-        padding: 1.5rem;
-        border: none;
-        outline: none;
-        resize: none;
-        font-family: 'SF Mono', 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace;
-        font-size: 0.9rem;
-        line-height: 1.6;
-        color: var(--color-text);
-        background: var(--color-surface);
-        box-sizing: border-box;
-    }
-
-    .preview-container {
-        flex: 1;
-        padding: 1.5rem;
-        overflow-y: auto;
-        line-height: 1.6;
-        color: var(--color-text);
-        height: 0; /* Allow flex item to shrink and enable scrolling */
-        box-sizing: border-box;
-    }
+    /* Markdown preview styling - component-specific global styles */
 
     .preview-container :global(h1) {
         font-size: 1.875rem;
@@ -802,30 +623,7 @@
         padding: 0;
     }
 
-
-    .editor-status {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1.5rem;
-        border-top: 1px solid var(--color-border);
-        background: var(--color-background);
-        font-size: 0.75rem;
-        color: var(--color-textSecondary);
-        gap: 1rem;
-        flex-shrink: 0;
-    }
-
-    .publish-status {
-        font-weight: 500;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        background: var(--color-border);
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
+    /* Icons - component-specific sizing */
     .btn .icon {
         width: 14px;
         height: 14px;
@@ -846,198 +644,53 @@
         filter: var(--color-icon-filter);
     }
 
-    .loading,
-    .no-entry {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: var(--color-textSecondary);
-        font-size: 1rem;
-    }
 
-
-    /* Mobile-specific styles */
+    /* Mobile-specific adaptations */
     @media (max-width: 768px) {
-        .editor-container {
-            height: 100%; /* Inherit height from parent mobile-view */
+        /* Smooth keyboard animation for iOS Tauri footer */
+        .keyboard-animating {
+            transition: padding-bottom var(--keyboard-animation-duration, 0.25s) cubic-bezier(0.36, 0.66, 0.04, 1);
+        }
+        
+        /* Mobile container adaptations */
+        .flex.flex-col.h-full.bg-surface.rounded-lg.shadow-lg.overflow-hidden {
+            height: 100%;
             border-radius: 0;
             box-shadow: none;
-            display: flex;
-            flex-direction: column;
-            background: var(--color-surface);
-            overflow: hidden; /* Prevent the container itself from scrolling */
-            position: relative;
         }
-
-        .editor-header {
-            flex-shrink: 0; /* Prevent header from shrinking */
+        
+        /* Mobile header adaptations */  
+        .flex.justify-between.items-center.p-6.border-b.bg-background {
             padding: 0.75rem 1rem;
             padding-top: calc(0.75rem + env(safe-area-inset-top));
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
-            background: var(--color-background);
-            border-bottom: 1px solid var(--color-border);
-            display: flex;
             flex-direction: column;
             gap: 0.75rem;
         }
-
-        .editor-title-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 0.5rem;
-            width: 100%;
-        }
-
-        .editor-title {
-            flex: 1;
-            font-size: 1.125rem;
-            line-height: 1.4;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .editor-title-input {
-            font-size: 1.125rem;
-        }
-
-        .editor-controls {
-            display: flex;
-            gap: 0.5rem;
-            width: 100%;
-        }
-
-        .btn {
-            padding: 0.5rem 0.75rem;
-            font-size: 0.875rem;
-        }
-
-        .btn-close-mobile {
-            font-size: 1rem;
-            font-weight: 500;
-        }
-
-        .editor-content-area {
-            flex: 1; /* Take up all available space */
-            min-height: 0; /* Allow content area to shrink fully */
-            overflow-y: auto; /* Make ONLY this area scrollable */
-            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-            /* When keyboard appears, this area will automatically shrink */
-        }
-
-        .editor-textarea {
-            width: 100%;
-            height: 100%;
+        
+        /* Mobile textarea adaptations */
+        textarea {
             padding: 1rem;
             padding-left: calc(1rem + env(safe-area-inset-left));
             padding-right: calc(1rem + env(safe-area-inset-right));
-            padding-bottom: 2rem; /* Extra bottom padding to ensure content isn't hidden */
+            padding-bottom: 2rem;
             font-size: 1rem;
             line-height: 1.6;
-            border: none;
-            outline: none;
-            resize: none;
-            background: var(--color-surface);
-            box-sizing: border-box;
-            overflow-y: auto;
         }
-
-        .preview-container {
-            padding: 1rem;
-            padding-left: calc(1rem + env(safe-area-inset-left));
-            padding-right: calc(1rem + env(safe-area-inset-right));
-            padding-bottom: 2rem; /* Extra bottom padding to ensure content isn't hidden */
-            height: 100%;
-            overflow-y: auto;
-            box-sizing: border-box;
-        }
-
-        .editor-status {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1.5rem;
-        border-top: 1px solid var(--color-border);
-        background: var(--color-background);
-        font-size: 0.75rem;
-        color: var(--color-textSecondary);
-        gap: 1rem;
-        flex-shrink: 0;
-    }
         
-        /* Smooth keyboard animation for iOS Tauri footer */
-        .editor-status.keyboard-animating {
-            transition: padding-bottom var(--keyboard-animation-duration, 0.25s) cubic-bezier(0.36, 0.66, 0.04, 1);
+        /* Mobile content area adaptations */
+        .flex.flex-col.flex-1.min-h-0 {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
-
-        .loading,
-        .no-entry {
-            padding: 1rem;
-            padding-left: calc(1rem + env(safe-area-inset-left));
-            padding-right: calc(1rem + env(safe-area-inset-right));
-        }
-
-        /* Locked entry styles */
-        .locked-entry {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 3rem 1.5rem;
-            text-align: center;
-            color: var(--color-textSecondary);
-            background: var(--color-background);
-            border-radius: 8px;
-            margin: 1rem;
-        }
-
-        .locked-entry img {
-            width: 48px;
-            height: 48px;
-            opacity: 0.6;
-            margin-bottom: 1rem;
-        }
-
-        .locked-entry h3 {
-            margin: 0 0 0.5rem 0;
-            color: var(--color-text);
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        .locked-entry p {
-            margin: 0 0 1.5rem 0;
-            font-size: 0.875rem;
-            line-height: 1.4;
-        }
-
-        .unlock-button {
-            background: var(--color-primary);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 0.75rem 1.5rem;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .unlock-button:hover {
-            background: var(--color-primaryDark);
-            transform: translateY(-1px);
-        }
-
-        .unlock-button img {
-            width: 16px;
-            height: 16px;
-            opacity: 0.9;
+        
+        /* Mobile preview adaptations */
+        .preview-container {
+            padding: 1rem !important;
+            padding-left: calc(1rem + env(safe-area-inset-left)) !important;
+            padding-right: calc(1rem + env(safe-area-inset-right)) !important;
+            padding-bottom: 2rem !important;
         }
     }
 </style>
