@@ -23,12 +23,12 @@ import type {
 } from '../storage/types';
 import { PreviewService } from '../storage/preview.service';
 import { TitleService } from '../storage/title.service';
-// Removed old crypto and encryption service imports - using E2E encryption system now
 import { metadataStore } from '../stores/metadata';
 import { apiAuthService } from './api-auth.service';
 import { e2eEncryptionService } from './e2e-encryption.service';
 import { FrontmatterService } from '../storage/frontmatter.service';
 import type { EntryObject } from '../crypto/EntryCryptor';
+import { entrySharingService } from './entry-sharing.service';
 
 class StorageService {
 	public environment: StorageEnvironment;
@@ -149,10 +149,17 @@ class StorageService {
 		if (this.environment === 'tauri') {
 			const success = await this.saveTauriEntry(id, content);
 			if (success) {
-				const entry = await this.getTauriEntry(id);
-				if (entry) {
-					await this.cacheEntry(entry);
-					await this.updateMetadataFromEntry(entry);
+				// Update cache with the content we just saved instead of re-reading from file
+				// This prevents race conditions with file watcher and ensures consistency
+				const cachedEntry = await this.getCachedEntry(id);
+				if (cachedEntry) {
+					const updatedEntry = {
+						...cachedEntry,
+						content,
+						modified_at: new Date().toISOString()
+					};
+					await this.cacheEntry(updatedEntry);
+					await this.updateMetadataFromEntry(updatedEntry);
 				}
 			}
 			return success;
@@ -248,7 +255,7 @@ class StorageService {
 	 */
 	private async deleteFromCloud(cloudId: string): Promise<boolean> {
 		try {
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'DELETE',
 				headers: {
@@ -742,7 +749,7 @@ class StorageService {
 				return { hasConflict: false };
 			}
 
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 			const fullUrl = `${apiUrl}/api/entries/${cloudId}`;
 			console.log("Fetching from:", fullUrl);
 			const response = await fetch(fullUrl, {
@@ -809,9 +816,16 @@ class StorageService {
 	}
 
 	/**
-	 * Publish an entry to the cloud with E2E encryption
+	 * Publish an entry to the cloud with E2E encryption and optional tag-based sharing
 	 */
-	async publishEntry(entryId: string): Promise<boolean> {
+	async publishEntry(entryId: string, tagIds: string[] = []): Promise<boolean> {
+		return this.publishEntryWithSharing(entryId, tagIds);
+	}
+
+	/**
+	 * Publish an entry to the cloud with E2E encryption and tag-based sharing
+	 */
+	private async publishEntryWithSharing(entryId: string, tagIds: string[] = []): Promise<boolean> {
 		const isAuth = apiAuthService.isAuthenticated();
 		const currentSession = apiAuthService.getCurrentSession();
 		console.log('Publishing check:', { 
@@ -901,7 +915,7 @@ class StorageService {
 				});
 
 				// Call the API to publish
-				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+				const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 				const response = await fetch(`${apiUrl}/api/entries`, {
 					method: 'POST',
 					headers: {
@@ -927,6 +941,24 @@ class StorageService {
 					
 					// Update metadata to reflect published status
 					await this.updateEntryPublishStatusInMetadata(entryId, true);
+					
+					// Handle tag-based sharing if tags are specified
+					if (tagIds.length > 0) {
+						try {
+							console.log(`Setting up sharing for ${tagIds.length} tags...`);
+							await entrySharingService.shareEntry({
+								entryId: cloudId, // Use cloud ID for sharing
+								tagIds,
+								encryptedEntryKey: encryptedData.encryptedEntryKeyB64,
+								keyNonce: encryptedData.keyNonceB64
+							});
+							console.log('Entry sharing setup completed');
+						} catch (sharingError) {
+							console.error('Failed to setup entry sharing:', sharingError);
+							// Don't fail the entire publish operation if sharing fails
+							// The entry is still published, just not shared
+						}
+					}
 					
 					console.log('Entry published successfully. Local ID:', entryId, 'Cloud ID:', cloudId, 'Server timestamp:', serverTimestamp);
 				} else {
@@ -959,8 +991,8 @@ class StorageService {
 			}
 
 			// Call the API to unpublish
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			console.log("Fetching from:", `${import.meta.env.VITE_API_BASE_URL}/api/entries`);
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+			console.log("Fetching from:", `${apiUrl}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'PATCH',
 				headers: {
@@ -1006,8 +1038,8 @@ class StorageService {
 				return false;
 			}
 
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-			console.log("Fetching from:", `${import.meta.env.VITE_API_BASE_URL}/api/entries`);
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+			console.log("Fetching from:", `${apiUrl}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 				method: 'GET',
 				headers: {
@@ -1095,7 +1127,7 @@ class StorageService {
 				};
 
 				// Get API URL for requests
-				const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+				const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 				// Get the last known server timestamp for conditional updates
 				const lastServerTimestamp = await this.getLastServerTimestamp(entryId);
@@ -1124,7 +1156,7 @@ class StorageService {
 				});
 
 				// Update the cloud entry
-				console.log("Fetching from:", `${import.meta.env.VITE_API_BASE_URL}/api/entries/${cloudId}`);
+				console.log("Fetching from:", `${apiUrl}/api/entries/${cloudId}`);
 				const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
 					method: 'PUT',
 					headers: {
@@ -1172,7 +1204,7 @@ class StorageService {
 		}
 
 		try {
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 			console.log("Fetching from:", `${apiUrl}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries`, {
 				method: 'GET',
@@ -1629,6 +1661,168 @@ class StorageService {
 	private async removeCloudMapping(localId: string): Promise<void> {
 		const db = await this.initDB();
 		await db.delete('cloudMappings', localId);
+	}
+
+	/**
+	 * Get entries shared with the current user
+	 */
+	async getSharedEntries(): Promise<JournalEntryMetadata[]> {
+		if (!apiAuthService.isAuthenticated()) {
+			return [];
+		}
+
+		try {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+			const response = await fetch(`${apiUrl}/api/entries/shared-with-me`, {
+				method: 'GET',
+				headers: {
+					...apiAuthService.getAuthHeaders()
+				}
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to get shared entries: ${response.status}`);
+			}
+
+			const result = await response.json();
+			const sharedEntries = result.data || [];
+
+			// Convert shared entries to JournalEntryMetadata format
+			const sharedMetadata: JournalEntryMetadata[] = [];
+			for (const cloudEntry of sharedEntries) {
+				try {
+					// Try to decrypt the entry to get title and preview
+					const decryptedEntry = await this.decryptCloudEntry(cloudEntry);
+					if (decryptedEntry) {
+						const metadata: JournalEntryMetadata = {
+							id: `shared-${cloudEntry.id}`, // Prefix to avoid conflicts with local entries
+							title: decryptedEntry.title,
+							created_at: cloudEntry.created_at,
+							modified_at: cloudEntry.updated_at,
+							file_path: cloudEntry.file_path || 'shared-entry.md',
+							preview: PreviewService.createPreview(decryptedEntry.content),
+							isPublished: true,
+							isShared: true, // Mark as shared entry
+							cloudId: cloudEntry.id // Store cloud ID for access
+						};
+						sharedMetadata.push(metadata);
+					}
+				} catch (decryptError) {
+					console.warn(`Failed to decrypt shared entry ${cloudEntry.id}:`, decryptError);
+					// Still add the entry but with encrypted title/preview
+					const metadata: JournalEntryMetadata = {
+						id: `shared-${cloudEntry.id}`,
+						title: '🔒 Encrypted Entry',
+						created_at: cloudEntry.created_at,
+						modified_at: cloudEntry.updated_at,
+						file_path: cloudEntry.file_path || 'shared-entry.md',
+						preview: 'This entry is encrypted and cannot be previewed.',
+						isPublished: true,
+						isShared: true,
+						cloudId: cloudEntry.id
+					};
+					sharedMetadata.push(metadata);
+				}
+			}
+
+			return sharedMetadata;
+		} catch (error) {
+			console.error('Failed to get shared entries:', error);
+			return [];
+		}
+	}
+
+	/**
+	 * Get a shared entry by its cloud ID
+	 */
+	async getSharedEntry(cloudId: string): Promise<JournalEntry | null> {
+		if (!apiAuthService.isAuthenticated()) {
+			return null;
+		}
+
+		try {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+				method: 'GET',
+				headers: {
+					...apiAuthService.getAuthHeaders()
+				}
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to get shared entry: ${response.status}`);
+			}
+
+			const result = await response.json();
+			const cloudEntry = result.data;
+
+			// Decrypt the entry
+			const decryptedEntry = await this.decryptCloudEntry(cloudEntry);
+			if (!decryptedEntry) {
+				throw new Error('Failed to decrypt shared entry');
+			}
+
+			// Convert to JournalEntry format
+			const journalEntry: JournalEntry = {
+				id: `shared-${cloudId}`,
+				title: decryptedEntry.title,
+				content: decryptedEntry.content,
+				created_at: cloudEntry.created_at,
+				modified_at: cloudEntry.updated_at,
+				file_path: cloudEntry.file_path || 'shared-entry.md'
+			};
+
+			return journalEntry;
+		} catch (error) {
+			console.error('Failed to get shared entry:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Decrypt a cloud entry using the current user's access key
+	 */
+	private async decryptCloudEntry(cloudEntry: any): Promise<EntryObject | null> {
+		if (!e2eEncryptionService.isUnlocked()) {
+			throw new Error('E2E encryption not unlocked');
+		}
+
+		try {
+			// Get the access key for this entry
+			const accessKey = await entrySharingService.getEntryAccessKey(cloudEntry.id);
+			if (!accessKey) {
+				throw new Error('No access key found for entry');
+			}
+
+			// First, decrypt the entry key using our access key
+			const entryKey = e2eEncryptionService.rewrapEntryKeyForUser(
+				accessKey.encrypted_entry_key,
+				accessKey.key_nonce,
+				cloudEntry.author_public_key // This would need to be provided by the API
+			);
+
+			if (!entryKey) {
+				throw new Error('Failed to decrypt entry key');
+			}
+
+			// Then decrypt the actual content
+			const encryptedData = {
+				encryptedContentB64: cloudEntry.encrypted_content,
+				contentNonceB64: cloudEntry.encryption_metadata?.contentNonceB64,
+				encryptedEntryKeyB64: entryKey.encryptedEntryKeyB64,
+				keyNonceB64: entryKey.keyNonceB64
+			};
+
+			const decryptedEntry = e2eEncryptionService.decryptEntry(
+				encryptedData,
+				cloudEntry.author_public_key // This would need to be provided by the API
+			);
+
+			return decryptedEntry;
+		} catch (error) {
+			console.error('Failed to decrypt cloud entry:', error);
+			return null;
+		}
 	}
 
 	/**

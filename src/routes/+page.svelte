@@ -4,6 +4,7 @@
   import EntryCard from '../lib/components/EntryCard.svelte';
   import Editor from '../lib/components/Editor.svelte';
   import Settings from '../lib/components/Settings.svelte';
+  import SharedEntries from '../lib/components/SharedEntries.svelte';
   import Dialog from '../lib/components/Dialog.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
@@ -18,6 +19,7 @@
   let isCreating = $state(false);
   let newEntryTitle = $state('');
   let showSettings = $state(false);
+  let showSharedEntries = $state(false);
   let isTauri = $state(false);
   let reloadTimeout: number | null = null;
   let suppressedFiles = $state(new Map<string, { metadata: boolean; data: boolean }>());
@@ -468,6 +470,23 @@
     }
   }
 
+  function handleOpenSharedEntries() {
+    if (isMobile) {
+      mobileView = 'shared';
+    } else {
+      showSharedEntries = true;
+    }
+  }
+
+  function handleCloseSharedEntries() {
+    showSharedEntries = false;
+    
+    // On mobile, navigate back to entry list
+    if (isMobile) {
+      mobileView = 'list';
+    }
+  }
+
 
   async function handlePublishToggle(event: { entryId: string; publish: boolean }) {
     const { entryId, publish } = event;
@@ -567,6 +586,14 @@
           </div>
           <div class="header-buttons">
             <button 
+              class="shared-btn"
+              onclick={handleOpenSharedEntries}
+              aria-label="View shared entries"
+              title="Shared Entries"
+            >
+              🌐
+            </button>
+            <button 
               class="settings-btn"
               onclick={handleOpenSettings}
               aria-label="Open settings"
@@ -646,6 +673,10 @@
       <div class="mobile-view mobile-settings">
         <Settings {storageService} onclose={handleCloseSettings} />
       </div>
+    {:else if mobileView === 'shared'}
+      <div class="mobile-view mobile-shared">
+        <SharedEntries onclose={handleCloseSharedEntries} />
+      </div>
     {/if}
   {:else}
     <!-- Desktop: Show sidebar and main content side by side -->
@@ -656,6 +687,14 @@
           <p class="app-subtitle">Personal Journal</p>
         </div>
         <div class="header-buttons">
+          <button 
+            class="shared-btn"
+            onclick={handleOpenSharedEntries}
+            aria-label="View shared entries"
+            title="Shared Entries"
+          >
+            🌐
+          </button>
           <button 
             class="settings-btn"
             onclick={handleOpenSettings}
@@ -736,6 +775,10 @@
 
 {#if showSettings && !isMobile}
   <Settings {storageService} onclose={handleCloseSettings} />
+{/if}
+
+{#if showSharedEntries && !isMobile}
+  <SharedEntries onclose={handleCloseSharedEntries} />
 {/if}
 
 
@@ -824,7 +867,8 @@
     gap: 0.5rem;
   }
 
-  .settings-btn {
+  .settings-btn,
+  .shared-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
     color: white;
@@ -842,7 +886,8 @@
   }
 
   @media (hover: hover) {
-    .settings-btn:hover {
+    .settings-btn:hover,
+    .shared-btn:hover {
       background: rgba(255, 255, 255, 0.2);
     }
   }
@@ -852,6 +897,7 @@
     height: 16px;
     filter: invert(1);
   }
+
 
   /* Form inputs - utilizing forms.css styles where possible */
   .new-entry {
@@ -888,6 +934,10 @@
   }
 
   .mobile-settings {
+    background: var(--color-surface, white);
+  }
+
+  .mobile-shared {
     background: var(--color-surface, white);
   }
 

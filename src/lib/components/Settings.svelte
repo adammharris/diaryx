@@ -4,6 +4,7 @@
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import E2ESetup from './E2ESetup.svelte';
+    import TagManager from './TagManager.svelte';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -25,6 +26,9 @@
     
     // E2E Setup modal state
     let showE2ESetup = $state(false);
+    
+    // Tag Manager modal state
+    let showTagManager = $state(false);
 
     // Initialize detection when component mounts
     $effect(() => {
@@ -95,6 +99,15 @@
     function handleE2ESetupComplete() {
         // Modal will close automatically
         console.log('E2E encryption setup completed successfully');
+    }
+
+    // Tag Manager functions
+    function showTagManagerModal() {
+        showTagManager = true;
+    }
+
+    function closeTagManagerModal() {
+        showTagManager = false;
     }
 </script>
 
@@ -261,6 +274,57 @@
                 {/if}
             </div>
 
+            <!-- Tag Management Section -->
+            {#if isAuthenticated && isE2EUnlocked}
+                <div class="form-section">
+                    <h3>Sharing & Tags</h3>
+                    <p>Manage tags to share encrypted entries with specific users</p>
+
+                    <div class="tag-management-section">
+                        <div class="bg-surface p-4 rounded-lg">
+                            <div class="flex justify-between items-center mb-4">
+                                <div>
+                                    <h4 class="font-semibold text-base mb-1">Tag-Based Sharing</h4>
+                                    <p class="text-secondary text-sm">
+                                        Create tags and assign them to users to share encrypted entries securely.
+                                        Each shared entry is encrypted separately for each user.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-3">
+                                <button class="btn btn-primary" onclick={showTagManagerModal}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+                                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                                        <line x1="7" y1="7" x2="7.01" y2="7"/>
+                                    </svg>
+                                    Manage Tags
+                                </button>
+                                
+                                <div class="flex items-center gap-2 text-sm text-secondary">
+                                    <span class="inline-flex items-center gap-1">
+                                        🔐 End-to-end encrypted
+                                    </span>
+                                    <span>•</span>
+                                    <span class="inline-flex items-center gap-1">
+                                        🔗 Shareable with tags
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 p-3 bg-info bg-opacity-10 rounded border-l-4 border-info">
+                                <p class="text-info text-sm leading-relaxed">
+                                    <strong>How it works:</strong><br>
+                                    1. Create tags and assign them to users<br>
+                                    2. When publishing entries, select which tags can access them<br>
+                                    3. Users with those tags can decrypt and read your shared entries
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {/if}
+
             <div class="form-section">
                 <h3>About</h3>
                 <p class="text-secondary text-sm leading-relaxed">
@@ -295,6 +359,12 @@
     <E2ESetup 
         onclose={closeE2ESetupModal}
         onSetupComplete={handleE2ESetupComplete}
+    />
+{/if}
+
+{#if showTagManager}
+    <TagManager 
+        onclose={closeTagManagerModal}
     />
 {/if}
 

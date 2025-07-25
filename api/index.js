@@ -16,7 +16,19 @@ import {
   entriesHandler,
   getEntryHandler,
   updateEntryHandler,
-  deleteEntryHandler
+  deleteEntryHandler,
+  // Tag management handlers
+  tagsHandler,
+  updateTagHandler,
+  deleteTagHandler,
+  // User-tag assignment handlers
+  userTagsHandler,
+  removeUserTagHandler,
+  // Entry access key handlers
+  entryAccessKeysHandler,
+  // Shared entries handlers
+  getSharedEntriesHandler,
+  getEntrySharedUsersHandler
 } from './handlers.js';
 
 const app = new Hono();
@@ -47,14 +59,33 @@ app.get('/api/health', (c) => {
 // Entries routes (native Hono handlers)
 app.get('/api/entries', entriesHandler);
 app.post('/api/entries', entriesHandler);
+app.get('/api/entries/shared-with-me', getSharedEntriesHandler);
 app.get('/api/entries/:id', getEntryHandler);
 app.put('/api/entries/:id', updateEntryHandler);
 app.delete('/api/entries/:id', deleteEntryHandler);
+app.get('/api/entries/:id/shared', getEntrySharedUsersHandler);
 
 // User routes (native Hono handlers)
-app.get('/api/users', searchUsersHandler);
+app.get('/api/users/search', searchUsersHandler);
 app.get('/api/users/:id', getUserHandler);
 app.put('/api/users/:id', updateUserHandler);
+
+// Tag management routes
+app.get('/api/tags', tagsHandler);
+app.post('/api/tags', tagsHandler);
+app.put('/api/tags/:id', updateTagHandler);
+app.delete('/api/tags/:id', deleteTagHandler);
+
+// User-tag assignment routes
+app.get('/api/user-tags', userTagsHandler);
+app.post('/api/user-tags', userTagsHandler);
+app.delete('/api/user-tags/:id', removeUserTagHandler);
+
+// Entry access key routes
+app.get('/api/entry-access-keys', entryAccessKeysHandler);
+app.get('/api/entry-access-keys/:entryId', entryAccessKeysHandler);
+app.post('/api/entry-access-keys/batch', entryAccessKeysHandler);
+app.delete('/api/entry-access-keys/:entryId/:userId', entryAccessKeysHandler);
 
 // Auth routes (native Hono handlers)
 app.post('/api/auth/google', googleAuthHandler);
@@ -72,9 +103,22 @@ app.notFound((c) => {
       'GET /api/entries/:id',
       'PUT /api/entries/:id',
       'DELETE /api/entries/:id',
-      'GET /api/users',
+      'GET /api/entries/shared-with-me',
+      'GET /api/entries/:id/shared',
+      'GET /api/users/search',
       'GET /api/users/:id',
       'PUT /api/users/:id',
+      'GET /api/tags',
+      'POST /api/tags',
+      'PUT /api/tags/:id',
+      'DELETE /api/tags/:id',
+      'GET /api/user-tags',
+      'POST /api/user-tags',
+      'DELETE /api/user-tags/:id',
+      'GET /api/entry-access-keys',
+      'GET /api/entry-access-keys/:entryId',
+      'POST /api/entry-access-keys/batch',
+      'DELETE /api/entry-access-keys/:entryId/:userId',
       'POST /api/auth/google'
     ]
   }, 404);
@@ -108,9 +152,22 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(`  GET    http://localhost:${port}/api/entries/:id`);
   console.log(`  PUT    http://localhost:${port}/api/entries/:id`);
   console.log(`  DELETE http://localhost:${port}/api/entries/:id`);
-  console.log(`  GET    http://localhost:${port}/api/users`);
+  console.log(`  GET    http://localhost:${port}/api/entries/shared-with-me`);
+  console.log(`  GET    http://localhost:${port}/api/entries/:id/shared`);
+  console.log(`  GET    http://localhost:${port}/api/users/search`);
   console.log(`  GET    http://localhost:${port}/api/users/:id`);
   console.log(`  PUT    http://localhost:${port}/api/users/:id`);
+  console.log(`  GET    http://localhost:${port}/api/tags`);
+  console.log(`  POST   http://localhost:${port}/api/tags`);
+  console.log(`  PUT    http://localhost:${port}/api/tags/:id`);
+  console.log(`  DELETE http://localhost:${port}/api/tags/:id`);
+  console.log(`  GET    http://localhost:${port}/api/user-tags`);
+  console.log(`  POST   http://localhost:${port}/api/user-tags`);
+  console.log(`  DELETE http://localhost:${port}/api/user-tags/:id`);
+  console.log(`  GET    http://localhost:${port}/api/entry-access-keys`);
+  console.log(`  GET    http://localhost:${port}/api/entry-access-keys/:entryId`);
+  console.log(`  POST   http://localhost:${port}/api/entry-access-keys/batch`);
+  console.log(`  DELETE http://localhost:${port}/api/entry-access-keys/:entryId/:userId`);
   console.log(`  POST   http://localhost:${port}/api/auth/google`);
 
   serve({

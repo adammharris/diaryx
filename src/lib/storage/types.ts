@@ -19,6 +19,8 @@ export interface JournalEntryMetadata {
     file_path: string;
     preview: string;
     isPublished?: boolean; // Cloud publish status - cached for performance
+    isShared?: boolean; // Whether this is a shared entry from another user
+    cloudId?: string; // Cloud ID for shared entries
 }
 
 export interface StorageResult<T> {

@@ -684,7 +684,7 @@ export class E2EEncryptionService {
         return false;
       }
 
-      const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
       const fullUrl = `${apiUrl}/api/users/${userId}`;
       console.log("Fetching from:", fullUrl);
       const response = await fetch(fullUrl, {
@@ -740,7 +740,7 @@ export class E2EEncryptionService {
         return false;
       }
 
-      const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
       console.log('Fetching user profile from:', `${apiUrl}/api/users/${userId}`);
       
       const response = await fetch(`${apiUrl}/api/users/${userId}`, {
@@ -845,7 +845,7 @@ export class E2EEncryptionService {
         return;
       }
 
-      const apiUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
       const fullUrl = `${apiUrl}/api/users/${userId}`;
       console.log("Fetching from:", fullUrl);
       const response = await fetch(fullUrl, {

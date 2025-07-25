@@ -142,20 +142,32 @@ export async function getUserById(userId) {
 export async function searchUsers(searchParams = {}) {
   const { username, email, limit = 20, offset = 0 } = searchParams;
   
+  console.log('=== Database Search Debug ===');
+  console.log('Search params:', searchParams);
+  
   let whereClause = 'WHERE discoverable = true';
   const params = [];
   let paramCount = 0;
   
-  if (username) {
-    paramCount++;
-    whereClause += ` AND username ILIKE $${paramCount}`;
-    params.push(`%${username}%`);
-  }
+  // Build search conditions - use OR for better matching
+  const searchConditions = [];
   
-  if (email) {
+  if (username || email) {
+    const searchTerm = username || email; // They should be the same when using 'q' parameter
+    
     paramCount++;
-    whereClause += ` AND email ILIKE $${paramCount}`;
-    params.push(`%${email}%`);
+    const searchParam = paramCount;
+    params.push(`%${searchTerm}%`);
+    
+    // Search across multiple fields with OR logic
+    searchConditions.push(`username ILIKE $${searchParam}`);
+    searchConditions.push(`email ILIKE $${searchParam}`);
+    searchConditions.push(`name ILIKE $${searchParam}`);
+    searchConditions.push(`display_name ILIKE $${searchParam}`);
+    
+    if (searchConditions.length > 0) {
+      whereClause += ` AND (${searchConditions.join(' OR ')})`;
+    }
   }
   
   paramCount++;
@@ -164,7 +176,7 @@ export async function searchUsers(searchParams = {}) {
   const offsetParam = paramCount;
   
   const text = `
-    SELECT id, email, name, username, display_name, avatar_url, public_key, created_at
+    SELECT id, email, name, username, display_name, avatar_url, public_key, created_at, discoverable
     FROM user_profiles 
     ${whereClause}
     ORDER BY created_at DESC
@@ -173,7 +185,25 @@ export async function searchUsers(searchParams = {}) {
   
   params.push(limit, offset);
   
+  console.log('SQL Query:', text);
+  console.log('SQL Params:', params);
+  
   const result = await query(text, params);
+  
+  console.log(`Query returned ${result.rows.length} rows`);
+  
+  // Also check total discoverable users (without search filters)
+  try {
+    const countResult = await query('SELECT COUNT(*) as total FROM user_profiles WHERE discoverable = true');
+    console.log(`Total discoverable users in database: ${countResult.rows[0]?.total || 0}`);
+    
+    // Show sample users for debugging
+    const sampleResult = await query('SELECT username, email, name, display_name, discoverable FROM user_profiles LIMIT 5');
+    console.log('Sample users in database:', sampleResult.rows);
+  } catch (err) {
+    console.log('Failed to get debug info:', err.message);
+  }
+  
   return result.rows;
 }
 

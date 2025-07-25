@@ -39,7 +39,7 @@ class ApiAuthService {
   private currentSession: AuthSession | null = null;
   private sessionStore: Writable<AuthSession | null> = writable(null);
   private readonly STORAGE_KEY = 'diaryx_auth_session';
-  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
   constructor() {
     if (browser) {
@@ -180,9 +180,7 @@ class ApiAuthService {
 
     // Use web callback for OAuth redirect, which will then trigger the deep link
     // For development, use localhost; for production, use your domain
-    const redirectUri = onOpenUrl 
-      ? `https://www.diaryx.net/auth/callback`  // Web callback for Tauri
-      : `${window.location.origin}/auth/callback`;
+    const redirectUri = `${window.location.origin}/auth/callback`;
     console.log('Redirect URI:', redirectUri);
     const scope = 'openid email profile';
     const responseType = 'code';

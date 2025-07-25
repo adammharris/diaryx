@@ -454,20 +454,32 @@ export const updateUserHandler = requireAuth(async (c) => {
 export async function searchUsersHandler(c) {
   try {
     const query = c.req.query();
-    const { username, email, limit = '20', offset = '0' } = query;
+    const { q, username, email, limit = '20', offset = '0' } = query;
     
+    console.log('=== User Search Debug ===');
+    console.log('Query params:', query);
+    console.log('Extracted params:', { q, username, email, limit, offset });
+    
+    // Support both generic 'q' parameter and specific username/email
     const searchParams = {
-      username,
-      email,
+      username: username || q,
+      email: email || q,
       limit: parseInt(limit),
       offset: parseInt(offset)
     };
     
+    console.log('Search params to database:', searchParams);
+    
     const users = await searchUsers(searchParams);
+    
+    console.log(`Found ${users.length} users`);
+    console.log('First few users:', users.slice(0, 3));
     
     return c.json({
       success: true,
-      data: users,
+      users: users, // Frontend expects 'users' field
+      total: users.length,
+      hasMore: users.length >= parseInt(limit),
       pagination: {
         limit: searchParams.limit,
         offset: searchParams.offset,
@@ -1264,3 +1276,682 @@ function generateUUID() {
     return v.toString(16);
   });
 }
+
+// =============================================================================
+// TAG MANAGEMENT HANDLERS
+// =============================================================================
+
+export const listTagsHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    
+    const result = await queryWithUser(auth.userId, 
+      'SELECT * FROM tags WHERE author_id = $1 ORDER BY created_at DESC',
+      [auth.userId]
+    );
+
+    return c.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    console.error('List tags error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get tags',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const createTagHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const { name, slug, color } = await c.req.json();
+
+    if (!name || !slug || !color) {
+      return c.json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'Name, slug, and color are required'
+      }, 400);
+    }
+
+    const tagId = uuidv4();
+    const result = await queryWithUser(auth.userId,
+      `INSERT INTO tags (id, name, slug, color, author_id) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING *`,
+      [tagId, name, slug, color, auth.userId]
+    );
+
+    return c.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Create tag error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to create tag',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const updateTagHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const tagId = c.req.param('id');
+    const { name, slug, color } = await c.req.json();
+
+    const updates = [];
+    const params = [];
+    let paramCount = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramCount}`);
+      params.push(name);
+      paramCount++;
+    }
+    if (slug !== undefined) {
+      updates.push(`slug = $${paramCount}`);
+      params.push(slug);
+      paramCount++;
+    }
+    if (color !== undefined) {
+      updates.push(`color = $${paramCount}`);
+      params.push(color);
+      paramCount++;
+    }
+
+    if (updates.length === 0) {
+      return c.json({
+        success: false,
+        error: 'No fields to update'
+      }, 400);
+    }
+
+    updates.push(`updated_at = now()`);
+    params.push(tagId, auth.userId);
+
+    const result = await queryWithUser(auth.userId,
+      `UPDATE tags SET ${updates.join(', ')} 
+       WHERE id = $${paramCount} AND author_id = $${paramCount + 1} 
+       RETURNING *`,
+      params
+    );
+
+    if (result.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Tag not found',
+        message: 'Tag not found or you do not have permission to update it'
+      }, 404);
+    }
+
+    return c.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Update tag error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to update tag',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const deleteTagHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const tagId = c.req.param('id');
+
+    const result = await queryWithUser(auth.userId,
+      'DELETE FROM tags WHERE id = $1 AND author_id = $2 RETURNING *',
+      [tagId, auth.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Tag not found',
+        message: 'Tag not found or you do not have permission to delete it'
+      }, 404);
+    }
+
+    return c.json({
+      success: true,
+      message: 'Tag deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete tag error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to delete tag',
+      message: error.message
+    }, 500);
+  }
+});
+
+export async function tagsHandler(c) {
+  const method = c.req.method;
+  
+  switch (method) {
+    case 'GET':
+      return listTagsHandler(c);
+    case 'POST':
+      return createTagHandler(c);
+    default:
+      return c.json({
+        success: false,
+        error: 'Method not allowed',
+        message: `${method} is not supported on this endpoint`
+      }, 405);
+  }
+}
+
+// =============================================================================
+// USER-TAG ASSIGNMENT HANDLERS
+// =============================================================================
+
+export const listUserTagsHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const tagId = c.req.query('tag_id');
+
+    let query = `
+      SELECT ut.*, t.name as tag_name, t.color as tag_color,
+             up.id as target_user_id, up.username, up.display_name, up.email, up.avatar_url
+      FROM user_tags ut
+      JOIN tags t ON ut.tag_id = t.id
+      JOIN user_profiles up ON ut.target_id = up.id
+      WHERE ut.tagger_id = $1
+    `;
+    
+    const params = [auth.userId];
+    
+    if (tagId) {
+      query += ' AND ut.tag_id = $2';
+      params.push(tagId);
+    }
+    
+    query += ' ORDER BY ut.created_at DESC';
+
+    const result = await queryWithUser(auth.userId, query, params);
+
+    // Group by tag or return flat list
+    const userTags = result.rows.map(row => ({
+      id: row.id,
+      tag_id: row.tag_id,
+      target_id: row.target_id,
+      tagger_id: row.tagger_id,
+      created_at: row.created_at,
+      tag: {
+        id: row.tag_id,
+        name: row.tag_name,
+        color: row.tag_color
+      },
+      target_user: {
+        id: row.target_user_id,
+        username: row.username,
+        display_name: row.display_name,
+        email: row.email,
+        avatar_url: row.avatar_url
+      }
+    }));
+
+    return c.json({
+      success: true,
+      data: userTags
+    });
+  } catch (error) {
+    console.error('List user tags error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get user tags',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const assignUserTagHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const { tag_id, target_id } = await c.req.json();
+
+    if (!tag_id || !target_id) {
+      return c.json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'tag_id and target_id are required'
+      }, 400);
+    }
+
+    // Verify the tag belongs to the current user
+    const tagResult = await queryWithUser(auth.userId,
+      'SELECT id FROM tags WHERE id = $1 AND author_id = $2',
+      [tag_id, auth.userId]
+    );
+
+    if (tagResult.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Tag not found',
+        message: 'Tag not found or you do not have permission to assign it'
+      }, 404);
+    }
+
+    // Verify the target user exists and is discoverable
+    const userResult = await queryWithUser(auth.userId,
+      'SELECT id FROM user_profiles WHERE id = $1 AND discoverable = true',
+      [target_id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'User not found',
+        message: 'Target user not found or not discoverable'
+      }, 404);
+    }
+
+    const userTagId = uuidv4();
+    const result = await queryWithUser(auth.userId,
+      `INSERT INTO user_tags (id, tagger_id, target_id, tag_id) 
+       VALUES ($1, $2, $3, $4) 
+       RETURNING *`,
+      [userTagId, auth.userId, target_id, tag_id]
+    );
+
+    return c.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Assign user tag error:', error);
+    
+    // Handle unique constraint violation
+    if (error.code === '23505') {
+      return c.json({
+        success: false,
+        error: 'Tag already assigned',
+        message: 'This tag is already assigned to this user'
+      }, 409);
+    }
+
+    return c.json({
+      success: false,
+      error: 'Failed to assign tag',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const removeUserTagHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const userTagId = c.req.param('id');
+
+    const result = await queryWithUser(auth.userId,
+      'DELETE FROM user_tags WHERE id = $1 AND tagger_id = $2 RETURNING *',
+      [userTagId, auth.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'User tag assignment not found',
+        message: 'Assignment not found or you do not have permission to remove it'
+      }, 404);
+    }
+
+    return c.json({
+      success: true,
+      message: 'Tag assignment removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove user tag error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to remove tag assignment',
+      message: error.message
+    }, 500);
+  }
+});
+
+export async function userTagsHandler(c) {
+  const method = c.req.method;
+  
+  switch (method) {
+    case 'GET':
+      return listUserTagsHandler(c);
+    case 'POST':
+      return assignUserTagHandler(c);
+    default:
+      return c.json({
+        success: false,
+        error: 'Method not allowed',
+        message: `${method} is not supported on this endpoint`
+      }, 405);
+  }
+}
+
+// =============================================================================
+// ENTRY ACCESS KEY HANDLERS
+// =============================================================================
+
+export const getEntryAccessKeyHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const entryId = c.req.param('entryId');
+
+    const result = await queryWithUser(auth.userId,
+      'SELECT * FROM entry_access_keys WHERE entry_id = $1 AND user_id = $2',
+      [entryId, auth.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Access key not found',
+        message: 'You do not have access to this entry'
+      }, 404);
+    }
+
+    return c.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Get entry access key error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get access key',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const createEntryAccessKeysHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const { entry_id, access_keys } = await c.req.json();
+
+    if (!entry_id || !access_keys || !Array.isArray(access_keys)) {
+      return c.json({
+        success: false,
+        error: 'Invalid request data',
+        message: 'entry_id and access_keys array are required'
+      }, 400);
+    }
+
+    // Verify the entry belongs to the current user
+    const entryResult = await queryWithUser(auth.userId,
+      'SELECT id FROM entries WHERE id = $1 AND author_id = $2',
+      [entry_id, auth.userId]
+    );
+
+    if (entryResult.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Entry not found',
+        message: 'Entry not found or you do not have permission to share it'
+      }, 404);
+    }
+
+    // Insert access keys in a transaction
+    const queries = access_keys.map(key => ({
+      text: `INSERT INTO entry_access_keys (id, entry_id, user_id, encrypted_entry_key, key_nonce) 
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (entry_id, user_id) 
+             DO UPDATE SET encrypted_entry_key = EXCLUDED.encrypted_entry_key, 
+                          key_nonce = EXCLUDED.key_nonce`,
+      params: [uuidv4(), entry_id, key.user_id, key.encrypted_entry_key, key.key_nonce]
+    }));
+
+    await transactionWithUser(auth.userId, queries);
+
+    return c.json({
+      success: true,
+      message: `${access_keys.length} access keys created successfully`
+    });
+  } catch (error) {
+    console.error('Create entry access keys error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to create access keys',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const revokeEntryAccessHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const entryId = c.req.param('entryId');
+    const userId = c.req.param('userId');
+
+    // Check if user is entry author or the user losing access
+    const canRevoke = userId === auth.userId;
+    let authorCheck = false;
+    
+    if (!canRevoke) {
+      const entryResult = await queryWithUser(auth.userId,
+        'SELECT id FROM entries WHERE id = $1 AND author_id = $2',
+        [entryId, auth.userId]
+      );
+      authorCheck = entryResult.rows.length > 0;
+    }
+
+    if (!canRevoke && !authorCheck) {
+      return c.json({
+        success: false,
+        error: 'Permission denied',
+        message: 'You do not have permission to revoke this access'
+      }, 403);
+    }
+
+    const result = await queryWithUser(auth.userId,
+      'DELETE FROM entry_access_keys WHERE entry_id = $1 AND user_id = $2 RETURNING *',
+      [entryId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Access key not found',
+        message: 'Access key not found for this entry and user'
+      }, 404);
+    }
+
+    return c.json({
+      success: true,
+      message: 'Access revoked successfully'
+    });
+  } catch (error) {
+    console.error('Revoke entry access error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to revoke access',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const listUserAccessKeysHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+
+    const result = await queryWithUser(auth.userId,
+      `SELECT eak.*, e.title_hash, e.created_at as entry_created_at,
+              up.username, up.display_name, up.email
+       FROM entry_access_keys eak
+       JOIN entries e ON eak.entry_id = e.id
+       LEFT JOIN user_profiles up ON e.author_id = up.id
+       WHERE eak.user_id = $1
+       ORDER BY eak.created_at DESC`,
+      [auth.userId]
+    );
+
+    return c.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    console.error('List user access keys error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get access keys',
+      message: error.message
+    }, 500);
+  }
+});
+
+export async function entryAccessKeysHandler(c) {
+  const method = c.req.method;
+  const path = c.req.path;
+  
+  // Handle different path patterns
+  if (path.includes('/batch')) {
+    if (method === 'POST') {
+      return createEntryAccessKeysHandler(c);
+    }
+  } else if (path.match(/\/entry-access-keys\/[^/]+\/[^/]+$/)) {
+    if (method === 'DELETE') {
+      return revokeEntryAccessHandler(c);
+    }
+  } else if (path.match(/\/entry-access-keys\/[^/]+$/)) {
+    if (method === 'GET') {
+      return getEntryAccessKeyHandler(c);
+    }
+  } else if (path === '/api/entry-access-keys') {
+    if (method === 'GET') {
+      return listUserAccessKeysHandler(c);
+    }
+  }
+  
+  return c.json({
+    success: false,
+    error: 'Method not allowed',
+    message: `${method} is not supported on this endpoint`
+  }, 405);
+}
+
+// =============================================================================
+// SHARED ENTRIES HANDLERS
+// =============================================================================
+
+export const getSharedEntriesHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+
+    const result = await queryWithUser(auth.userId,
+      `SELECT DISTINCT e.*, up.username as author_username, up.display_name as author_name,
+              up.public_key as author_public_key
+       FROM entries e
+       JOIN entry_access_keys eak ON e.id = eak.entry_id
+       JOIN user_profiles up ON e.author_id = up.id
+       WHERE eak.user_id = $1 AND e.is_published = true
+       ORDER BY e.updated_at DESC`,
+      [auth.userId]
+    );
+
+    return c.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    console.error('Get shared entries error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get shared entries',
+      message: error.message
+    }, 500);
+  }
+});
+
+export const getEntrySharedUsersHandler = requireAuth(async (c) => {
+  try {
+    const auth = c.get('auth');
+    const entryId = c.req.param('id');
+
+    // Verify the entry belongs to the current user
+    const entryResult = await queryWithUser(auth.userId,
+      'SELECT id FROM entries WHERE id = $1 AND author_id = $2',
+      [entryId, auth.userId]
+    );
+
+    if (entryResult.rows.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Entry not found',
+        message: 'Entry not found or you do not have permission to view sharing info'
+      }, 404);
+    }
+
+    const result = await queryWithUser(auth.userId,
+      `SELECT eak.*, up.username, up.display_name, up.email, up.avatar_url,
+              t.id as tag_id, t.name as tag_name, t.color as tag_color
+       FROM entry_access_keys eak
+       JOIN user_profiles up ON eak.user_id = up.id
+       LEFT JOIN user_tags ut ON eak.user_id = ut.target_id AND ut.tagger_id = $2
+       LEFT JOIN tags t ON ut.tag_id = t.id
+       WHERE eak.entry_id = $1
+       ORDER BY eak.created_at DESC`,
+      [entryId, auth.userId]
+    );
+
+    // Group by user and collect their tags
+    const usersMap = new Map();
+    for (const row of result.rows) {
+      if (!usersMap.has(row.user_id)) {
+        usersMap.set(row.user_id, {
+          user: {
+            id: row.user_id,
+            username: row.username,
+            display_name: row.display_name,
+            email: row.email,
+            avatar_url: row.avatar_url
+          },
+          accessKey: {
+            id: row.id,
+            encrypted_entry_key: row.encrypted_entry_key,
+            key_nonce: row.key_nonce,
+            created_at: row.created_at
+          },
+          tags: []
+        });
+      }
+      
+      if (row.tag_id) {
+        usersMap.get(row.user_id).tags.push({
+          id: row.tag_id,
+          name: row.tag_name,
+          color: row.tag_color
+        });
+      }
+    }
+
+    const sharedWithUsers = Array.from(usersMap.values());
+
+    return c.json({
+      success: true,
+      data: {
+        entryId,
+        sharedWithUsers,
+        tags: [], // Could be populated with entry tags if needed
+        accessKeys: result.rows
+      }
+    });
+  } catch (error) {
+    console.error('Get entry shared users error:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to get sharing info',
+      message: error.message
+    }, 500);
+  }
+});

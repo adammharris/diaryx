@@ -36,6 +36,7 @@
     const AUTOSAVE_DELAY = 1500; // 1.5 seconds
     let isPublished = $state(false);
     let showInfo = $state(false);
+    let saveInProgress = $state(false);
     
     // Entry locking state (for E2E encryption)
     let isEntryLocked = $state(false);
@@ -99,7 +100,7 @@
 
     // Autosave effect
     $effect(() => {
-        if (content && content !== lastSavedContent && !isLoading) {
+        if (content && content !== lastSavedContent && !isLoading && !saveInProgress) {
             if (saveTimeout) {
                 clearTimeout(saveTimeout);
             }
@@ -112,6 +113,12 @@
 
     async function loadEntry() {
         if (!entryId || !storageService) return;
+        
+        // Don't reload entry content if a save is in progress to prevent race conditions
+        if (saveInProgress) {
+            console.log('Skipping loadEntry - save in progress');
+            return;
+        }
         
         // Use preloaded entry if available (should be the common case)
         if (preloadedEntry && preloadedEntry.id === entryId) {
@@ -143,7 +150,10 @@
 
             entry = rawEntry;
             editableTitle = rawEntry.title;
-            content = rawEntry.content;
+            // Don't overwrite content if save is in progress
+            if (!saveInProgress) {
+                content = rawEntry.content;
+            }
             
             // Get cached publish status from metadata store (no async call needed!)
             const metadata = $metadataStore.entries[entryId];
@@ -163,17 +173,22 @@
     }
 
     async function saveEntryContent() {
-        if (!entry || !storageService) return false;
+        if (!entry || !storageService || saveInProgress) return false;
         
+        // Capture content at start of save to prevent race conditions
+        const contentToSave = content;
+        saveInProgress = true;
         saveStatus = 'saving';
+        
         try {
             // Save content as plain text (no encryption)
-            const success = await storageService.saveEntry(entry.id, content);
+            const success = await storageService.saveEntry(entry.id, contentToSave);
+            
             if (success) {
-                onsaved?.({ id: entry.id, content: content });
-                entry.content = content;
+                onsaved?.({ id: entry.id, content: contentToSave });
+                entry.content = contentToSave;
                 entry.modified_at = new Date().toISOString();
-                lastSavedContent = content;
+                lastSavedContent = contentToSave;
                 saveStatus = 'saved';
                 
                 // If authenticated and published, sync changes to cloud
@@ -198,6 +213,8 @@
             });
             saveStatus = 'error';
             return false;
+        } finally {
+            saveInProgress = false;
         }
     }
 

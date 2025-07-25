@@ -64,7 +64,7 @@
 
     // Exchange code for token via backend
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const apiUrl = apiBaseUrl ? `${apiBaseUrl}api/auth/callback` : '/api/auth/google';
+    const apiUrl = apiBaseUrl ? `${apiBaseUrl}/api/auth/callback` : '/api/auth/google';
     
     console.log('Making popup auth request to:', apiUrl);
     fetch(apiUrl, {
@@ -110,7 +110,7 @@
 
       // Exchange code for token via backend
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-      const apiUrl = apiBaseUrl ? `${apiBaseUrl}api/auth/google` : '/api/auth/google';
+      const apiUrl = apiBaseUrl ? `${apiBaseUrl}/api/auth/google` : '/api/auth/google';
       const redirectUri = `${window.location.origin}/auth/callback`;
       
       console.log('Making direct auth request to:', apiUrl);
