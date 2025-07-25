@@ -1464,7 +1464,7 @@ export const listUserTagsHandler = requireAuth(async (c) => {
 
     let query = `
       SELECT ut.*, t.name as tag_name, t.color as tag_color,
-             up.id as target_user_id, up.username, up.display_name, up.email, up.avatar_url
+             up.id as target_user_id, up.username, up.display_name, up.email, up.avatar_url, up.public_key
       FROM user_tags ut
       JOIN tags t ON ut.tag_id = t.id
       JOIN user_profiles up ON ut.target_id = up.id
@@ -1499,7 +1499,8 @@ export const listUserTagsHandler = requireAuth(async (c) => {
         username: row.username,
         display_name: row.display_name,
         email: row.email,
-        avatar_url: row.avatar_url
+        avatar_url: row.avatar_url,
+        public_key: row.public_key
       }
     }));
 
@@ -1849,19 +1850,50 @@ export const getSharedEntriesHandler = requireAuth(async (c) => {
     const auth = c.get('auth');
 
     const result = await queryWithUser(auth.userId,
-      `SELECT DISTINCT e.*, up.username as author_username, up.display_name as author_name,
-              up.public_key as author_public_key
+      `SELECT e.*, 
+              eak.encrypted_entry_key, eak.key_nonce, eak.created_at as access_granted_at,
+              up.username as author_username, up.display_name as author_name, up.public_key as author_public_key
        FROM entries e
        JOIN entry_access_keys eak ON e.id = eak.entry_id
        JOIN user_profiles up ON e.author_id = up.id
        WHERE eak.user_id = $1 AND e.is_published = true
-       ORDER BY e.updated_at DESC`,
+       ORDER BY eak.created_at DESC`,
       [auth.userId]
     );
 
+    // Structure the response with proper access_key and author objects
+    const entriesWithMetadata = result.rows.map(entry => ({
+      id: entry.id,
+      author_id: entry.author_id,
+      encrypted_title: entry.encrypted_title,
+      encrypted_content: entry.encrypted_content,
+      encrypted_frontmatter: entry.encrypted_frontmatter,
+      encryption_metadata: entry.encryption_metadata,
+      title_hash: entry.title_hash,
+      content_preview_hash: entry.content_preview_hash,
+      is_published: entry.is_published,
+      file_path: entry.file_path,
+      created_at: entry.created_at,
+      updated_at: entry.updated_at,
+      // Access key information for decryption
+      access_key: {
+        encrypted_entry_key: entry.encrypted_entry_key,
+        key_nonce: entry.key_nonce,
+        granted_at: entry.access_granted_at
+      },
+      // Author information
+      author: {
+        id: entry.author_id,
+        name: entry.author_name,
+        username: entry.author_username,
+        display_name: entry.author_name,
+        public_key: entry.author_public_key
+      }
+    }));
+
     return c.json({
       success: true,
-      data: result.rows
+      data: entriesWithMetadata
     });
   } catch (error) {
     console.error('Get shared entries error:', error);

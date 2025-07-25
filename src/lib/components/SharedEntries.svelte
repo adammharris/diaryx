@@ -4,7 +4,23 @@
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import EntryCard from './EntryCard.svelte';
-    import type { JournalEntry } from '../storage/types.js';
+    import type { JournalEntry, JournalEntryMetadata } from '../storage/types.js';
+
+    // Extended interface for shared entries
+    interface SharedEntry extends JournalEntryMetadata {
+        author: string;
+        tags: string[];
+        encryptionInfo?: {
+            encrypted_title: string;
+            encrypted_content: string;
+            encryption_metadata: any;
+            access_key: {
+                encrypted_entry_key: string;
+                key_nonce: string;
+                granted_at: string;
+            };
+        };
+    }
 
     interface Props {
         onclose?: () => void;
@@ -12,8 +28,8 @@
 
     let { onclose }: Props = $props();
 
-    let sharedEntries = $state<JournalEntry[]>([]);
-    let isLoading = $state(true);
+    let sharedEntries = $state<SharedEntry[]>([]);
+    let isLoading = $state(false);
     let error = $state<string | null>(null);
     let selectedEntryId = $state<string | null>(null);
     let searchQuery = $state('');
@@ -46,21 +62,121 @@
             return;
         }
 
+        if (isLoading) {
+            return;
+        }
+
         try {
+            console.log('Starting to load shared entries...');
             isLoading = true;
             error = null;
             
             // Fetch shared entries from the API
-            const result = await sharingService.getSharedEntries();
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/api/entries/shared-with-me`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...apiAuthService.getAuthHeaders()
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('API response:', result); // Debug log
             
             if (result.success) {
-                sharedEntries = result.entries;
+                // Check if we have data
+                if (!result.data || !Array.isArray(result.data)) {
+                    console.warn('API returned success but no data array:', result);
+                    sharedEntries = [];
+                    return;
+                }
+                
+                console.log(`Processing ${result.data.length} shared entries`);
+                
+                // Transform API response to SharedEntry format for display
+                sharedEntries = result.data.map((entry: any) => {
+                    console.log('Processing shared entry:', entry); // Debug log
+                    
+                    // Safely extract author information
+                    const authorName = entry.author?.display_name || entry.author?.name || entry.author?.username || 'Unknown Author';
+                    
+                    // Safely extract tags
+                    const tags = Array.isArray(entry.tags) ? entry.tags.map((tag: any) => tag?.name || 'Unknown Tag') : [];
+                    
+                    // Try to decrypt the entry using the shared access key
+                    let decryptedTitle = 'Encrypted Entry';
+                    let decryptedPreview = 'Content is encrypted';
+                    
+                    // Debug: Log all available fields
+                    console.log('Available entry fields:', Object.keys(entry));
+                    console.log('Access key data:', entry.access_key);
+                    console.log('Author data:', entry.author);
+                    
+                    try {
+                        if (entry.access_key?.encrypted_entry_key && entry.access_key?.key_nonce && entry.author?.public_key) {
+                            console.log('Attempting decryption with data:', {
+                                hasEncryptedContent: !!entry.encrypted_content,
+                                hasContentNonce: !!entry.encryption_metadata?.contentNonceB64,
+                                hasEncryptedEntryKey: !!entry.access_key.encrypted_entry_key,
+                                hasKeyNonce: !!entry.access_key.key_nonce
+                            });
+                            
+                            // Decrypt the entry using E2E encryption service
+                            const encryptedData = {
+                                encryptedContentB64: entry.encrypted_content,
+                                contentNonceB64: entry.encryption_metadata?.contentNonceB64,
+                                encryptedEntryKeyB64: entry.access_key.encrypted_entry_key,
+                                keyNonceB64: entry.access_key.key_nonce
+                            };
+                            
+                            const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, entry.author.public_key);
+                            if (decryptedEntry) {
+                                console.log('Successfully decrypted entry:', decryptedEntry.title);
+                                decryptedTitle = decryptedEntry.title || 'Untitled';
+                                decryptedPreview = decryptedEntry.content?.substring(0, 150) + (decryptedEntry.content?.length > 150 ? '...' : '') || '';
+                            } else {
+                                console.log('Decryption returned null');
+                            }
+                        } else {
+                            console.log('Missing required fields for decryption');
+                        }
+                    } catch (error) {
+                        console.error('Failed to decrypt shared entry:', error);
+                    }
+                    
+                    return {
+                        id: entry.id,
+                        title: decryptedTitle,
+                        preview: decryptedPreview,
+                        modified_at: entry.updated_at || entry.created_at,
+                        created_at: entry.created_at,
+                        file_path: entry.file_path || '',
+                        // Additional metadata for shared entries
+                        author: authorName,
+                        tags: tags,
+                        isPublished: entry.is_published || false,
+                        isShared: true,
+                        cloudId: entry.id,
+                        // Store encryption info for decryption
+                        encryptionInfo: {
+                            encrypted_title: entry.encrypted_title,
+                            encrypted_content: entry.encrypted_content,
+                            encryption_metadata: entry.encryption_metadata,
+                            access_key: entry.access_key
+                        }
+                    };
+                });
             } else {
                 error = result.error || 'Failed to load shared entries';
             }
         } catch (err) {
             console.error('Error loading shared entries:', err);
-            error = 'Failed to load shared entries. Please try again.';
+            error = err instanceof Error ? err.message : 'Failed to load shared entries. Please try again.';
         } finally {
             isLoading = false;
         }
@@ -182,9 +298,8 @@
                             {#each filteredEntries as entry (entry.id)}
                                 <div class="shared-entry-wrapper">
                                     <EntryCard 
-                                        {entry} 
+                                        entry={entry} 
                                         onselect={handleSelectEntry}
-                                        readonly={true}
                                     />
                                     <div class="entry-meta">
                                         <span class="shared-by">

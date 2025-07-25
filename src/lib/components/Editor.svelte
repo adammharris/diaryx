@@ -7,6 +7,7 @@
     import { metadataStore } from '../stores/metadata.js';
     // Removed old crypto imports - now using E2E encryption service
     import InfoModal from './InfoModal.svelte';
+    import TagSelector from './TagSelector.svelte';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -15,7 +16,7 @@
         onclose?: () => void;
         onsaved?: (data: { id: string; content: string }) => void;
         onrenamed?: (data: { oldId: string; newId: string }) => void;
-        onpublishtoggle?: (data: { entryId: string; publish: boolean }) => void;
+        onpublishtoggle?: (data: { entryId: string; publish: boolean; tagIds?: string[] }) => void;
         onerror?: (data: { title: string; message: string }) => void;
         onkeyboardtoggle?: (data: { visible: boolean }) => void;
     }
@@ -37,6 +38,10 @@
     let isPublished = $state(false);
     let showInfo = $state(false);
     let saveInProgress = $state(false);
+    
+    // Tag selection for sharing
+    let selectedTagIds = $state<string[]>([]);
+    let showTagSelector = $state(false);
     
     // Entry locking state (for E2E encryption)
     let isEntryLocked = $state(false);
@@ -288,10 +293,35 @@
         if (!canPublish) return;
         
         const newPublishState = !isPublished;
-        isPublished = newPublishState;
         
-        // Notify parent component to handle cloud sync
-        onpublishtoggle?.({ entryId, publish: newPublishState });
+        if (newPublishState) {
+            // When publishing, show tag selector first
+            showTagSelector = true;
+        } else {
+            // When unpublishing, proceed directly
+            isPublished = false;
+            onpublishtoggle?.({ entryId, publish: false, tagIds: [] });
+        }
+    }
+
+    function handleTagSelectionChange(tagIds: string[]) {
+        selectedTagIds = tagIds;
+    }
+
+    function handlePublishWithTags() {
+        if (!entry || !entryId) return;
+        
+        // Proceed with publishing
+        isPublished = true;
+        showTagSelector = false;
+        
+        // Notify parent component with selected tags
+        onpublishtoggle?.({ entryId, publish: true, tagIds: selectedTagIds });
+    }
+
+    function handleCancelPublish() {
+        showTagSelector = false;
+        selectedTagIds = [];
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -572,6 +602,61 @@
     onclose={handleCloseInfo}
 />
 
+<!-- Tag Selection Modal for Publishing -->
+{#if showTagSelector}
+    <div class="modal-overlay">
+        <div class="modal-content publish-modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Share Entry</h3>
+                <button 
+                    class="close-btn"
+                    onclick={handleCancelPublish}
+                    aria-label="Cancel publishing"
+                >
+                    ×
+                </button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="publish-info">
+                    <p class="publish-description">
+                        Select tags to share this entry with other users. Anyone assigned to these tags will be able to read this entry.
+                    </p>
+                    
+                    <div class="entry-preview">
+                        <strong>Entry:</strong> {entry?.title || 'Untitled'}
+                    </div>
+                </div>
+                
+                <div class="tag-selector-container">
+                    <TagSelector 
+                        selectedTagIds={selectedTagIds}
+                        onTagSelectionChange={handleTagSelectionChange}
+                        disabled={false}
+                        showCreateButton={true}
+                    />
+                </div>
+                
+                <div class="publish-actions">
+                    <button 
+                        class="btn btn-secondary"
+                        onclick={handleCancelPublish}
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        class="btn btn-primary"
+                        onclick={handlePublishWithTags}
+                        disabled={selectedTagIds.length === 0}
+                    >
+                        {selectedTagIds.length === 0 ? 'Select tags to publish' : `Publish & Share`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+{/if}
+
 <!-- Password prompt no longer needed with E2E encryption -->
 
 
@@ -708,6 +793,108 @@
             padding-left: calc(1rem + env(safe-area-inset-left)) !important;
             padding-right: calc(1rem + env(safe-area-inset-right)) !important;
             padding-bottom: 2rem !important;
+        }
+    }
+
+    /* Publish Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+
+    .publish-modal {
+        max-width: 600px;
+        width: 100%;
+        max-height: 80vh;
+        background: var(--color-surface);
+        border-radius: 12px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--color-background);
+    }
+
+    .modal-title {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--color-text);
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .publish-info {
+        margin-bottom: 1.5rem;
+    }
+
+    .publish-description {
+        margin: 0 0 1rem 0;
+        color: var(--color-textSecondary);
+        line-height: 1.5;
+    }
+
+    .entry-preview {
+        padding: 0.75rem 1rem;
+        background: var(--color-background);
+        border-radius: 6px;
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+    }
+
+    .tag-selector-container {
+        margin-bottom: 1.5rem;
+    }
+
+    .publish-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        padding-top: 1rem;
+        border-top: 1px solid var(--color-border);
+    }
+
+    /* Mobile responsive for publish modal */
+    @media (max-width: 768px) {
+        .modal-overlay {
+            padding: 0;
+        }
+
+        .publish-modal {
+            max-width: 100%;
+            height: 100vh;
+            max-height: 100vh;
+            border-radius: 0;
+        }
+
+        .modal-header {
+            padding: 1rem;
+            padding-top: calc(1rem + env(safe-area-inset-top));
+        }
+
+        .publish-actions {
+            flex-direction: column-reverse;
         }
     }
 </style>

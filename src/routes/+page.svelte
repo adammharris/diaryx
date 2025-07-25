@@ -488,20 +488,23 @@
   }
 
 
-  async function handlePublishToggle(event: { entryId: string; publish: boolean }) {
-    const { entryId, publish } = event;
+  async function handlePublishToggle(event: { entryId: string; publish: boolean; tagIds?: string[] }) {
+    const { entryId, publish, tagIds = [] } = event;
     
     try {
       if (publish) {
-        // Publishing entry - sync to cloud
-        console.log('Publishing entry:', entryId);
-        const success = await storageService.publishEntry(entryId);
+        // Publishing entry - sync to cloud with tags
+        console.log('Publishing entry:', entryId, 'with tags:', tagIds);
+        const success = await storageService.publishEntry(entryId, tagIds);
         
         if (success) {
+          const tagMessage = tagIds.length > 0 
+            ? ` Shared with ${tagIds.length} tag${tagIds.length > 1 ? 's' : ''}.`
+            : '';
           showDialog({
             title: 'Published',
-            message: 'Entry published successfully!',
-            type: 'success'
+            message: `Entry published successfully!${tagMessage}`,
+            type: 'info'
           });
         } else {
           showDialog({
@@ -519,7 +522,7 @@
           showDialog({
             title: 'Unpublished',
             message: 'Entry unpublished successfully!',
-            type: 'success'
+            type: 'info'
           });
         } else {
           showDialog({

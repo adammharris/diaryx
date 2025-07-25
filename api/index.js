@@ -83,8 +83,8 @@ app.delete('/api/user-tags/:id', removeUserTagHandler);
 
 // Entry access key routes
 app.get('/api/entry-access-keys', entryAccessKeysHandler);
-app.get('/api/entry-access-keys/:entryId', entryAccessKeysHandler);
 app.post('/api/entry-access-keys/batch', entryAccessKeysHandler);
+app.get('/api/entry-access-keys/:entryId', entryAccessKeysHandler);
 app.delete('/api/entry-access-keys/:entryId/:userId', entryAccessKeysHandler);
 
 // Auth routes (native Hono handlers)
@@ -116,8 +116,8 @@ app.notFound((c) => {
       'POST /api/user-tags',
       'DELETE /api/user-tags/:id',
       'GET /api/entry-access-keys',
-      'GET /api/entry-access-keys/:entryId',
       'POST /api/entry-access-keys/batch',
+      'GET /api/entry-access-keys/:entryId',
       'DELETE /api/entry-access-keys/:entryId/:userId',
       'POST /api/auth/google'
     ]
@@ -165,8 +165,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(`  POST   http://localhost:${port}/api/user-tags`);
   console.log(`  DELETE http://localhost:${port}/api/user-tags/:id`);
   console.log(`  GET    http://localhost:${port}/api/entry-access-keys`);
-  console.log(`  GET    http://localhost:${port}/api/entry-access-keys/:entryId`);
   console.log(`  POST   http://localhost:${port}/api/entry-access-keys/batch`);
+  console.log(`  GET    http://localhost:${port}/api/entry-access-keys/:entryId`);
   console.log(`  DELETE http://localhost:${port}/api/entry-access-keys/:entryId/:userId`);
   console.log(`  POST   http://localhost:${port}/api/auth/google`);
 

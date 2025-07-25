@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "bun run index.js",
     "start": "node index.js",
+    "update-routes": "node update-routes.js",
+    "dev:watch": "bun run update-routes.js && bun run index.js",
     "build": "echo 'No build step needed'",
     "deploy": "vercel --prod"
   },

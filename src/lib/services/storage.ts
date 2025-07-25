@@ -902,6 +902,7 @@ class StorageService {
 					file_path: entry.file_path || `${entryId}.md`,
 					owner_encrypted_entry_key: encryptedData.encryptedEntryKeyB64,
 					owner_key_nonce: encryptedData.keyNonceB64,
+					tag_ids: tagIds, // Include tag IDs for entry_tags creation
 					// Include local modification time for conflict detection
 					client_modified_at: entry.modified_at
 				};
@@ -994,7 +995,7 @@ class StorageService {
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 			console.log("Fetching from:", `${apiUrl}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
-				method: 'PATCH',
+				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
 					...apiAuthService.getAuthHeaders()

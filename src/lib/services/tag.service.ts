@@ -368,8 +368,14 @@ class TagService {
       const result = await response.json();
       const userTags = result.data as UserTag[];
 
+      console.log('Raw API response for getTagAssignments:', result);
+      console.log('UserTags:', userTags);
+
       // Extract target users (this assumes the API populates target_user)
-      return userTags.map(ut => ut.target_user).filter(Boolean) as SearchableUser[];
+      const users = userTags.map(ut => ut.target_user).filter(Boolean) as SearchableUser[];
+      console.log('Extracted users with public keys:', users.map(u => ({ id: u.id, username: u.username, hasPublicKey: !!u.public_key })));
+      
+      return users;
     } catch (error) {
       console.error('Failed to get tag assignments:', error);
       return [];
