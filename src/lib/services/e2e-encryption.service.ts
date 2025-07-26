@@ -455,6 +455,84 @@ export class E2EEncryptionService {
   /**
    * Encrypt a new entry for the current user
    */
+  /**
+   * Encrypt an entry with an existing entry key (for updates)
+   * This maintains key consistency while generating a new content nonce
+   */
+  async encryptEntryWithExistingKey(
+    entryObject: EntryObject, 
+    existingEncryptedEntryKeyB64: string, 
+    existingKeyNonceB64: string
+  ): Promise<EncryptedEntryData | null> {
+    if (!this.currentSession || !this.currentSession.isUnlocked) {
+      console.error('Cannot encrypt entry - session not unlocked');
+      return null;
+    }
+
+    // Validate inputs
+    if (!entryObject || !existingEncryptedEntryKeyB64 || !existingKeyNonceB64) {
+      console.error('Missing required parameters for encryption with existing key');
+      return null;
+    }
+
+    try {
+      console.log('=== Encrypting with existing key ===');
+      
+      // Decode the existing encrypted key and nonce
+      const existingEncryptedKeyBytes = decodeBase64(existingEncryptedEntryKeyB64);
+      const existingKeyNonceBytes = decodeBase64(existingKeyNonceB64);
+      
+      // Decrypt the existing entry key to reuse it
+      const decryptedEntryKey = nacl.box.open(
+        existingEncryptedKeyBytes,
+        existingKeyNonceBytes,
+        this.currentSession.userKeyPair.publicKey,
+        this.currentSession.userKeyPair.secretKey
+      );
+
+      if (!decryptedEntryKey) {
+        console.error('Failed to decrypt existing entry key');
+        return null;
+      }
+
+      console.log('Successfully decrypted existing entry key, length:', decryptedEntryKey.length);
+
+      // Now encrypt the new content with the existing key but new nonce
+      const entryJson = JSON.stringify(entryObject);
+      const entryBytes = new TextEncoder().encode(entryJson);
+      
+      // Generate NEW content nonce (critical for security)
+      const newContentNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+      
+      // Encrypt content with existing key + new nonce
+      const encryptedContent = nacl.secretbox(entryBytes, newContentNonce, decryptedEntryKey);
+      
+      // Clear the decrypted key from memory
+      if (decryptedEntryKey.fill) {
+        decryptedEntryKey.fill(0);
+      }
+
+      const { encodeBase64 } = await import('tweetnacl-util');
+      const result = {
+        encryptedContentB64: encodeBase64(encryptedContent),
+        contentNonceB64: encodeBase64(newContentNonce),
+        encryptedEntryKeyB64: existingEncryptedEntryKeyB64, // Reuse existing
+        keyNonceB64: existingKeyNonceB64 // Reuse existing
+      };
+
+      console.log('Encryption with existing key completed:', {
+        contentLength: result.encryptedContentB64.length,
+        newContentNonce: result.contentNonceB64,
+        reusingEntryKey: true
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Failed to encrypt with existing key:', error);
+      return null;
+    }
+  }
+
   encryptEntry(entryObject: EntryObject): EncryptedEntryData | null {
     if (!this.currentSession || !this.currentSession.isUnlocked) {
       console.error('Cannot encrypt entry - session not unlocked');

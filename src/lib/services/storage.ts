@@ -1144,6 +1144,28 @@ class StorageService {
 					return false;
 				}
 
+				// CRITICAL FIX: Fetch existing encryption keys to maintain consistency
+				console.log('Fetching existing cloud entry to reuse encryption keys...');
+				const baseApiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+				const existingResponse = await fetch(`${baseApiUrl}/api/entries/${cloudId}`, {
+					method: 'GET',
+					headers: {
+						'Content-Type': 'application/json',
+						...apiAuthService.getAuthHeaders()
+					}
+				});
+
+				if (!existingResponse.ok) {
+					console.error('Failed to fetch existing cloud entry:', existingResponse.status);
+					return false;
+				}
+
+				const existingCloudEntry = await existingResponse.json();
+				if (!existingCloudEntry.data?.access_key?.encrypted_entry_key || !existingCloudEntry.data?.access_key?.key_nonce) {
+					console.error('Existing cloud entry missing encryption keys - cannot maintain consistency');
+					return false;
+				}
+
 				// Parse frontmatter from content
 				const parsedContent = FrontmatterService.parseContent(entry.content);
 				
@@ -1155,10 +1177,16 @@ class StorageService {
 					tags: FrontmatterService.extractTags(parsedContent.frontmatter)
 				};
 
-				// Encrypt the entry using E2E encryption service
-				const encryptedData = e2eEncryptionService.encryptEntry(entryObject);
+				// SECURE APPROACH: Reuse existing entry key with new content nonce
+				console.log('Encrypting with existing key for consistency...');
+				const encryptedData = await e2eEncryptionService.encryptEntryWithExistingKey(
+					entryObject,
+					existingCloudEntry.data.access_key.encrypted_entry_key,
+					existingCloudEntry.data.access_key.key_nonce
+				);
+				
 				if (!encryptedData) {
-					throw new Error('Failed to encrypt entry');
+					throw new Error('Failed to encrypt entry with existing key');
 				}
 
 				// Generate hashes using E2E encryption service
@@ -1188,15 +1216,24 @@ class StorageService {
 					content_preview_hash: hashes.previewHash,
 					is_published: true,
 					file_path: entry.file_path || `${entryId}.md`,
+					owner_encrypted_entry_key: encryptedData.encryptedEntryKeyB64,
+					owner_key_nonce: encryptedData.keyNonceB64,
 					// Send the client's actual modification time for conflict detection
 					client_modified_at: entry.modified_at,
 					// Use last known server timestamp for conditional update
 					if_unmodified_since: lastServerTimestamp
 				};
 
-				console.log('Syncing with timestamps:', {
+				console.log('Syncing with reused encryption keys and new content nonce:', {
 					client_modified_at: apiPayload.client_modified_at,
-					if_unmodified_since: apiPayload.if_unmodified_since
+					if_unmodified_since: apiPayload.if_unmodified_since,
+					hasEncryptionKeys: {
+						owner_encrypted_entry_key: !!apiPayload.owner_encrypted_entry_key,
+						owner_key_nonce: !!apiPayload.owner_key_nonce,
+						owner_encrypted_entry_key_length: apiPayload.owner_encrypted_entry_key?.length,
+						owner_key_nonce_length: apiPayload.owner_key_nonce?.length
+					},
+					reusedExistingKeys: true
 				});
 
 				// Update the cloud entry
@@ -1312,6 +1349,16 @@ class StorageService {
 						authorPublicKey: cloudEntry.author?.public_key?.substring(0, 20) + '...'
 					});
 					
+					// Only import entries authored by the current user
+					const currentUserId = e2eEncryptionService.getCurrentUserId();
+					const currentUserPublicKey = e2eEncryptionService.getCurrentPublicKey();
+					
+					if (cloudEntry.author?.id !== currentUserId || 
+						cloudEntry.author?.public_key !== currentUserPublicKey) {
+						console.log('Skipping entry not authored by current user:', cloudEntry.id);
+						continue;
+					}
+					
 					// Debug: Log full encrypted data received from cloud
 					console.log('=== Full Encrypted Data Received from Cloud ===');
 					console.log('encrypted_content (full):', cloudEntry.encrypted_content);
@@ -1342,15 +1389,8 @@ class StorageService {
 
 					// Check if we have access key for this entry
 					if (!cloudEntry.access_key?.encrypted_entry_key) {
-						// Check if this is our own entry - we might be able to use owner keys
-						const currentUserId = e2eEncryptionService.getCurrentUserId();
-						const currentUserPublicKey = e2eEncryptionService.getCurrentPublicKey();
-						
-						if (cloudEntry.author?.id === currentUserId && 
-							cloudEntry.author?.public_key === currentUserPublicKey &&
-							cloudEntry.owner_encrypted_entry_key && 
-							cloudEntry.owner_key_nonce) {
-							
+						// Since we've already confirmed this is our own entry, try using owner keys
+						if (cloudEntry.owner_encrypted_entry_key && cloudEntry.owner_key_nonce) {
 							console.log('Using owner keys for self-owned entry:', cloudEntry.id);
 							// Create a temporary access_key object from owner keys
 							cloudEntry.access_key = {
@@ -1358,7 +1398,7 @@ class StorageService {
 								key_nonce: cloudEntry.owner_key_nonce
 							};
 						} else {
-							console.log('No access key for entry, skipping:', cloudEntry.id);
+							console.log('No access key or owner keys available for entry, skipping:', cloudEntry.id);
 							continue;
 						}
 					}

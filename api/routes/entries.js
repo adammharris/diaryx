@@ -502,7 +502,13 @@ export const updateEntryHandler = requireAuth(async (c) => {
       id,
       userId: auth.userId,
       bodyKeys: Object.keys(body),
-      bodySize: JSON.stringify(body).length
+      bodySize: JSON.stringify(body).length,
+      hasEncryptionKeys: {
+        owner_encrypted_entry_key: !!body.owner_encrypted_entry_key,
+        owner_key_nonce: !!body.owner_key_nonce,
+        owner_encrypted_entry_key_length: body.owner_encrypted_entry_key?.length,
+        owner_key_nonce_length: body.owner_key_nonce?.length
+      }
     });
     
     if (!id) {
@@ -521,7 +527,9 @@ export const updateEntryHandler = requireAuth(async (c) => {
       content_preview_hash,
       is_published,
       file_path,
-      tag_ids
+      tag_ids,
+      owner_encrypted_entry_key,
+      owner_key_nonce
       // client_modified_at, // For potential future conflict detection
       // if_unmodified_since // HTTP-style conditional update
     } = body;
@@ -541,6 +549,34 @@ export const updateEntryHandler = requireAuth(async (c) => {
           success: false,
           error: 'Invalid encrypted data',
           details: validation.error
+        }, 400);
+      }
+    }
+
+    // Validate encryption keys if both are provided
+    if (owner_encrypted_entry_key || owner_key_nonce) {
+      // Both must be provided together
+      if (!owner_encrypted_entry_key || !owner_key_nonce) {
+        return c.json({
+          success: false,
+          error: 'Both owner_encrypted_entry_key and owner_key_nonce must be provided together'
+        }, 400);
+      }
+
+      // Validate Base64 format
+      const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+      if (!base64Regex.test(owner_encrypted_entry_key) || !base64Regex.test(owner_key_nonce)) {
+        return c.json({
+          success: false,
+          error: 'Invalid Base64 format in encryption keys'
+        }, 400);
+      }
+
+      // Check minimum lengths for security
+      if (owner_encrypted_entry_key.length < 40 || owner_key_nonce.length < 16) {
+        return c.json({
+          success: false,
+          error: 'Encryption keys too short'
         }, 400);
       }
     }
@@ -649,8 +685,36 @@ export const updateEntryHandler = requireAuth(async (c) => {
       }
     }
     
-    // If no entry updates but need to get current entry for tags-only update
-    if (queries.length === 0 || (updates.length === 0 && tag_ids !== undefined)) {
+    // Update encryption keys if provided
+    if (owner_encrypted_entry_key && owner_key_nonce) {
+      console.log('Updating encryption keys for entry:', {
+        entryId: id,
+        userId: auth.userId,
+        encryptedKeyLength: owner_encrypted_entry_key.length,
+        nonceLength: owner_key_nonce.length
+      });
+      
+      queries.push({
+        text: `
+          INSERT INTO entry_access_keys (entry_id, user_id, encrypted_entry_key, key_nonce)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (entry_id, user_id) 
+          DO UPDATE SET 
+            encrypted_entry_key = EXCLUDED.encrypted_entry_key,
+            key_nonce = EXCLUDED.key_nonce
+        `,
+        params: [id, auth.userId, owner_encrypted_entry_key, owner_key_nonce]
+      });
+    } else {
+      console.log('No encryption keys provided for entry update:', {
+        entryId: id,
+        hasEncryptedKey: !!owner_encrypted_entry_key,
+        hasNonce: !!owner_key_nonce
+      });
+    }
+    
+    // If no entry updates but need to get current entry for tags-only/keys-only update
+    if (queries.length === 0 || (updates.length === 0 && (tag_ids !== undefined || (owner_encrypted_entry_key && owner_key_nonce)))) {
       queries.unshift({
         text: 'SELECT * FROM entries WHERE id = $1',
         params: [id]
