@@ -2,12 +2,11 @@
   "name": "diaryx-api",
   "version": "1.0.0",
   "description": "Diaryx Backend API for Vercel",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "dev": "bun run index.js",
     "start": "node index.js",
-    "update-routes": "node update-routes.js",
-    "dev:watch": "bun run update-routes.js && bun run index.js",
     "build": "echo 'No build step needed'",
     "deploy": "vercel --prod"
   },

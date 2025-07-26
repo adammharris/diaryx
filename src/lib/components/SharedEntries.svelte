@@ -98,9 +98,21 @@
                 
                 console.log(`Processing ${result.data.length} shared entries`);
                 
+                // Filter out any entries authored by current user (client-side safety check)
+                const filteredEntries = result.data.filter((entry: any) => {
+                    const isOwnEntry = entry.author_id === authSession?.user?.id;
+                    if (isOwnEntry) {
+                        console.warn('Filtering out own entry from shared list:', entry.id);
+                    }
+                    return !isOwnEntry;
+                });
+                
+                if (filteredEntries.length !== result.data.length) {
+                    console.log(`Filtered out ${result.data.length - filteredEntries.length} own entries from shared list`);
+                }
+
                 // Transform API response to SharedEntry format for display
-                sharedEntries = result.data.map((entry: any) => {
-                    console.log('Processing shared entry:', entry); // Debug log
+                sharedEntries = filteredEntries.map((entry: any) => {
                     
                     // Safely extract author information
                     const authorName = entry.author?.display_name || entry.author?.name || entry.author?.username || 'Unknown Author';

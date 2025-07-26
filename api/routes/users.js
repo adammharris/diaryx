@@ -1,65 +1,33 @@
 /**
- * User profile management by ID
- * GET /api/users/[id] - Get user profile
- * PUT /api/users/[id] - Update user profile  
- * DELETE /api/users/[id] - Delete user profile
+ * API handlers for users
  */
 
-import { requireAuth, publicEndpoint } from '../lib/middleware.js';
-import { queryWithUser, getUserById } from '../lib/database.js';
+import { requireAuth } from '../lib/middleware.js';
+import { queryWithUser, getUserById, searchUsers } from '../lib/database.js';
 
-export default async function handler(req, res) {
-  const { method, query } = req;
-  const { id } = query;
-  
-  if (!id) {
-    return res.status(400).json({
-      success: false,
-      error: 'User ID is required'
-    });
-  }
-  
-  switch (method) {
-    case 'GET':
-      return requireAuth(getUser)(req, res);
-    case 'PUT':
-      return requireAuth(updateUser)(req, res);
-    case 'DELETE':
-      return requireAuth(deleteUser)(req, res);
-    default:
-      return res.status(405).json({
-        success: false,
-        error: 'Method not allowed',
-        allowedMethods: ['GET', 'PUT', 'DELETE']
-      });
-  }
-}
-
-/**
- * Get user profile by ID
- */
-async function getUser(req, res) {
+export const getUserHandler = requireAuth(async (c) => {
   try {
-    const { id } = req.query;
+    const id = c.req.param('id');
+    const auth = c.get('auth');
+    
+    if (!id) {
+      return c.json({
+        success: false,
+        error: 'User ID is required'
+      }, 400);
+    }
     
     const user = await getUserById(id);
     
     if (!user) {
-      return res.status(404).json({
+      return c.json({
         success: false,
         error: 'User not found'
-      });
+      }, 404);
     }
     
-    // Only return public fields
-    // Include encrypted private key only if user is viewing their own profile
-    const isOwnProfile = req.user?.userId === id;
-    console.log('Profile access check:', {
-      requestedUserId: id,
-      authenticatedUserId: req.user?.userId,
-      isOwnProfile,
-      hasEncryptedKey: !!user.encrypted_private_key
-    });
+    const isOwnProfile = auth.userId === id;
+    
     const responseData = {
       id: user.id,
       name: user.name,
@@ -71,44 +39,46 @@ async function getUser(req, res) {
       created_at: user.created_at
     };
 
-    // Only include encrypted_private_key for own profile
     if (isOwnProfile && user.encrypted_private_key) {
       responseData.encrypted_private_key = user.encrypted_private_key;
     }
 
-    return res.status(200).json({
+    return c.json({
       success: true,
       data: responseData
     });
     
   } catch (error) {
     console.error('Get user error:', error);
-    return res.status(500).json({
+    return c.json({
       success: false,
       error: 'Failed to get user',
       message: error.message
-    });
+    }, 500);
   }
-}
+});
 
-/**
- * Update user profile
- * Users can only update their own profile (enforced by RLS)
- */
-async function updateUser(req, res) {
+export const updateUserHandler = requireAuth(async (c) => {
   try {
-    const { id } = req.query;
-    const userId = req.user.userId;
+    const id = c.req.param('id');
+    const auth = c.get('auth');
     
-    // Check if user is trying to update their own profile
-    if (id !== userId) {
-      return res.status(403).json({
+    if (!id) {
+      return c.json({
+        success: false,
+        error: 'User ID is required'
+      }, 400);
+    }
+    
+    if (id !== auth.userId) {
+      return c.json({
         success: false,
         error: 'Forbidden',
         message: 'You can only update your own profile'
-      });
+      }, 403);
     }
     
+    const body = await c.req.json();
     const {
       name,
       username,
@@ -117,7 +87,7 @@ async function updateUser(req, res) {
       discoverable,
       public_key,
       encrypted_private_key
-    } = req.body;
+    } = body;
     
     // Build update query dynamically
     const updates = [];
@@ -167,10 +137,10 @@ async function updateUser(req, res) {
     }
     
     if (updates.length === 0) {
-      return res.status(400).json({
+      return c.json({
         success: false,
         error: 'No valid fields to update'
-      });
+      }, 400);
     }
     
     paramCount++;
@@ -183,18 +153,18 @@ async function updateUser(req, res) {
       RETURNING *
     `;
     
-    const result = await queryWithUser(userId, text, values);
+    const result = await queryWithUser(auth.userId, text, values);
     
     if (result.rows.length === 0) {
-      return res.status(404).json({
+      return c.json({
         success: false,
         error: 'User not found or unauthorized'
-      });
+      }, 404);
     }
     
     const user = result.rows[0];
     
-    return res.status(200).json({
+    return c.json({
       success: true,
       data: {
         id: user.id,
@@ -212,61 +182,63 @@ async function updateUser(req, res) {
   } catch (error) {
     console.error('Update user error:', error);
     
-    // Handle duplicate username
     if (error.code === '23505') {
-      return res.status(409).json({
+      return c.json({
         success: false,
         error: 'Username already taken'
-      });
+      }, 409);
     }
     
-    return res.status(500).json({
+    return c.json({
       success: false,
       error: 'Failed to update user',
       message: error.message
-    });
+    }, 500);
   }
-}
+});
 
-/**
- * Delete user profile
- * Users can only delete their own profile (enforced by RLS)
- */
-async function deleteUser(req, res) {
+export async function searchUsersHandler(c) {
   try {
-    const { id } = req.query;
-    const userId = req.user.userId;
+    const query = c.req.query();
+    const { q, username, email, limit = '20', offset = '0' } = query;
     
-    // Check if user is trying to delete their own profile
-    if (id !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'You can only delete your own profile'
-      });
-    }
+    console.log('=== User Search Debug ===');
+    console.log('Query params:', query);
+    console.log('Extracted params:', { q, username, email, limit, offset });
     
-    const text = 'DELETE FROM user_profiles WHERE id = $1 RETURNING id';
-    const result = await queryWithUser(userId, text, [id]);
+    // Support both generic 'q' parameter and specific username/email
+    const searchParams = {
+      username: username || q,
+      email: email || q,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    };
     
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'User not found or unauthorized'
-      });
-    }
+    console.log('Search params to database:', searchParams);
     
-    return res.status(200).json({
+    const users = await searchUsers(searchParams);
+    
+    console.log(`Found ${users.length} users`);
+    console.log('First few users:', users.slice(0, 3));
+    
+    return c.json({
       success: true,
-      message: 'User profile deleted successfully'
+      users: users, // Frontend expects 'users' field
+      total: users.length,
+      hasMore: users.length >= parseInt(limit),
+      pagination: {
+        limit: searchParams.limit,
+        offset: searchParams.offset,
+        count: users.length
+      }
     });
     
   } catch (error) {
-    console.error('Delete user error:', error);
-    return res.status(500).json({
+    console.error('Search users error:', error);
+    return c.json({
       success: false,
-      error: 'Failed to delete user',
+      error: 'Failed to search users',
       message: error.message
-    });
+    }, 500);
   }
 }

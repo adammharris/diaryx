@@ -5,6 +5,7 @@
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import E2ESetup from './E2ESetup.svelte';
     import TagManager from './TagManager.svelte';
+    import BiometricSetup from './BiometricSetup.svelte';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -29,6 +30,11 @@
     
     // Tag Manager modal state
     let showTagManager = $state(false);
+    
+    // Biometric Setup modal state
+    let showBiometricSetup = $state(false);
+    let biometricAvailable = $state(false);
+    let biometricEnabled = $state(false);
 
     // Initialize detection when component mounts
     $effect(() => {
@@ -42,10 +48,22 @@
         checkMobile();
         window.addEventListener('resize', checkMobile);
         
+        // Check biometric status
+        checkBiometricStatus();
+        
         return () => {
             window.removeEventListener('resize', checkMobile);
         };
     });
+
+    async function checkBiometricStatus() {
+        try {
+            biometricAvailable = await e2eEncryptionService.isBiometricAvailable();
+            biometricEnabled = e2eEncryptionService.isBiometricEnabled();
+        } catch (error) {
+            console.error('Failed to check biometric status:', error);
+        }
+    }
 
     // Keep selectedTheme in sync with the store
     $effect(() => {
@@ -108,6 +126,13 @@
 
     function closeTagManagerModal() {
         showTagManager = false;
+    }
+
+    // Biometric Setup functions
+    function closeBiometricSetupModal() {
+        showBiometricSetup = false;
+        // Refresh biometric status after potential changes
+        checkBiometricStatus();
     }
 </script>
 
@@ -274,6 +299,68 @@
                 {/if}
             </div>
 
+            <!-- Biometric Authentication Section -->
+            {#if isAuthenticated && hasStoredKeys}
+                <div class="form-section">
+                    <h3>Biometric Authentication</h3>
+                    <p>Use your device's biometric authentication to automatically unlock encryption</p>
+
+                    <div class="bg-surface p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <span class="font-medium">Device Support:</span>
+                                <span class="ml-2 px-2 py-1 rounded text-sm font-medium" class:bg-success={biometricAvailable} class:bg-warning={!biometricAvailable} class:text-white={biometricAvailable || !biometricAvailable}>
+                                    {#if biometricAvailable}
+                                        ✅ Available
+                                    {:else}
+                                        ❌ Not Available
+                                    {/if}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <span class="font-medium">Biometric Unlock:</span>
+                                <span class="ml-2 px-2 py-1 rounded text-sm font-medium" class:bg-success={biometricEnabled} class:bg-gray-200={!biometricEnabled} class:text-white={biometricEnabled} class:text-gray-600={!biometricEnabled}>
+                                    {#if biometricEnabled}
+                                        🔓 Enabled
+                                    {:else}
+                                        🔒 Disabled
+                                    {/if}
+                                </span>
+                            </div>
+                        </div>
+
+                        {#if biometricAvailable}
+                            <div class="mt-3">
+                                {#if !biometricEnabled}
+                                    <p class="text-secondary text-sm mb-3">
+                                        Enable biometric authentication to automatically unlock your encryption password using fingerprint, face recognition, or other biometric methods.
+                                    </p>
+                                    <button class="btn btn-primary btn-small" onclick={() => showBiometricSetup = true}>
+                                        Enable Biometric Authentication
+                                    </button>
+                                {:else}
+                                    <p class="text-success text-sm mb-3">
+                                        🎉 Biometric authentication is enabled! You can unlock encryption without entering your password.
+                                    </p>
+                                    <button class="btn btn-secondary btn-small" onclick={() => showBiometricSetup = true}>
+                                        Manage Biometric Settings
+                                    </button>
+                                {/if}
+                            </div>
+                        {:else}
+                            <div class="mt-3">
+                                <p class="text-secondary text-sm">
+                                    Biometric authentication is not available on this device. Make sure your device has biometric hardware and it's enabled in your device settings.
+                                </p>
+                            </div>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
+
             <!-- Tag Management Section -->
             {#if isAuthenticated && isE2EUnlocked}
                 <div class="form-section">
@@ -365,6 +452,12 @@
 {#if showTagManager}
     <TagManager 
         onclose={closeTagManagerModal}
+    />
+{/if}
+
+{#if showBiometricSetup}
+    <BiometricSetup 
+        onclose={closeBiometricSetupModal}
     />
 {/if}
 

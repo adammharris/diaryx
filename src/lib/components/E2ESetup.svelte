@@ -15,6 +15,11 @@
     let confirmPassword = $state('');
     let error = $state('');
     let isLoading = $state(false);
+    
+    // Biometric state
+    let biometricAvailable = $state(false);
+    let biometricEnabled = $state(false);
+    let attemptingBiometric = $state(false);
 
     // Derived state
     let e2eSession = $derived($e2eSessionStore);
@@ -25,6 +30,8 @@
     $effect(() => {
         if (hasStoredKeys && !e2eSession?.isUnlocked) {
             setupStep = 'existing';
+            // Check biometric availability when showing existing flow
+            checkBiometricStatus();
         } else if (e2eSession?.isUnlocked) {
             setupStep = 'success';
         } else {
@@ -32,6 +39,47 @@
             checkForCloudKeys();
         }
     });
+
+    async function checkBiometricStatus() {
+        try {
+            biometricAvailable = await e2eEncryptionService.isBiometricAvailable();
+            biometricEnabled = e2eEncryptionService.isBiometricEnabled();
+            
+            // Auto-attempt biometric login if enabled
+            if (biometricEnabled && !attemptingBiometric) {
+                attemptBiometricLogin();
+            }
+        } catch (error) {
+            console.error('Failed to check biometric status:', error);
+        }
+    }
+
+    async function attemptBiometricLogin() {
+        if (attemptingBiometric || isLoading) return;
+        
+        attemptingBiometric = true;
+        error = '';
+        
+        try {
+            const success = await e2eEncryptionService.loginWithBiometric();
+            if (success) {
+                setupStep = 'success';
+                onSetupComplete();
+            } else {
+                // Biometric failed, user can enter password manually
+                console.log('Biometric authentication failed, fallback to password');
+            }
+        } catch (err) {
+            console.error('Biometric login error:', err);
+            // Don't show error for biometric failure, just fallback to password
+        } finally {
+            attemptingBiometric = false;
+        }
+    }
+
+    async function tryBiometricAgain() {
+        attemptBiometricLogin();
+    }
 
     async function checkForCloudKeys() {
         if (!currentUser) {
@@ -339,9 +387,50 @@
                     <div class="encryption-icon">🔓</div>
                     <h3>Welcome Back</h3>
                     <p class="description">
-                        You already have encryption set up. Enter your password to unlock 
-                        your encrypted journal entries.
+                        You already have encryption set up. 
+                        {#if biometricEnabled}
+                            Use biometric authentication or enter your password to unlock your encrypted journal entries.
+                        {:else}
+                            Enter your password to unlock your encrypted journal entries.
+                        {/if}
                     </p>
+
+                    {#if biometricEnabled}
+                        <div class="biometric-section">
+                            <div class="biometric-status">
+                                <span class="biometric-icon">🔐</span>
+                                <div class="biometric-info">
+                                    <strong>Biometric Authentication</strong>
+                                    <p>
+                                        {#if attemptingBiometric}
+                                            Authenticating with biometrics...
+                                        {:else}
+                                            Use your device's biometric authentication to unlock
+                                        {/if}
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            {#if !attemptingBiometric}
+                                <button 
+                                    class="btn btn-biometric" 
+                                    onclick={tryBiometricAgain}
+                                    disabled={isLoading}
+                                >
+                                    🔐 Use Biometric Authentication
+                                </button>
+                            {:else}
+                                <div class="biometric-loading">
+                                    <div class="spinner"></div>
+                                    <span>Waiting for biometric authentication...</span>
+                                </div>
+                            {/if}
+                            
+                            <div class="divider">
+                                <span>or</span>
+                            </div>
+                        </div>
+                    {/if}
 
                     <div class="password-field">
                         <label for="unlock-password">Encryption Password</label>
@@ -350,7 +439,7 @@
                             type="password"
                             bind:value={password}
                             placeholder="Enter your encryption password"
-                            disabled={isLoading}
+                            disabled={isLoading || attemptingBiometric}
                             autocomplete="current-password"
                         />
                     </div>
@@ -363,9 +452,9 @@
                         <button 
                             class="btn btn-primary" 
                             onclick={unlockExisting}
-                            disabled={!password || isLoading}
+                            disabled={!password || isLoading || attemptingBiometric}
                         >
-                            {isLoading ? 'Unlocking...' : 'Unlock'}
+                            {isLoading ? 'Unlocking...' : 'Unlock with Password'}
                         </button>
                         <button class="btn btn-secondary" onclick={handleClose}>
                             Cancel
@@ -663,6 +752,112 @@
         margin: 0;
         font-size: 0.875rem;
         color: var(--color-textSecondary, #6b7280);
+    }
+
+    /* Biometric authentication styles */
+    .biometric-section {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background: var(--color-background, #f8fafc);
+        border-radius: 8px;
+        border: 1px solid var(--color-border, #e5e7eb);
+    }
+
+    .biometric-status {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .biometric-icon {
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .biometric-info {
+        flex: 1;
+    }
+
+    .biometric-info strong {
+        display: block;
+        font-weight: 600;
+        color: var(--color-text, #1f2937);
+        margin-bottom: 0.25rem;
+    }
+
+    .biometric-info p {
+        color: var(--color-textSecondary, #6b7280);
+        font-size: 0.875rem;
+        margin: 0;
+        line-height: 1.4;
+    }
+
+    .btn-biometric {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+
+    .btn-biometric:hover:not(:disabled) {
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        transform: translateY(-1px);
+    }
+
+    .biometric-loading {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        background: var(--color-surface, white);
+        border-radius: 6px;
+        border: 1px solid var(--color-border, #e5e7eb);
+        margin-bottom: 1rem;
+    }
+
+    .biometric-loading .spinner {
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 2px solid var(--color-border, #e5e7eb);
+        border-top: 2px solid var(--color-primary, #3b82f6);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .biometric-loading span {
+        color: var(--color-textSecondary, #6b7280);
+        font-size: 0.875rem;
+    }
+
+    .divider {
+        text-align: center;
+        position: relative;
+        margin: 1rem 0;
+    }
+
+    .divider::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: var(--color-border, #e5e7eb);
+    }
+
+    .divider span {
+        background: var(--color-background, #f8fafc);
+        padding: 0 1rem;
+        color: var(--color-textSecondary, #6b7280);
+        font-size: 0.875rem;
+        position: relative;
     }
 
     .password-field {

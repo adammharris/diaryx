@@ -8,6 +8,7 @@ import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { KeyManager, type UserKeyPair, type UserKeyPairB64 } from '../crypto/KeyManager.js';
 import { EntryCryptor, type EntryObject, type EncryptedEntryData } from '../crypto/EntryCryptor.js';
+import { biometricAuthService, type BiometricAuthResult } from './biometric-auth.service.js';
 import nacl from 'tweetnacl';
 import { decodeBase64 } from 'tweetnacl-util';
 
@@ -22,6 +23,9 @@ interface StoredUserKeys {
   encryptedSecretKeyB64: string;
   publicKeyB64: string;
   userId: string;
+  // Biometric authentication data (optional)
+  biometricEnabled?: boolean;
+  encryptedPasswordB64?: string; // E2E password encrypted with biometric data
 }
 
 export class E2EEncryptionService {
@@ -202,6 +206,210 @@ export class E2EEncryptionService {
     }
     
     this.sessionStore.set(null);
+  }
+
+  /**
+   * Check if biometric authentication is available and enabled
+   */
+  async isBiometricAvailable(): Promise<boolean> {
+    if (!browser) return false;
+    
+    const isSupported = await biometricAuthService.isSupported();
+    const hasStoredKeys = this.hasStoredKeys();
+    
+    return isSupported && hasStoredKeys;
+  }
+
+  /**
+   * Check if biometric authentication is enabled for the current user
+   */
+  isBiometricEnabled(): boolean {
+    if (!browser) return false;
+    
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (!stored) return false;
+
+      const storedKeys: StoredUserKeys = JSON.parse(stored);
+      return storedKeys.biometricEnabled === true && !!storedKeys.encryptedPasswordB64;
+    } catch (error) {
+      console.error('Failed to check biometric status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Enable biometric authentication for the current user
+   */
+  async enableBiometric(password: string): Promise<boolean> {
+    if (!browser) {
+      console.error('Biometric authentication not available outside browser');
+      return false;
+    }
+
+    if (!await this.isBiometricAvailable()) {
+      console.error('Biometric authentication not available on this device');
+      return false;
+    }
+
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (!stored) {
+        console.error('No stored keys found');
+        return false;
+      }
+
+      const storedKeys: StoredUserKeys = JSON.parse(stored);
+      
+      // Verify the password works first
+      if (!this.login(password)) {
+        console.error('Invalid password provided');
+        return false;
+      }
+
+      // Create biometric credential
+      const credential = await biometricAuthService.createCredential(storedKeys.userId);
+      if (!credential) {
+        console.error('Failed to create biometric credential');
+        return false;
+      }
+
+      // Authenticate immediately to get authenticator data for encryption
+      const authResult = await biometricAuthService.authenticate();
+      if (!authResult.success || !authResult.authenticatorData) {
+        console.error('Biometric authentication failed after creation');
+        biometricAuthService.removeCredential();
+        return false;
+      }
+
+      // Encrypt the password with biometric data
+      const encryptedPassword = await biometricAuthService.encryptPassword(
+        password, 
+        authResult.authenticatorData
+      );
+
+      // Update stored keys with biometric data
+      const updatedKeys: StoredUserKeys = {
+        ...storedKeys,
+        biometricEnabled: true,
+        encryptedPasswordB64: encryptedPassword
+      };
+
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(updatedKeys));
+      
+      console.log('Biometric authentication enabled successfully');
+      return true;
+
+    } catch (error) {
+      console.error('Failed to enable biometric authentication:', error);
+      // Clean up any partial setup
+      biometricAuthService.removeCredential();
+      return false;
+    }
+  }
+
+  /**
+   * Disable biometric authentication
+   */
+  disableBiometric(): boolean {
+    if (!browser) return false;
+
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (!stored) return false;
+
+      const storedKeys: StoredUserKeys = JSON.parse(stored);
+      
+      // Remove biometric data from stored keys
+      const updatedKeys: StoredUserKeys = {
+        encryptedSecretKeyB64: storedKeys.encryptedSecretKeyB64,
+        publicKeyB64: storedKeys.publicKeyB64,
+        userId: storedKeys.userId
+        // Remove biometric fields
+      };
+
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(updatedKeys));
+      
+      // Remove biometric credential
+      biometricAuthService.removeCredential();
+      
+      console.log('Biometric authentication disabled');
+      return true;
+
+    } catch (error) {
+      console.error('Failed to disable biometric authentication:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Attempt to login using biometric authentication
+   */
+  async loginWithBiometric(): Promise<boolean> {
+    if (!browser) {
+      console.error('Biometric authentication not available outside browser');
+      return false;
+    }
+
+    if (!this.isBiometricEnabled()) {
+      console.error('Biometric authentication not enabled');
+      return false;
+    }
+
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (!stored) {
+        console.error('No stored keys found');
+        return false;
+      }
+
+      const storedKeys: StoredUserKeys = JSON.parse(stored);
+      if (!storedKeys.encryptedPasswordB64) {
+        console.error('No encrypted password found');
+        return false;
+      }
+
+      // Authenticate with biometrics
+      const authResult: BiometricAuthResult = await biometricAuthService.authenticate();
+      if (!authResult.success || !authResult.authenticatorData) {
+        console.error('Biometric authentication failed:', authResult.error);
+        return false;
+      }
+
+      // Decrypt password using biometric data
+      const password = await biometricAuthService.decryptPassword(
+        storedKeys.encryptedPasswordB64,
+        authResult.authenticatorData
+      );
+
+      // Use decrypted password for normal login
+      const loginSuccess = this.login(password);
+      
+      // Clear password from memory immediately
+      password.replace(/./g, '0'); // Overwrite string content
+      
+      if (loginSuccess) {
+        console.log('Biometric login successful');
+        return true;
+      } else {
+        console.error('Login failed with decrypted password');
+        return false;
+      }
+
+    } catch (error) {
+      console.error('Biometric login failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get biometric credential information
+   */
+  getBiometricInfo(): { enabled: boolean; credentialInfo: any } {
+    return {
+      enabled: this.isBiometricEnabled(),
+      credentialInfo: biometricAuthService.getCredentialInfo()
+    };
   }
 
   /**
