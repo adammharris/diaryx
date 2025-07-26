@@ -995,14 +995,11 @@ class StorageService {
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 			console.log("Fetching from:", `${apiUrl}/api/entries`);
 			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
-				method: 'PUT',
+				method: 'DELETE',
 				headers: {
 					'Content-Type': 'application/json',
 					...apiAuthService.getAuthHeaders()
-				},
-				body: JSON.stringify({
-					is_published: false
-				})
+				}
 			});
 
 			if (!response.ok) {
