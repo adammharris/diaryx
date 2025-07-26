@@ -33,6 +33,8 @@
     let error = $state<string | null>(null);
     let selectedEntryId = $state<string | null>(null);
     let searchQuery = $state('');
+    let hasAttemptedLoad = $state(false);
+    let fetchSucceeded = $state(false);
 
     // Reactive state for authentication and encryption
     let authSession = $derived($apiAuthStore);
@@ -70,6 +72,8 @@
             console.log('Starting to load shared entries...');
             isLoading = true;
             error = null;
+            hasAttemptedLoad = true;
+            fetchSucceeded = false;
             
             // Fetch shared entries from the API
             const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/api/entries/shared-with-me`, {
@@ -89,30 +93,30 @@
             console.log('API response:', result); // Debug log
             
             if (result.success) {
+                fetchSucceeded = true; // Mark as successful fetch
+                
                 // Check if we have data
                 if (!result.data || !Array.isArray(result.data)) {
                     console.warn('API returned success but no data array:', result);
                     sharedEntries = [];
-                    return;
-                }
-                
-                console.log(`Processing ${result.data.length} shared entries`);
-                
-                // Filter out any entries authored by current user (client-side safety check)
-                const filteredEntries = result.data.filter((entry: any) => {
-                    const isOwnEntry = entry.author_id === authSession?.user?.id;
-                    if (isOwnEntry) {
-                        console.warn('Filtering out own entry from shared list:', entry.id);
+                } else {
+                    console.log(`Processing ${result.data.length} shared entries`);
+                    
+                    // Filter out any entries authored by current user (client-side safety check)
+                    const filteredEntries = result.data.filter((entry: any) => {
+                        const isOwnEntry = entry.author_id === authSession?.user?.id;
+                        if (isOwnEntry) {
+                            console.warn('Filtering out own entry from shared list:', entry.id);
+                        }
+                        return !isOwnEntry;
+                    });
+                    
+                    if (filteredEntries.length !== result.data.length) {
+                        console.log(`Filtered out ${result.data.length - filteredEntries.length} own entries from shared list`);
                     }
-                    return !isOwnEntry;
-                });
-                
-                if (filteredEntries.length !== result.data.length) {
-                    console.log(`Filtered out ${result.data.length - filteredEntries.length} own entries from shared list`);
-                }
 
-                // Transform API response to SharedEntry format for display
-                sharedEntries = filteredEntries.map((entry: any) => {
+                    // Transform API response to SharedEntry format for display
+                    sharedEntries = filteredEntries.map((entry: any) => {
                     
                     // Safely extract author information
                     const authorName = entry.author?.display_name || entry.author?.name || entry.author?.username || 'Unknown Author';
@@ -183,6 +187,7 @@
                         }
                     };
                 });
+                }
             } else {
                 error = result.error || 'Failed to load shared entries';
             }
@@ -205,6 +210,8 @@
     }
 
     async function handleRefresh() {
+        hasAttemptedLoad = false; // Reset the flag to allow fresh load
+        fetchSucceeded = false; // Reset fetch success flag
         await loadSharedEntries();
     }
 
@@ -215,7 +222,7 @@
 
     // Watch for auth/encryption state changes
     $effect(() => {
-        if (canViewShared && sharedEntries.length === 0 && !isLoading) {
+        if (canViewShared && !hasAttemptedLoad && !isLoading) {
             loadSharedEntries();
         }
     });
@@ -295,12 +302,20 @@
                             {#if searchQuery}
                                 <p>No shared entries match your search for "{searchQuery}"</p>
                             {:else if sharedEntries.length === 0}
-                                <div class="empty-icon">📝</div>
-                                <h3>No Shared Entries</h3>
-                                <p>No entries have been shared with you yet.</p>
-                                <p class="text-secondary">
-                                    When other users share entries with tags you have access to, they will appear here.
-                                </p>
+                                {#if fetchSucceeded}
+                                    <!-- Successfully fetched but got 0 entries -->
+                                    <div class="empty-icon">📝</div>
+                                    <h3>No Shared Entries</h3>
+                                    <p>No entries have been shared with you yet.</p>
+                                    <p class="text-secondary">
+                                        When other users share entries with tags you have access to, they will appear here.
+                                    </p>
+                                {:else}
+                                    <!-- Haven't successfully fetched yet or fetch failed -->
+                                    <div class="empty-icon">🔄</div>
+                                    <h3>Loading Shared Entries</h3>
+                                    <p>Checking for entries shared with you...</p>
+                                {/if}
                             {:else}
                                 <p>No entries match your search</p>
                             {/if}
