@@ -542,6 +542,11 @@ export class E2EEncryptionService {
       console.log('=== E2E Service Decryption Result ===');
       console.log('Decryption result:', result ? 'success' : 'failed');
       
+      if (!result) {
+        console.log('=== Running specific data test on failed decryption ===');
+        this.testSpecificEncryptionData(encryptedData, authorPublicKeyB64);
+      }
+      
       return result;
     } catch (error) {
       console.error('Entry decryption failed:', error);
@@ -698,6 +703,28 @@ export class E2EEncryptionService {
   }
 
   /**
+   * Debug method: Compare encrypted data between what was sent and what was received
+   */
+  debugCompareEncryptedData(sentData: EncryptedEntryData, receivedData: EncryptedEntryData): void {
+    console.log('=== Encrypted Data Comparison ===');
+    console.log('Sent encryptedContentB64:', sentData.encryptedContentB64);
+    console.log('Received encryptedContentB64:', receivedData.encryptedContentB64);
+    console.log('Content matches:', sentData.encryptedContentB64 === receivedData.encryptedContentB64);
+    
+    console.log('Sent contentNonceB64:', sentData.contentNonceB64);
+    console.log('Received contentNonceB64:', receivedData.contentNonceB64);
+    console.log('Nonce matches:', sentData.contentNonceB64 === receivedData.contentNonceB64);
+    
+    console.log('Sent encryptedEntryKeyB64:', sentData.encryptedEntryKeyB64);
+    console.log('Received encryptedEntryKeyB64:', receivedData.encryptedEntryKeyB64);
+    console.log('Entry key matches:', sentData.encryptedEntryKeyB64 === receivedData.encryptedEntryKeyB64);
+    
+    console.log('Sent keyNonceB64:', sentData.keyNonceB64);
+    console.log('Received keyNonceB64:', receivedData.keyNonceB64);
+    console.log('Key nonce matches:', sentData.keyNonceB64 === receivedData.keyNonceB64);
+  }
+
+  /**
    * Debug method: Test encryption/decryption round-trip
    */
   testEncryptionRoundTrip(): boolean {
@@ -806,6 +833,83 @@ export class E2EEncryptionService {
       
     } catch (error) {
       console.error('Analysis failed:', error);
+    }
+  }
+
+  /**
+   * Debug method: Test encryption/decryption with specific data that's failing
+   */
+  testSpecificEncryptionData(encryptedData: EncryptedEntryData, authorPublicKeyB64: string): void {
+    if (!this.currentSession || !this.currentSession.isUnlocked) {
+      console.error('Cannot test - session not unlocked');
+      return;
+    }
+
+    console.log('=== Testing Specific Failed Data ===');
+    
+    try {
+      // First, let's see if we can decrypt the entry key successfully
+      const authorPublicKey = KeyManager.publicKeyFromB64(authorPublicKeyB64);
+      const encryptedEntryKey = decodeBase64(encryptedData.encryptedEntryKeyB64);
+      const keyNonce = decodeBase64(encryptedData.keyNonceB64);
+      
+      console.log('Attempting to decrypt entry key...');
+      const entryKey = nacl.box.open(encryptedEntryKey, keyNonce, authorPublicKey, this.currentSession.userKeyPair.secretKey);
+      
+      if (!entryKey) {
+        console.error('❌ Entry key decryption failed');
+        return;
+      }
+      
+      console.log('✅ Entry key decrypted successfully');
+      
+      // Now let's try to decrypt the content
+      const encryptedContent = decodeBase64(encryptedData.encryptedContentB64);
+      const contentNonce = decodeBase64(encryptedData.contentNonceB64);
+      
+      console.log('Attempting to decrypt content...');
+      const decryptedContentBytes = nacl.secretbox.open(encryptedContent, contentNonce, entryKey);
+      
+      if (!decryptedContentBytes) {
+        console.error('❌ Content decryption failed');
+        
+        // Let's try encrypting some test data with the recovered key to see if it works
+        console.log('Testing recovered key with fresh data...');
+        const testData = 'test data with recovered key';
+        const testBytes = new TextEncoder().encode(testData);
+        const testNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+        const testEncrypted = nacl.secretbox(testBytes, testNonce, entryKey);
+        const testDecrypted = nacl.secretbox.open(testEncrypted, testNonce, entryKey);
+        
+        if (testDecrypted) {
+          console.log('✅ Recovered key works for new data - original content is corrupted');
+          console.log('Decrypted test:', new TextDecoder().decode(testDecrypted));
+        } else {
+          console.error('❌ Recovered key doesn\'t work even for new data');
+        }
+        
+        // Let's also try using the original content nonce with fresh data
+        console.log('Testing original content nonce with fresh data...');
+        const testWithOriginalNonce = nacl.secretbox(testBytes, contentNonce, entryKey);
+        const testDecryptedWithOriginalNonce = nacl.secretbox.open(testWithOriginalNonce, contentNonce, entryKey);
+        
+        if (testDecryptedWithOriginalNonce) {
+          console.log('✅ Original nonce works - content data is definitely corrupted');
+        } else {
+          console.error('❌ Original nonce doesn\'t work with fresh data');
+        }
+        
+      } else {
+        console.log('✅ Content decrypted successfully');
+        const entryJson = new TextDecoder().decode(decryptedContentBytes);
+        console.log('Decrypted content:', entryJson);
+      }
+      
+      // Clear the entry key
+      KeyManager.clearKey(entryKey);
+      
+    } catch (error) {
+      console.error('Test failed with error:', error);
     }
   }
 

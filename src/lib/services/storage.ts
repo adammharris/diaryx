@@ -554,6 +554,40 @@ class StorageService {
 		await tx.done;
 	}
 
+	/**
+	 * Cache a single metadata entry without affecting other entries
+	 */
+	private async cacheSingleMetadata(metadata: JournalEntryMetadata): Promise<void> {
+		const db = await this.initDB();
+		const tx = db.transaction('metadata', 'readwrite');
+		const store = tx.objectStore('metadata');
+		await store.put(metadata);
+		await tx.done;
+		console.log('Cached metadata for entry:', metadata.id, metadata.title);
+	}
+
+	/**
+	 * Debug method to check metadata table state
+	 */
+	private async debugMetadataTable(): Promise<void> {
+		try {
+			const db = await this.initDB();
+			const tx = db.transaction('metadata', 'readonly');
+			const store = tx.objectStore('metadata');
+			const allMetadata = await store.getAll();
+			await tx.done;
+			
+			console.log('=== METADATA TABLE DEBUG ===');
+			console.log('Total entries in metadata table:', allMetadata.length);
+			for (const metadata of allMetadata) {
+				console.log(`  - ID: ${metadata.id}, Title: ${metadata.title}, Published: ${metadata.isPublished}`);
+			}
+			console.log('=== END METADATA DEBUG ===');
+		} catch (error) {
+			console.error('Failed to debug metadata table:', error);
+		}
+	}
+
 	private async getCachedMetadata(): Promise<JournalEntryMetadata[]> {
 		const db = await this.initDB();
 		const index = db.transaction('metadata').store.index('by-date');
@@ -887,6 +921,10 @@ class StorageService {
 					...e2eEncryptionService.createEncryptionMetadata(),
 					contentNonceB64: encryptedData.contentNonceB64
 				};
+				
+				console.log('=== Publishing Encryption Metadata ===');
+				console.log('contentNonceB64 from encryptedData:', encryptedData.contentNonceB64);
+				console.log('Final encryptionMetadata:', encryptionMetadata);
 
 				// Prepare API payload according to backend schema
 				// Note: We're using the same encrypted content for both title and content for now
@@ -914,6 +952,14 @@ class StorageService {
 					encrypted_content: apiPayload.encrypted_content?.substring(0, 50) + '...',
 					owner_encrypted_entry_key: apiPayload.owner_encrypted_entry_key?.substring(0, 50) + '...'
 				});
+				
+				// Debug: Log full encrypted content for comparison
+				console.log('=== Full Encrypted Data Being Sent ===');
+				console.log('encrypted_content (full):', apiPayload.encrypted_content);
+				console.log('encrypted_content length:', apiPayload.encrypted_content?.length);
+				console.log('contentNonceB64:', encryptionMetadata.contentNonceB64);
+				console.log('owner_encrypted_entry_key:', apiPayload.owner_encrypted_entry_key);
+				console.log('owner_key_nonce:', apiPayload.owner_key_nonce);
 
 				// Call the API to publish
 				const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
@@ -1244,6 +1290,9 @@ class StorageService {
 
 			console.log('Found', cloudEntries.length, 'cloud entries to import');
 
+			// Debug: Check initial metadata table state
+			await this.debugMetadataTable();
+
 			// Check if E2E encryption is available
 			const e2eSession = e2eEncryptionService.getCurrentSession();
 			if (!e2eSession || !e2eSession.isUnlocked) {
@@ -1262,6 +1311,13 @@ class StorageService {
 						hasAuthor: !!cloudEntry.author,
 						authorPublicKey: cloudEntry.author?.public_key?.substring(0, 20) + '...'
 					});
+					
+					// Debug: Log full encrypted data received from cloud
+					console.log('=== Full Encrypted Data Received from Cloud ===');
+					console.log('encrypted_content (full):', cloudEntry.encrypted_content);
+					console.log('encrypted_content length:', cloudEntry.encrypted_content?.length);
+					console.log('access_key.encrypted_entry_key:', cloudEntry.access_key?.encrypted_entry_key);
+					console.log('access_key.key_nonce:', cloudEntry.access_key?.key_nonce);
 					
 					// Skip if we already have this entry locally (check by cloud ID)
 					const existingLocalId = await this.getLocalIdByCloudId(cloudEntry.id);
@@ -1286,8 +1342,25 @@ class StorageService {
 
 					// Check if we have access key for this entry
 					if (!cloudEntry.access_key?.encrypted_entry_key) {
-						console.log('No access key for entry, skipping:', cloudEntry.id);
-						continue;
+						// Check if this is our own entry - we might be able to use owner keys
+						const currentUserId = e2eEncryptionService.getCurrentUserId();
+						const currentUserPublicKey = e2eEncryptionService.getCurrentPublicKey();
+						
+						if (cloudEntry.author?.id === currentUserId && 
+							cloudEntry.author?.public_key === currentUserPublicKey &&
+							cloudEntry.owner_encrypted_entry_key && 
+							cloudEntry.owner_key_nonce) {
+							
+							console.log('Using owner keys for self-owned entry:', cloudEntry.id);
+							// Create a temporary access_key object from owner keys
+							cloudEntry.access_key = {
+								encrypted_entry_key: cloudEntry.owner_encrypted_entry_key,
+								key_nonce: cloudEntry.owner_key_nonce
+							};
+						} else {
+							console.log('No access key for entry, skipping:', cloudEntry.id);
+							continue;
+						}
 					}
 
 					// Parse encryption metadata to get content nonce
@@ -1296,6 +1369,11 @@ class StorageService {
 						encryptionMetadata = typeof cloudEntry.encryption_metadata === 'string' 
 							? JSON.parse(cloudEntry.encryption_metadata) 
 							: cloudEntry.encryption_metadata;
+							
+						console.log('=== Encryption Metadata Debug ===');
+						console.log('Raw encryption_metadata:', cloudEntry.encryption_metadata);
+						console.log('Parsed encryption_metadata:', encryptionMetadata);
+						console.log('Type of encryption_metadata:', typeof cloudEntry.encryption_metadata);
 					} catch (error) {
 						console.log('Failed to parse encryption metadata, skipping:', cloudEntry.id);
 						continue;
@@ -1303,8 +1381,10 @@ class StorageService {
 
 					// Get content nonce from encryption metadata
 					const contentNonceB64 = encryptionMetadata.contentNonceB64;
+					console.log('Extracted contentNonceB64:', contentNonceB64);
 					if (!contentNonceB64) {
 						console.log('No content nonce found in encryption metadata, skipping:', cloudEntry.id);
+						console.log('Available metadata keys:', Object.keys(encryptionMetadata || {}));
 						continue;
 					}
 
@@ -1381,7 +1461,7 @@ class StorageService {
 						await db.put('entries', journalEntry);
 					}
 
-					// Cache the entry metadata  
+					// Cache the entry metadata directly without affecting other entries
 					const metadata: JournalEntryMetadata = {
 						id: journalEntry.id,
 						title: journalEntry.title,
@@ -1391,7 +1471,11 @@ class StorageService {
 						preview: PreviewService.createPreview(journalEntry.content),
 						isPublished: true // Entries imported from cloud are by definition published
 					};
-					await this.cacheMetadata([metadata]);
+					await this.cacheSingleMetadata(metadata);
+					
+					// Also notify the metadata store for immediate UI update
+					metadataStore.updateEntryMetadata(journalEntry.id, metadata);
+					console.log('Added entry to metadata store:', journalEntry.id, metadata.title);
 
 					// Store the cloud mapping with server timestamp
 					await this.storeCloudMapping(localId, cloudEntry.id, cloudEntry.updated_at);
@@ -1405,6 +1489,23 @@ class StorageService {
 			}
 
 			console.log('Successfully imported', importedCount, 'entries from cloud');
+			
+			// Debug: Check metadata table state after import
+			await this.debugMetadataTable();
+			
+			// If we imported any entries, refresh the UI by reloading all entries
+			if (importedCount > 0) {
+				console.log('Refreshing UI with imported entries...');
+				try {
+					// Reload all entries to include the newly imported ones
+					const allEntries = await this.getAllEntries();
+					console.log('UI refreshed with', allEntries.length, 'total entries');
+					console.log('Entry IDs in metadata store:', allEntries.map(e => e.id));
+				} catch (error) {
+					console.error('Failed to refresh UI after import:', error);
+				}
+			}
+			
 			return importedCount;
 		} finally {
 			this.syncInProgress = false;
@@ -1443,7 +1544,12 @@ class StorageService {
 				const importedCount = await this.importCloudEntries();
 				if (importedCount > 0) {
 					// Refresh the UI by reloading entries
-					console.log('Post-login sync completed successfully');
+					console.log('Post-login sync completed, refreshing UI...');
+					try {
+						await this.getAllEntries(); // This will refresh the metadataStore
+					} catch (error) {
+						console.error('Failed to refresh UI after sync:', error);
+					}
 				}
 				return importedCount;
 			} else {

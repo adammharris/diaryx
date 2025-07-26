@@ -11,7 +11,6 @@ Here is my todo list.
 - "returned null" error, trouble fetching+decryping entries from database on second session/other device (HIGH PRIORITY)
 - Modals on mobile are sometimes too far down
 - Typing to name a tag is only possible on mobile
-- "Shared entries" page shows your own entries (should only show entries from others that have been shared with you)
 - When choosing people to add to a tag, it shows yourself as an option (it should only show people beside yourself)
 - Searching for users should be overhauled to be more private
 - Optimize more components for /lib/styles

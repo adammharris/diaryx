@@ -71,13 +71,21 @@ export class EntryCryptor {
       
       // Serialize the entry object to JSON and convert to bytes
       const entryJson = JSON.stringify(entryObject);
+      console.log('=== Encryption Debug ===');
+      console.log('Entry JSON to encrypt:', entryJson);
+      console.log('Entry JSON length:', entryJson.length);
+      
       const entryBytes = new TextEncoder().encode(entryJson);
+      console.log('Entry bytes length:', entryBytes.length);
       
       // Generate nonce for content encryption
       const contentNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
       
       // Encrypt the entry content with the symmetric key
       const encryptedContent = nacl.secretbox(entryBytes, contentNonce, entryKey);
+      console.log('Encrypted content length:', encryptedContent.length);
+      console.log('Entry key length:', entryKey.length);
+      console.log('Content nonce length:', contentNonce.length);
 
       // Encrypt the entry key with the owner's public key (asymmetric encryption)
       const keyNonce = nacl.randomBytes(nacl.box.nonceLength);
@@ -86,12 +94,21 @@ export class EntryCryptor {
       // Clear the entry key from memory
       secureClear(entryKey);
       
-      return {
+      const result = {
         encryptedContentB64: encodeBase64(encryptedContent),
         contentNonceB64: encodeBase64(contentNonce),
         encryptedEntryKeyB64: encodeBase64(encryptedEntryKey),
         keyNonceB64: encodeBase64(keyNonce)
       };
+      
+      console.log('=== Final Encryption Result ===');
+      console.log('encryptedContentB64:', result.encryptedContentB64);
+      console.log('encryptedContentB64 length:', result.encryptedContentB64.length);
+      console.log('contentNonceB64:', result.contentNonceB64);
+      console.log('encryptedEntryKeyB64:', result.encryptedEntryKeyB64);
+      console.log('keyNonceB64:', result.keyNonceB64);
+      
+      return result;
     } catch (error) {
       throw new Error(`Entry encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -204,6 +221,45 @@ export class EntryCryptor {
       
       if (!decryptedContentBytes) {
         console.error('Failed to decrypt entry content - nacl.secretbox.open returned null');
+        
+        // Additional debugging to understand why decryption failed
+        console.log('=== Failed Decryption Analysis ===');
+        console.log('Entry key hex (first 32 chars):', uint8ArrayToHex(entryKey).substring(0, 32));
+        console.log('Content nonce hex (first 32 chars):', uint8ArrayToHex(contentNonce).substring(0, 32));
+        console.log('Encrypted content hex (first 64 chars):', uint8ArrayToHex(encryptedContent).substring(0, 64));
+        console.log('Encrypted content hex (last 32 chars):', uint8ArrayToHex(encryptedContent).substring(-32));
+        
+        // Log the full encrypted content as Base64 for comparison
+        console.log('Encrypted content as Base64:', encodeBase64(encryptedContent));
+        console.log('Original encryptedContentB64 input:', encryptedData.encryptedContentB64);
+        console.log('Base64 strings match:', encodeBase64(encryptedContent) === encryptedData.encryptedContentB64);
+        
+        // Check if there's a length mismatch after Base64 decoding/encoding
+        const reEncodedContent = encodeBase64(encryptedContent);
+        if (reEncodedContent !== encryptedData.encryptedContentB64) {
+          console.log('❌ BASE64 MISMATCH DETECTED!');
+          console.log('Original length:', encryptedData.encryptedContentB64.length);
+          console.log('Re-encoded length:', reEncodedContent.length);
+          console.log('First difference at character:', 
+            Array.from(encryptedData.encryptedContentB64).findIndex((char, i) => char !== reEncodedContent[i]));
+        }
+        
+        // Try to create a test encryption with the same key and nonce
+        console.log('=== Testing with same key/nonce ===');
+        try {
+          const testData = 'test';
+          const testBytes = new TextEncoder().encode(testData);
+          const testEncrypted = nacl.secretbox(testBytes, contentNonce, entryKey);
+          const testDecrypted = nacl.secretbox.open(testEncrypted, contentNonce, entryKey);
+          console.log('Test encryption/decryption with same key/nonce:', testDecrypted ? 'SUCCESS' : 'FAILED');
+          
+          if (testDecrypted) {
+            console.log('Same key/nonce works - encrypted content is likely corrupted');
+          }
+        } catch (testError) {
+          console.error('Test encryption failed:', testError);
+        }
+        
         // Clear the entry key from memory
         secureClear(entryKey);
         return null;
@@ -211,7 +267,12 @@ export class EntryCryptor {
       
       // Convert decrypted bytes to string and parse JSON
       const entryJson = new TextDecoder().decode(decryptedContentBytes);
+      console.log('=== Decryption Success ===');
+      console.log('Decrypted JSON:', entryJson);
+      console.log('Decrypted JSON length:', entryJson.length);
+      
       const entryObject = JSON.parse(entryJson) as EntryObject;
+      console.log('Parsed entry object:', entryObject);
       
       // Clear sensitive data from memory
       secureClear(entryKey);
