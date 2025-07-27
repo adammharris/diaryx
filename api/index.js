@@ -94,7 +94,14 @@ async function handleRequest(req) {
           return match ? match[1] : url.searchParams.get(key);
         },
         query: () => Object.fromEntries(url.searchParams.entries()),
-        json: () => req.json()
+        json: () => req.json(),
+        text: () => req.text ? req.text() : (async () => {
+          // Fallback for environments where req.text() doesn't exist
+          if (req.body) {
+            return typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+          }
+          return '';
+        })()
       },
       json: (data, status = 200) => {
         return new Response(JSON.stringify(data), {
