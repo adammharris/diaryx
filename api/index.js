@@ -4,8 +4,6 @@
  */
 
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 
 // Import all handlers from the new routes directory
 import { googleAuthHandler } from './routes/auth.js';
@@ -42,17 +40,29 @@ import {
 
 const app = new Hono();
 
-// CORS middleware
-app.use('*' , cors({
-  origin: process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production'
+// Manual CORS handling for Vercel compatibility
+app.use('*', async (c, next) => {
+  const origin = c.req.header('origin');
+  const allowedOrigins = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production'
     ? (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['https://diaryx-two.vercel.app'])
-    : ['http://localhost:5173', 'http://localhost:3000', 'tauri://localhost'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-User-ID'],
-  credentials: true
-}));
-
-// Logging middleware
-app.use('*', logger());
+    : ['http://localhost:5173', 'http://localhost:3000', 'tauri://localhost'];
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    c.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    c.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-ID');
+  c.header('Access-Control-Allow-Credentials', 'true');
+  
+  if (c.req.method === 'OPTIONS') {
+    return c.text('', 200);
+  }
+  
+  await next();
+});
 
 // Health check endpoint
 app.get('/api/health', (c) => {
