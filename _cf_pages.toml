@@ -1,0 +1,31 @@
+# Cloudflare Pages Configuration
+
+# Build settings
+[build]
+  command = "bun run build:cloudflare"
+  publish = ".svelte-kit/output/client"
+
+# Environment variables
+[build.environment]
+  NODE_VERSION = "18"
+
+# Functions configuration
+[[redirects]]
+  from = "/api/*"
+  to = "/api/:splat"
+  status = 200
+
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Cache static assets
+[[headers]]
+  for = "/_app/immutable/*"
+  [headers.values]
+    Cache-Control = "public, immutable, max-age=31536000"

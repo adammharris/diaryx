@@ -1,10 +1,12 @@
-// Hybrid adapter configuration for both Tauri and Vercel deployment
+// Hybrid adapter configuration for Tauri, Vercel, and Cloudflare Pages deployment
 import adapterStatic from "@sveltejs/adapter-static";
 import adapterVercel from "@sveltejs/adapter-vercel";
+import adapterCloudflare from "@sveltejs/adapter-cloudflare";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
-// Use Vercel adapter when deploying to Vercel, static adapter for Tauri
+// Determine which adapter to use based on environment
 const isVercelBuild = process.env.VERCEL;
+const isCloudflareBuild = process.env.CF_PAGES;
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -13,6 +15,14 @@ const config = {
     adapter: isVercelBuild 
       ? adapterVercel({
           // Vercel adapter configuration - use default runtime
+        })
+      : isCloudflareBuild
+      ? adapterCloudflare({
+          // Cloudflare Pages adapter configuration
+          routes: {
+            include: ["/*"],
+            exclude: ["<build>", "<files>", "<prerendered>"]
+          }
         })
       : adapterStatic({
           // Tauri static adapter configuration
