@@ -57,7 +57,8 @@ function setCorsHeaders(headers, origin) {
 
 // Route handler
 async function handleRequest(req) {
-  const url = new URL(req.url);
+  // Handle both absolute URLs and relative paths
+  const url = req.url.startsWith('http') ? new URL(req.url) : new URL(req.url, 'https://dummy.com');
   const path = url.pathname;
   const method = req.method;
   
