@@ -95,13 +95,21 @@ async function handleRequest(req) {
         },
         query: () => Object.fromEntries(url.searchParams.entries()),
         json: () => req.json(),
-        text: () => req.text ? req.text() : (async () => {
-          // Fallback for environments where req.text() doesn't exist
-          if (req.body) {
-            return typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+        text: async () => {
+          try {
+            if (req.text && typeof req.text === 'function') {
+              return await req.text();
+            } else if (req.body) {
+              return typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+            } else {
+              // Try to read from req directly
+              return req || '';
+            }
+          } catch (error) {
+            console.error('Error reading request text:', error);
+            return '';
           }
-          return '';
-        })()
+        }
       },
       json: (data, status = 200) => {
         return new Response(JSON.stringify(data), {
@@ -209,13 +217,23 @@ async function handleRequest(req) {
     
   } catch (error) {
     console.error('Global error handler:', error);
-    return new Response(JSON.stringify({
+    console.error('Error stack:', error.stack);
+    
+    // Ensure we always return valid JSON
+    const errorResponse = {
       success: false,
       error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-    }), {
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    };
+    
+    return new Response(JSON.stringify(errorResponse), {
       status: 500,
-      headers: { ...headers, 'Content-Type': 'application/json' }
+      headers: { 
+        ...headers, 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache'
+      }
     });
   }
 }
