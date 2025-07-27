@@ -62,9 +62,21 @@ async function handleRequest(req) {
   const path = url.pathname;
   const method = req.method;
   
+  // Handle different header formats (Vercel vs standard Request)
+  const getHeader = (key) => {
+    if (req.headers && typeof req.headers.get === 'function') {
+      return req.headers.get(key);
+    } else if (req.headers && req.headers[key]) {
+      return req.headers[key];
+    } else if (req.headers && req.headers[key.toLowerCase()]) {
+      return req.headers[key.toLowerCase()];
+    }
+    return null;
+  };
+  
   // CORS handling
   const headers = {};
-  setCorsHeaders(headers, req.headers.get('origin'));
+  setCorsHeaders(headers, getHeader('origin'));
   
   if (method === 'OPTIONS') {
     return new Response('', { status: 200, headers });
@@ -76,7 +88,7 @@ async function handleRequest(req) {
       req: {
         method,
         url: req.url,
-        header: (key) => req.headers.get(key),
+        header: getHeader,
         param: (key) => {
           const match = path.match(new RegExp(`/${key}/([^/]+)`));
           return match ? match[1] : url.searchParams.get(key);
