@@ -1,0 +1,81 @@
+# GitHub Action for building a Svelte project with Bun and deploying to GitHub Pages
+
+name: Build and Deploy Svelte to GitHub Pages
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push events but only for the "main" branch
+  push:
+    branches: ["main"]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets the necessary permissions for the GitHub token to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This job handles the entire build and deploy process
+  build-and-deploy:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # 1. Checkout Repository
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Setup Bun
+      # Installs the Bun runtime for building the project
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          # Specify the version of Bun to use. 
+          # Leaving it blank uses the latest version.
+          bun-version: latest 
+
+      # 3. Configure GitHub Pages
+      # Configures the environment for GitHub Pages deployment
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      # 4. Install Dependencies
+      # Installs the project dependencies using Bun's fast installer
+      - name: Install dependencies
+        run: bun install
+
+      # 5. Build the Svelte Project
+      # Runs the build script defined in your package.json
+      # The output is typically placed in a 'build' directory.
+      - name: Build project
+        run: bun run build
+        env:
+          # This is necessary if you are using SvelteKit's static adapter
+          # and need to specify the base path for GitHub Pages.
+          # Replace 'your-repo-name' with the name of your GitHub repository.
+          VITE_BASE_PATH: /${{ github.event.repository.name }}
+
+      # 6. Upload Artifact
+      # Uploads the build output as an artifact that the deployment job can use.
+      # SvelteKit's static adapter outputs to the 'build' directory by default.
+      # If your project outputs to a different directory (e.g., 'dist' or 'public'),
+      # change the 'path' accordingly.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './build'
+
+      # 7. Deploy to GitHub Pages
+      # This step actually deploys the uploaded artifact to GitHub Pages.
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
