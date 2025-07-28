@@ -76,7 +76,7 @@
             const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '218266264425-tthcdieo8qvgjbtuas06n5k35ip3e712.apps.googleusercontent.com';
 
             // IMPORTANT: This must be the EXACT URL of your callback page
-            const REDIRECT_URI = import.meta.env.GOOGLE_REDIRECT_URI || `${window.location.origin}/diaryx/auth/callback`;
+            const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
 
             // --- PKCE Code Generation ---
 
