@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:cloudflare": "wrangler pages dev .svelte-kit/output/client --compatibility-date 2023-12-01 --local --port 5173",
     "build": "vite build",
+    "build:cloudflare": "CF_PAGES=1 vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -15,6 +17,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@neondatabase/serverless": "^0.9.1",
     "@noble/ciphers": "^1.3.0",
     "@noble/hashes": "^1.8.0",
     "@radix-ui/react-slot": "^1.2.3",
@@ -27,16 +30,20 @@
     "@tauri-apps/plugin-shell": "^2.3.0",
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
+    "hono": "^4.8.9",
     "idb": "^8.0.3",
     "js-yaml": "^4.1.0",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.525.0",
     "marked": "^16.0.0",
     "svelte-markdown": "^0.4.1",
     "tauri-plugin-virtual-keyboard-api": "https://github.com/voxelbee/tauri-plugin-virtual-keyboard.git",
     "tweetnacl": "^1.0.3",
-    "tweetnacl-util": "^0.15.1"
+    "tweetnacl-util": "^0.15.1",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@sveltejs/adapter-cloudflare": "^4.7.4",
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
@@ -46,6 +53,7 @@
     "svelte-check": "^4.0.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.26.0"
   }
 }

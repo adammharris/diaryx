@@ -1,4 +1,3 @@
-
 import adapterStatic from "@sveltejs/adapter-static";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
@@ -6,8 +5,6 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapterStatic({
-          // Tauri static adapter configuration
           fallback: 'index.html',
           pages: 'build',
           assets: 'build',
