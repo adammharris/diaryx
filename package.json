@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "dev:cloudflare": "wrangler pages dev .svelte-kit/output/client --compatibility-date 2023-12-01 --local --port 5173",
     "build": "vite build",
-    "build:cloudflare": "CF_PAGES=1 vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",

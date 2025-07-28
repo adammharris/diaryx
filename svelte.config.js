@@ -5,11 +5,11 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-          fallback: 'index.html',
-          pages: 'build',
-          assets: 'build',
-          strict: false
-        }),
+    adapter: adapterStatic({
+      pages: 'build',
+      assets: 'build',
+      fallback: 'index.html'
+    })
   },
 };
 
