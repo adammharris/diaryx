@@ -68,7 +68,11 @@ jobs:
           # This is necessary if you are using SvelteKit's static adapter
           # and need to specify the base path for GitHub Pages.
           # Replace 'your-repo-name' with the name of your GitHub repository.
-          VITE_BASE_PATH: /${{ github.event.repository.name }}
+          VITE_BASE_PATH: ${{ github.event.repository.name }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          GOOGLE_REDIRECT_URI: ${{ vars.GOOGLE_REDIRECT_URI }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
 
       # 7. Upload Artifact
       # Uploads the build output as an artifact that the deployment job can use.
