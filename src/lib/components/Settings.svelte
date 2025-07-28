@@ -36,24 +36,13 @@
     let biometricAvailable = $state(false);
     let biometricEnabled = $state(false);
 
-    // Initialize detection when component mounts
     $effect(() => {
         platform = whichTauri();
-        
-        // Mobile detection
-        const checkMobile = () => {
-            isMobile = window.innerWidth <= 768;
-        };
-        
+        const checkMobile = () => { isMobile = window.innerWidth <= 768; };
         checkMobile();
         window.addEventListener('resize', checkMobile);
-        
-        // Check biometric status
         checkBiometricStatus();
-        
-        return () => {
-            window.removeEventListener('resize', checkMobile);
-        };
+        return () => { window.removeEventListener('resize', checkMobile); };
     });
 
     async function checkBiometricStatus() {
@@ -65,73 +54,92 @@
         }
     }
 
-    // Keep selectedTheme in sync with the store
-    $effect(() => {
-        selectedTheme = $currentTheme;
-    });
-
+    $effect(() => { selectedTheme = $currentTheme; });
     function handleThemeChange(themeName: string) {
         selectedTheme = themeName;
         setTheme(themeName);
     }
-
-    function handleClose() {
-        onclose?.();
-    }
-
-    function handleKeydown(event: KeyboardEvent) {
-        if (event.key === 'Escape') {
-            handleClose();
-        }
-    }
-
-    // Auth functions
-
+    function handleClose() { onclose?.(); }
+    function handleKeydown(event: KeyboardEvent) { if (event.key === 'Escape') { handleClose(); } }
     async function handleSignOut() {
         try {
             await apiAuthService.signOut();
             e2eEncryptionService.logout();
-        } catch (error) {
-            console.error('Sign out failed:', error);
-        }
+        } catch (error) { console.error('Sign out failed:', error); }
     }
 
+    // --- (FIXED) Google Sign-In Function ---
     async function handleGoogleSignIn() {
         try {
-            const session = await apiAuthService.signInWithGoogle();
-            console.log('Signed in successfully:', session.user.email);
+            // --- CONFIGURATION ---
+            // IMPORTANT: Replace with your actual Client ID from Google Cloud Console
+            const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '218266264425-tthcdieo8qvgjbtuas06n5k35ip3e712.apps.googleusercontent.com';
+
+            // IMPORTANT: This must be the EXACT URL of your callback page
+            const REDIRECT_URI = import.meta.env.GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
+
+            // --- PKCE Code Generation ---
+
+            // 1. Generate and store the code verifier
+            const generateRandomString = (length: number) => {
+                const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+                let text = '';
+                for (let i = 0; i < length; i++) {
+                    text += possible.charAt(Math.floor(Math.random() * possible.length));
+                }
+                return text;
+            };
+
+            const codeVerifier = generateRandomString(128);
+            // THIS IS THE CRUCIAL STEP: Store the verifier so the callback page can find it.
+            sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+
+            // 2. Create the code challenge
+            const sha256 = async (plain: string) => {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(plain);
+                return window.crypto.subtle.digest('SHA-256', data);
+            };
+
+            const base64urlencode = (a: ArrayBuffer) => {
+                // @ts-ignore
+                return btoa(String.fromCharCode.apply(null, new Uint8Array(a)))
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
+            };
+
+            const hashed = await sha256(codeVerifier);
+            const codeChallenge = base64urlencode(hashed);
+
+            // 3. Build the authorization URL
+            const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+            authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+            authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+            authUrl.searchParams.set('response_type', 'code');
+            authUrl.searchParams.set('scope', 'openid profile email');
+            authUrl.searchParams.set('code_challenge', codeChallenge);
+            authUrl.searchParams.set('code_challenge_method', 'S256');
+            authUrl.searchParams.set('access_type', 'offline');
+
+            // 4. Redirect the user to Google's login page
+            window.location.href = authUrl.toString();
+
         } catch (error) {
             console.error('Google sign in failed:', error);
+            // Note: alert() is generally not recommended in modern web apps.
+            // Consider using a modal or a toast notification for a better user experience.
             alert('Sign in failed. Please try again.');
         }
     }
 
-    function showE2ESetupModal() {
-        showE2ESetup = true;
-    }
-
-    function closeE2ESetupModal() {
-        showE2ESetup = false;
-    }
-
-    function handleE2ESetupComplete() {
-        // Modal will close automatically
-        console.log('E2E encryption setup completed successfully');
-    }
-
-    // Tag Manager functions
-    function showTagManagerModal() {
-        showTagManager = true;
-    }
-
-    function closeTagManagerModal() {
-        showTagManager = false;
-    }
-
-    // Biometric Setup functions
+    function showE2ESetupModal() { showE2ESetup = true; }
+    function closeE2ESetupModal() { showE2ESetup = false; }
+    function handleE2ESetupComplete() { console.log('E2E encryption setup completed successfully'); }
+    function showTagManagerModal() { showTagManager = true; }
+    function closeTagManagerModal() { showTagManager = false; }
     function closeBiometricSetupModal() {
         showBiometricSetup = false;
-        // Refresh biometric status after potential changes
         checkBiometricStatus();
     }
 </script>

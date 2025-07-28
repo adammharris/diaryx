@@ -1,218 +1,108 @@
 <script>
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
-  import { apiAuthService } from '$lib/services/api-auth.service.js';
   import { goto } from '$app/navigation';
 
+  // --- CONFIGURATION ---
+  // IMPORTANT: Replace with your actual Client ID from Google Cloud Console
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '218266264425-tthcdieo8qvgjbtuas06n5k35ip3e712.apps.googleusercontent.com';
+
+  // IMPORTANT: This must be the EXACT URL of this page
+  const REDIRECT_URI = import.meta.env.GOOGLE_REDIRECT_URI || `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`;
+
+  // --- Svelte State ---
   let status = 'processing'; // 'processing', 'success', 'error'
   let message = 'Processing authentication...';
 
   onMount(() => {
+    // The entire process must run in the browser
     if (browser) {
-      handleCallback();
+      handleStaticCallback();
     }
   });
 
-  async function handleCallback() {
-    try {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get('code');
-      const state = url.searchParams.get('state');
-      const error = url.searchParams.get('error');
+  async function handleStaticCallback() {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+    const error = url.searchParams.get('error');
 
+    // Retrieve the verifier that the login page should have stored
+    const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
+
+    try {
       if (error) {
-        throw new Error(`OAuth error: ${error}`);
+        throw new Error(`OAuth Error: ${error}`);
+      }
+      if (!code) {
+        throw new Error('Authorization code not found in URL. Please try logging in again.');
+      }
+      if (!codeVerifier) {
+        throw new Error('Security code verifier not found. Please start the login process again.');
       }
 
-      if (!code || !state) {
-        throw new Error('Missing authorization code or state');
-      }
-
-      // Check if this is a popup window (legacy web OAuth)
-      if (window.opener) {
-        handlePopupCallback(code, state);
-        return;
-      }
-
-      // Handle direct callback (web app navigation)
-      await handleDirectCallback(code, state);
-
-    } catch (error) {
-      console.error('Callback handling failed:', error);
-      status = 'error';
-      message = error.message;
-      
-      // If it's a popup, notify the parent
-      if (window.opener) {
-        window.opener.postMessage({ type: 'oauth_error', error: error.message });
-        window.close();
-      }
-    }
-  }
-
-  function handlePopupCallback(code, state) {
-    // Legacy popup-based OAuth flow
-    const redirectUri = `${window.location.origin}/auth/callback`;
-    
-    // Validate state
-    const originalState = window.opener.sessionStorage.getItem('oauth_state');
-    if (state !== originalState) {
-      window.opener.postMessage({ type: 'oauth_error', error: 'Invalid state parameter' });
-      window.close();
-      return;
-    }
-
-    // Exchange code for token via backend
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const apiUrl = apiBaseUrl ? `${apiBaseUrl}/api/auth/callback` : '/api/auth/google';
-    
-    console.log('Making popup auth request to:', apiUrl);
-    fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ code, state, redirectUri })
-    })
-    .then(response => {
-      if (!response.ok) {
-        return response.json().then(err => { throw new Error(err.error || 'Token exchange failed') });
-      }
-      return response.json();
-    })
-    .then(result => {
-      window.opener.postMessage({ type: 'oauth_success', result: result.data });
-      window.close();
-    })
-    .catch(error => {
-      window.opener.postMessage({ type: 'oauth_error', error: error.message });
-      window.close();
-    });
-  }
-
-  async function handleDirectCallback(code, state) {
-    // Direct web app callback (not popup)
-    try {
-      status = 'processing';
-      message = 'Completing authentication...';
-
-      // For Tauri deep-link flow, we skip state validation since the state
-      // was generated in the Tauri app, not in this browser session
-      const isFromTauriDeepLink = !sessionStorage.getItem('oauth_state');
-      
-      if (!isFromTauriDeepLink) {
-        // Validate state for normal web flow
-        const storedState = sessionStorage.getItem('oauth_state');
-        if (state !== storedState) {
-          throw new Error('Invalid OAuth state parameter');
-        }
-      }
-
-      // Exchange code for token via backend
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-      const apiUrl = apiBaseUrl ? `${apiBaseUrl}/api/auth/google` : '/api/auth/google';
-      const redirectUri = `${window.location.origin}/auth/callback`;
-      
-      console.log('Making direct auth request to:', apiUrl);
-      const response = await fetch(apiUrl, {
+      // Exchange the authorization code for an access token via your backend
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://diaryx-backend.harrisadam42103.workers.dev';
+      const tokenUrl = `${API_BASE_URL}/api/auth/google`;
+      const response = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ code, state, redirectUri })
+        body: JSON.stringify({
+          code: code,
+          codeVerifier: codeVerifier,
+          redirectUri: REDIRECT_URI
+        }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Authentication failed');
+        throw new Error(data.error_description || 'Failed to exchange code for token.');
       }
 
-      const result = await response.json();
-      
-      // Process the auth result and save session
-      const user = {
-        id: result.data.user.id,
-        email: result.data.user.email,
-        name: result.data.user.name,
-        avatar: result.data.user.avatar,
-        provider: result.data.user.provider,
-        public_key: result.data.user.public_key
-      };
-
+      // --- SUCCESS ---
+      // Create the session object that the app expects
       const session = {
-        user,
-        accessToken: result.data.access_token,
+        user: {
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          avatar: data.user.avatar,
+          provider: data.user.provider || 'google',
+          public_key: data.user.public_key
+        },
+        accessToken: data.access_token,
         isAuthenticated: true
       };
 
-      // Save to localStorage and update the auth service
+      // Store the session with the expected key
       localStorage.setItem('diaryx_auth_session', JSON.stringify(session));
       
-      // Update the auth service (this will update both store and internal state)
-      apiAuthService.setSession(session);
+      // Import and notify the auth service about the new session
+      const { apiAuthService } = await import('$lib/services/api-auth.service.js');
+      apiAuthService.reloadFromStorage();
 
-      if (isFromTauriDeepLink) {
-        // For Tauri deep-link flow, trigger the deep link to return to app
-        status = 'success';
-        message = 'Authentication successful! Opening Diaryx app...';
-        
-        const deepLinkUrl = `diaryx://auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-        
-        try {
-          window.location.href = deepLinkUrl;
-          
-          // Show manual option after a delay in case auto-open doesn't work
-          setTimeout(() => {
-            status = 'success';
-            message = 'Click the button below if the app doesn\'t open automatically:';
-            
-            // Add manual link
-            const container = document.querySelector('.callback-content');
-            if (container && !document.getElementById('manual-link')) {
-              const linkButton = document.createElement('a');
-              linkButton.id = 'manual-link';
-              linkButton.href = deepLinkUrl;
-              linkButton.textContent = 'Open Diaryx App';
-              linkButton.style.cssText = `
-                display: inline-block;
-                margin-top: 1rem;
-                padding: 0.75rem 1.5rem;
-                background: rgba(255, 255, 255, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 8px;
-                color: white;
-                text-decoration: none;
-                transition: background-color 0.2s;
-              `;
-              container.appendChild(linkButton);
-            }
-          }, 3000);
-          
-        } catch (err) {
-          status = 'error';
-          message = 'Failed to open the Diaryx app automatically.';
-        }
-      } else {
-        // For normal web flow, redirect to home page
-        status = 'success';
-        message = 'Authentication successful! Redirecting...';
+      status = 'success';
+      message = 'Authentication successful! Redirecting...';
 
-        // Clean up and redirect
-        sessionStorage.removeItem('oauth_state');
-        setTimeout(() => {
-          console.log('Redirecting to home page...');
-          goto('/');
-        }, 2000);
-      }
+      // Redirect to the main application page after a short delay
+      setTimeout(() => {
+        goto('/');
+      }, 2000);
 
-    } catch (error) {
-      console.error('Direct callback failed:', error);
+    } catch (err) {
+      console.error('Callback handling failed:', err);
       status = 'error';
-      message = error.message;
+      message = err instanceof Error ? err.message : 'An unknown error occurred';
+    } finally {
+      // Clean up the verifier from session storage for security
+      sessionStorage.removeItem('pkce_code_verifier');
     }
   }
 </script>
 
+<!-- This is your original HTML structure, it works perfectly! -->
 <div class="callback-container">
   <div class="callback-content">
     {#if status === 'processing'}
@@ -227,11 +117,12 @@
       <div class="error-icon">❌</div>
       <h2>Authentication Failed</h2>
       <p>{message}</p>
-      <button onclick={() => goto('/')}>Return to App</button>
+      <button on:click={() => goto('/')}>Return to App</button>
     {/if}
   </div>
 </div>
 
+<!-- This is your original CSS, it also works perfectly! -->
 <style>
   .callback-container {
     display: flex;
@@ -297,4 +188,4 @@
   button:hover {
     background: rgba(255, 255, 255, 0.3);
   }
-</style> 
+</style>
