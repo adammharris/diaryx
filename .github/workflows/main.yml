@@ -53,7 +53,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      # 5. Build the Svelte Project
+      # 5. Sync SvelteKit
+      # This step generates necessary type definitions and configuration files.
+      # It's crucial to run this before the build step to avoid errors.
+      - name: Sync SvelteKit
+        run: bun svelte-kit sync
+
+      # 6. Build the Svelte Project
       # Runs the build script defined in your package.json
       # The output is typically placed in a 'build' directory.
       - name: Build project
@@ -64,7 +70,7 @@ jobs:
           # Replace 'your-repo-name' with the name of your GitHub repository.
           VITE_BASE_PATH: /${{ github.event.repository.name }}
 
-      # 6. Upload Artifact
+      # 7. Upload Artifact
       # Uploads the build output as an artifact that the deployment job can use.
       # SvelteKit's static adapter outputs to the 'build' directory by default.
       # If your project outputs to a different directory (e.g., 'dist' or 'public'),
@@ -74,7 +80,7 @@ jobs:
         with:
           path: './build'
 
-      # 7. Deploy to GitHub Pages
+      # 8. Deploy to GitHub Pages
       # This step actually deploys the uploaded artifact to GitHub Pages.
       - name: Deploy to GitHub Pages
         id: deployment
