@@ -3,6 +3,7 @@
     import { whichTauri } from '../utils/tauri.js';
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
+    import { VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_REDIRECT_URI } from '../config/env-validation.js';
     import E2ESetup from './E2ESetup.svelte';
     import TagManager from './TagManager.svelte';
     import BiometricSetup from './BiometricSetup.svelte';
@@ -72,11 +73,9 @@
     async function handleGoogleSignIn() {
         try {
             // --- CONFIGURATION ---
-            // IMPORTANT: Replace with your actual Client ID from Google Cloud Console
-            const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '218266264425-tthcdieo8qvgjbtuas06n5k35ip3e712.apps.googleusercontent.com';
-
-            // IMPORTANT: This must be the EXACT URL of your callback page
-            const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
+            // Environment variables are validated at build time
+            const GOOGLE_CLIENT_ID = VITE_GOOGLE_CLIENT_ID;
+            const REDIRECT_URI = VITE_GOOGLE_REDIRECT_URI;
 
             // --- PKCE Code Generation ---
 

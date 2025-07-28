@@ -45,7 +45,7 @@ export interface UpdateTagData {
 }
 
 class TagService {
-  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   private tagsStore: Writable<TagWithUsers[]> = writable([]);
   private userTagsStore: Writable<UserTag[]> = writable([]);
 
@@ -87,7 +87,7 @@ class TagService {
     try {
       const slug = this.generateSlug(tagData.name);
       
-      const response = await fetch(`${this.API_BASE_URL}/api/tags`, {
+      const response = await fetch(`${this.API_BASE_URL}/tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,7 +148,7 @@ class TagService {
         updateData.color = tagData.color;
       }
 
-      const response = await fetch(`${this.API_BASE_URL}/api/tags/${tagId}`, {
+      const response = await fetch(`${this.API_BASE_URL}/tags/${tagId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -188,7 +188,7 @@ class TagService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/tags/${tagId}`, {
+      const response = await fetch(`${this.API_BASE_URL}/tags/${tagId}`, {
         method: 'DELETE',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -220,7 +220,7 @@ class TagService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/tags`, {
+      const response = await fetch(`${this.API_BASE_URL}/tags`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -268,7 +268,7 @@ class TagService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/user-tags`, {
+      const response = await fetch(`${this.API_BASE_URL}/user-tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -322,7 +322,7 @@ class TagService {
         throw new Error('Tag assignment not found');
       }
 
-      const response = await fetch(`${this.API_BASE_URL}/api/user-tags/${userTag.id}`, {
+      const response = await fetch(`${this.API_BASE_URL}/user-tags/${userTag.id}`, {
         method: 'DELETE',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -354,7 +354,7 @@ class TagService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/user-tags?tag_id=${tagId}`, {
+      const response = await fetch(`${this.API_BASE_URL}/user-tags?tag_id=${tagId}`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -391,7 +391,7 @@ class TagService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/user-tags`, {
+      const response = await fetch(`${this.API_BASE_URL}/user-tags`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()

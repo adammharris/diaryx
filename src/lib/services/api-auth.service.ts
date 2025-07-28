@@ -7,6 +7,7 @@
 import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { detectTauri } from '../utils/tauri.js';
+import { VITE_API_BASE_URL, VITE_GOOGLE_CLIENT_ID } from '../config/env-validation.js';
 
 // Import Tauri plugins - these modules may not exist in web environment
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -39,7 +40,7 @@ class ApiAuthService {
   private currentSession: AuthSession | null = null;
   private sessionStore: Writable<AuthSession | null> = writable(null);
   private readonly STORAGE_KEY = 'diaryx_auth_session';
-  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+  private readonly API_BASE_URL = VITE_API_BASE_URL;
 
   constructor() {
     if (browser) {
@@ -173,10 +174,7 @@ class ApiAuthService {
   }
 
   private buildGoogleAuthUrl(): string {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      throw new Error('Google Client ID not configured. Please add VITE_GOOGLE_CLIENT_ID to your .env file.');
-    }
+    const clientId = VITE_GOOGLE_CLIENT_ID;
 
     // Use web callback for OAuth redirect, which will then trigger the deep link
     // For development, use localhost; for production, use your domain
@@ -238,7 +236,7 @@ class ApiAuthService {
 
       // Exchange the authorization code for tokens via your backend
       // Use the web callback URL since that's where the OAuth flow completed
-      const response = await fetch(`${this.API_BASE_URL}/api/auth/google`, {
+      const response = await fetch(`${this.API_BASE_URL}/auth/google`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

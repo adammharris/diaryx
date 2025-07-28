@@ -35,7 +35,7 @@ export interface SharedEntryInfo {
 }
 
 class EntrySharingService {
-  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   private accessKeysStore: Writable<Map<string, EntryAccessKey[]>> = writable(new Map());
 
   constructor() {
@@ -156,7 +156,7 @@ class EntrySharingService {
     keys: Array<{ userId: string; encryptedEntryKey: string; keyNonce: string }>
   ): Promise<void> {
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/entry-access-keys/batch`, {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys/batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -193,7 +193,7 @@ class EntrySharingService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/entry-access-keys/${entryId}`, {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys/${entryId}`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -224,7 +224,7 @@ class EntrySharingService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/entries/${entryId}/shared`, {
+      const response = await fetch(`${this.API_BASE_URL}/entries/${entryId}/shared`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -255,7 +255,7 @@ class EntrySharingService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/entry-access-keys/${entryId}/${userId}`, {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys/${entryId}/${userId}`, {
         method: 'DELETE',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -321,7 +321,7 @@ class EntrySharingService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/entry-access-keys`, {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()
@@ -373,7 +373,7 @@ class EntrySharingService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/entries/shared-with-me`, {
+      const response = await fetch(`${this.API_BASE_URL}/entries/shared-with-me`, {
         method: 'GET',
         headers: {
           ...apiAuthService.getAuthHeaders()

@@ -3,7 +3,6 @@
  * Handles searching for users to assign tags for sharing
  */
 
-import { writable } from 'svelte/store';
 import { apiAuthService } from './api-auth.service.js';
 
 export interface SearchableUser {
@@ -23,7 +22,7 @@ export interface UserSearchResult {
 }
 
 class UserSearchService {
-  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+  private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   private searchCache = new Map<string, UserSearchResult>();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -66,7 +65,7 @@ class UserSearchService {
         offset: offset.toString()
       });
 
-      const response = await fetch(`${this.API_BASE_URL}/api/users/search?${params}`, {
+      const response = await fetch(`${this.API_BASE_URL}/users/search?${params}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -109,7 +108,7 @@ class UserSearchService {
     }
 
     try {
-      const response = await fetch(`${this.API_BASE_URL}/api/users/${userId}`, {
+      const response = await fetch(`${this.API_BASE_URL}/users/${userId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

@@ -1,10 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { entrySharingService } from '../services/entry-sharing.service.js';
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import EntryCard from './EntryCard.svelte';
-    import type { JournalEntry, JournalEntryMetadata } from '../storage/types.js';
+    import type { JournalEntryMetadata } from '../storage/types.js';
 
     // Extended interface for shared entries
     interface SharedEntry extends JournalEntryMetadata {
@@ -76,7 +75,7 @@
             fetchSucceeded = false;
             
             // Fetch shared entries from the API
-            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/api/entries/shared-with-me`, {
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/entries/shared-with-me`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',

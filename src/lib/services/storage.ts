@@ -255,8 +255,8 @@ class StorageService {
 	 */
 	private async deleteFromCloud(cloudId: string): Promise<boolean> {
 		try {
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			const response = await fetch(`${apiUrl}/entries/${cloudId}`, {
 				method: 'DELETE',
 				headers: {
 					...apiAuthService.getAuthHeaders()
@@ -783,8 +783,8 @@ class StorageService {
 				return { hasConflict: false };
 			}
 
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			const fullUrl = `${apiUrl}/api/entries/${cloudId}`;
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			const fullUrl = `${apiUrl}/entries/${cloudId}`;
 			console.log("Fetching from:", fullUrl);
 			const response = await fetch(fullUrl, {
 				method: 'GET',
@@ -963,7 +963,7 @@ class StorageService {
 
 				// Call the API to publish
 				const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-				const response = await fetch(`${apiUrl}/api/entries`, {
+				const response = await fetch(`${apiUrl}/entries`, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
@@ -1038,9 +1038,9 @@ class StorageService {
 			}
 
 			// Call the API to unpublish
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			console.log("Fetching from:", `${apiUrl}/api/entries`);
-			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			console.log("Fetching from:", `${apiUrl}/entries`);
+			const response = await fetch(`${apiUrl}/entries/${cloudId}`, {
 				method: 'DELETE',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1082,9 +1082,9 @@ class StorageService {
 				return false;
 			}
 
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			console.log("Fetching from:", `${apiUrl}/api/entries`);
-			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			console.log("Fetching from:", `${apiUrl}/entries`);
+			const response = await fetch(`${apiUrl}/entries/${cloudId}`, {
 				method: 'GET',
 				headers: {
 					...apiAuthService.getAuthHeaders()
@@ -1146,8 +1146,8 @@ class StorageService {
 
 				// CRITICAL FIX: Fetch existing encryption keys to maintain consistency
 				console.log('Fetching existing cloud entry to reuse encryption keys...');
-				const baseApiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-				const existingResponse = await fetch(`${baseApiUrl}/api/entries/${cloudId}`, {
+				const baseApiUrl = (import.meta.env.VITE_API_BASE_URL);
+				const existingResponse = await fetch(`${baseApiUrl}/entries/${cloudId}`, {
 					method: 'GET',
 					headers: {
 						'Content-Type': 'application/json',
@@ -1237,8 +1237,8 @@ class StorageService {
 				});
 
 				// Update the cloud entry
-				console.log("Fetching from:", `${apiUrl}/api/entries/${cloudId}`);
-				const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+				console.log("Fetching from:", `${apiUrl}/entries/${cloudId}`);
+				const response = await fetch(`${apiUrl}/entries/${cloudId}`, {
 					method: 'PUT',
 					headers: {
 						'Content-Type': 'application/json',
@@ -1285,9 +1285,9 @@ class StorageService {
 		}
 
 		try {
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			console.log("Fetching from:", `${apiUrl}/api/entries`);
-			const response = await fetch(`${apiUrl}/api/entries`, {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			console.log("Fetching from:", `${apiUrl}/entries`);
+			const response = await fetch(`${apiUrl}/entries`, {
 				method: 'GET',
 				headers: {
 					...apiAuthService.getAuthHeaders()
@@ -1816,8 +1816,8 @@ class StorageService {
 		}
 
 		try {
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/shared-with-me`, {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			const response = await fetch(`${apiUrl}/entries/shared-with-me`, {
 				method: 'GET',
 				headers: {
 					...apiAuthService.getAuthHeaders()
@@ -1885,8 +1885,8 @@ class StorageService {
 		}
 
 		try {
-			const apiUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-			const response = await fetch(`${apiUrl}/api/entries/${cloudId}`, {
+			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
+			const response = await fetch(`${apiUrl}/entries/${cloudId}`, {
 				method: 'GET',
 				headers: {
 					...apiAuthService.getAuthHeaders()

@@ -2,13 +2,11 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { VITE_API_BASE_URL, VITE_GOOGLE_REDIRECT_URI } from '$lib/config/env-validation.js';
 
   // --- CONFIGURATION ---
-  // IMPORTANT: Replace with your actual Client ID from Google Cloud Console
-  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '218266264425-tthcdieo8qvgjbtuas06n5k35ip3e712.apps.googleusercontent.com';
-
-  // IMPORTANT: This must be the EXACT URL of this page
-  const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`;
+  // Environment variables are validated at build time
+  const REDIRECT_URI = VITE_GOOGLE_REDIRECT_URI;
 
   // --- Svelte State ---
   let status = 'processing'; // 'processing', 'success', 'error'
@@ -41,8 +39,7 @@
       }
 
       // Exchange the authorization code for an access token via your backend
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://diaryx-backend.harrisadam42103.workers.dev';
-      const tokenUrl = `${API_BASE_URL}/api/auth/google`;
+      const tokenUrl = `${VITE_API_BASE_URL}/auth/google`;
       const response = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
