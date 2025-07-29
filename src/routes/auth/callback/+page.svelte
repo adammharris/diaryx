@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
@@ -35,21 +35,26 @@
     }
   }
 
-  function detectTauriCallback(state) {
+  function detectTauriCallback(state: string | null): boolean {
     // Check if we're in a browser being called from Tauri
     // We can detect this by looking at the state parameter which includes platform info
     if (state && state.startsWith('tauri_')) {
       return true;
     }
     
-    // Fallback: check referrer from Google OAuth
+    // If state starts with 'web_', this is definitely a web-only flow
+    if (state && state.startsWith('web_')) {
+      return false;
+    }
+    
+    // Fallback: check referrer from Google OAuth (only if no state prefix detected)
     const referrer = document.referrer;
     const isFromGoogleOAuth = referrer && referrer.includes('accounts.google.com');
     
-    return isFromGoogleOAuth;
+    return !!isFromGoogleOAuth;
   }
 
-  async function handleTauriCallback(code, state, error) {
+  async function handleTauriCallback(code: string | null, state: string | null, error: string | null): Promise<void> {
     try {
       if (error) {
         throw new Error(`OAuth Error: ${error}`);
@@ -84,7 +89,7 @@
     }
   }
 
-  async function handleWebCallback(code, state, error) {
+  async function handleWebCallback(code: string | null, _state: string | null, error: string | null): Promise<void> {
     // Retrieve the verifier that the login page should have stored
     const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
 

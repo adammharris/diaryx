@@ -3,12 +3,15 @@
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import EntryCard from './EntryCard.svelte';
+    import SharedEntryViewer from './SharedEntryViewer.svelte';
     import type { JournalEntryMetadata } from '../storage/types.js';
 
     // Extended interface for shared entries
     interface SharedEntry extends JournalEntryMetadata {
         author: string;
         tags: string[];
+        fullContent?: string; // Store decrypted full content
+        authorPublicKey?: string; // Store author's public key for re-decryption if needed
         encryptionInfo?: {
             encrypted_title: string;
             encrypted_content: string;
@@ -31,6 +34,8 @@
     let isLoading = $state(false);
     let error = $state<string | null>(null);
     let selectedEntryId = $state<string | null>(null);
+    let selectedEntry = $state<SharedEntry | null>(null);
+    let showEntryViewer = $state(false);
     let searchQuery = $state('');
     let hasAttemptedLoad = $state(false);
     let fetchSucceeded = $state(false);
@@ -126,6 +131,7 @@
                     // Try to decrypt the entry using the shared access key
                     let decryptedTitle = 'Encrypted Entry';
                     let decryptedPreview = 'Content is encrypted';
+                    let fullContent = '';
                     
                     // Debug: Log all available fields
                     console.log('Available entry fields:', Object.keys(entry));
@@ -153,7 +159,8 @@
                             if (decryptedEntry) {
                                 console.log('Successfully decrypted entry:', decryptedEntry.title);
                                 decryptedTitle = decryptedEntry.title || 'Untitled';
-                                decryptedPreview = decryptedEntry.content?.substring(0, 150) + (decryptedEntry.content?.length > 150 ? '...' : '') || '';
+                                fullContent = decryptedEntry.content || '';
+                                decryptedPreview = fullContent.substring(0, 150) + (fullContent.length > 150 ? '...' : '');
                             } else {
                                 console.log('Decryption returned null');
                             }
@@ -174,6 +181,8 @@
                         // Additional metadata for shared entries
                         author: authorName,
                         tags: tags,
+                        fullContent: fullContent,
+                        authorPublicKey: entry.author?.public_key,
                         isPublished: entry.is_published || false,
                         isShared: true,
                         cloudId: entry.id,
@@ -204,8 +213,15 @@
 
     async function handleSelectEntry(event: { id: string }) {
         selectedEntryId = event.id;
-        // TODO: Open entry in read-only mode or preview
+        selectedEntry = sharedEntries.find(entry => entry.id === event.id) || null;
+        showEntryViewer = true;
         console.log('Selected shared entry:', event.id);
+    }
+
+    function handleCloseViewer() {
+        showEntryViewer = false;
+        selectedEntry = null;
+        selectedEntryId = null;
     }
 
     async function handleRefresh() {
@@ -348,6 +364,12 @@
         </div>
     </div>
 </div>
+
+<SharedEntryViewer 
+    entry={selectedEntry}
+    isVisible={showEntryViewer}
+    onclose={handleCloseViewer}
+/>
 
 <style>
     .modal-overlay {

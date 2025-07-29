@@ -128,37 +128,50 @@ class ApiAuthService {
 
     return new Promise(async (resolve, reject) => {
       try {
-        const authUrl = this.buildGoogleAuthUrl();
+        const authUrl = await this.buildGoogleAuthUrl();
         console.log('Opening OAuth URL:', authUrl);
         
-        // Check if we're in Tauri environment with deep linking support
-        if (detectTauri() && typeof onOpenUrl === 'function' && typeof openUrl === 'function') {
-          // Tauri environment - use deep linking
-          const unlistenDeepLink = await onOpenUrl((urls: string[]) => {
-            console.log('Deep link received:', urls);
-            const url = urls[0];
-            if (url && url.startsWith('diaryx://auth/callback')) {
-              console.log('Processing OAuth callback from deep link:', url);
+        // Extract state from URL to determine the intended platform
+        const url = new URL(authUrl);
+        const state = url.searchParams.get('state') || '';
+        const isWebOnlyFlow = state.startsWith('web_');
+        
+        console.log('Platform detection:', {
+          isTauri: detectTauri(),
+          statePrefix: state.split('_')[0],
+          isWebOnlyFlow,
+          useDeepLink: detectTauri() && typeof openUrl === 'function' && !isWebOnlyFlow
+        });
+        
+        // Use deep links only if we're in Tauri AND the state indicates Tauri flow
+        if (detectTauri() && typeof openUrl === 'function' && !isWebOnlyFlow) {
+          // Tauri environment - use global deep link handler
+          console.log('🔗 Setting up auth callback listener...');
+          
+          // Set up timeout for auth flow (5 minutes)
+          const timeout = setTimeout(() => {
+            console.warn('🔗 Auth flow timeout - user may have closed browser');
+            this.clearAuthCallback();
+            reject(new Error('Authentication timeout - please try again'));
+          }, 300000); // 5 minutes
+
+          // Store auth callback info for global deep link handler
+          (window as any).__auth_callback = {
+            resolve,
+            reject,
+            timeout,
+            handler: (url: string) => {
+              console.log('🔗 Processing OAuth callback from global handler:', url);
               this.handleDeepLinkCallback(url)
                 .then(resolve)
                 .catch(reject)
                 .finally(() => {
-                  if (unlistenDeepLink) unlistenDeepLink();
-                  clearTimeout(timeout);
+                  this.clearAuthCallback();
                 });
             }
-          });
-
-          // Set up timeout for auth flow (5 minutes)
-          const timeout = setTimeout(() => {
-            console.warn('🔗 Auth flow timeout - user may have closed browser');
-            if (unlistenDeepLink) unlistenDeepLink();
-            reject(new Error('Authentication timeout - please try again'));
-          }, 300000); // 5 minutes
-
-          // Store cleanup functions
-          (window as any).__oauth_unlisten = unlistenDeepLink;
-          (window as any).__oauth_timeout = timeout;
+          };
+          
+          console.log('🔗 Auth callback registered, waiting for deep link...');
           
           // Open URL in external browser
           await openUrl(authUrl);
@@ -186,7 +199,7 @@ class ApiAuthService {
     });
   }
 
-  private buildGoogleAuthUrl(): string {
+  private async buildGoogleAuthUrl(): Promise<string> {
     const clientId = VITE_GOOGLE_CLIENT_ID;
 
     // Always use the configured redirect URI from environment variables
@@ -207,6 +220,17 @@ class ApiAuthService {
       prompt: 'select_account'
     });
 
+    // For web flows, add PKCE parameters
+    if (state.startsWith('web_') && browser) {
+      const { codeVerifier, codeChallenge } = await this.generatePKCE();
+      params.set('code_challenge', codeChallenge);
+      params.set('code_challenge_method', 'S256');
+      
+      // Store code verifier for the callback
+      sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+      console.log('PKCE enabled for web flow, code verifier stored');
+    }
+
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
@@ -220,6 +244,65 @@ class ApiAuthService {
     
     // Format: platform_timestamp_random (e.g., tauri_1703123456789_abc123def456)
     return `${platform}_${timestamp}_${randomPart}`;
+  }
+
+  private async generatePKCE(): Promise<{ codeVerifier: string; codeChallenge: string }> {
+    // Generate a cryptographically random code verifier (43-128 characters)
+    const codeVerifier = this.generateRandomString(128);
+    
+    try {
+      // Use browser's native crypto API for proper SHA256
+      const encoder = new TextEncoder();
+      const data = encoder.encode(codeVerifier);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      
+      // Convert ArrayBuffer to base64url
+      const hashArray = new Uint8Array(hashBuffer);
+      const hashString = String.fromCharCode.apply(null, Array.from(hashArray));
+      const codeChallenge = btoa(hashString)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+      
+      console.log('PKCE generated with SHA256');
+      return { codeVerifier, codeChallenge };
+    } catch (error) {
+      // Fallback if crypto.subtle is not available
+      console.warn('crypto.subtle not available, using fallback PKCE method');
+      const codeChallenge = this.base64URLEncode(codeVerifier);
+      return { codeVerifier, codeChallenge };
+    }
+  }
+
+  private generateRandomString(length: number): string {
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    let result = '';
+    
+    // Use crypto.getRandomValues for cryptographically secure random
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const randomBytes = new Uint8Array(length);
+      crypto.getRandomValues(randomBytes);
+      
+      for (let i = 0; i < length; i++) {
+        result += charset[randomBytes[i] % charset.length];
+      }
+    } else {
+      // Fallback for environments without crypto.getRandomValues
+      for (let i = 0; i < length; i++) {
+        result += charset[Math.floor(Math.random() * charset.length)];
+      }
+    }
+    
+    return result;
+  }
+
+  private base64URLEncode(str: string): string {
+    // Convert string to base64 and make it URL-safe
+    const base64 = btoa(str);
+    return base64
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
   }
 
   private validateStateFormat(state: string, expectedPlatform: 'tauri' | 'web'): { isValid: boolean; timestamp?: number; error?: string } {
@@ -244,6 +327,17 @@ class ApiAuthService {
     }
 
     return { isValid: true, timestamp };
+  }
+
+  private clearAuthCallback(): void {
+    const authCallback = (window as any).__auth_callback;
+    if (authCallback) {
+      if (authCallback.timeout) {
+        clearTimeout(authCallback.timeout);
+      }
+      delete (window as any).__auth_callback;
+      console.log('🔗 Auth callback cleared');
+    }
   }
 
   /**
@@ -318,81 +412,6 @@ class ApiAuthService {
     }
   }
 
-  /**
-   * Process OAuth result from popup callback
-   */
-  private async processOAuthResult(result: any): Promise<AuthSession> {
-    try {
-      console.log('Processing OAuth result:', result);
-      
-      // Create and save the session
-      const session = await this.handleGoogleAuthResult(result);
-      this.saveSession(session);
-      
-      // Clean up
-      sessionStorage.removeItem('oauth_state');
-      
-      return session;
-    } catch (error) {
-      console.error('OAuth result processing failed:', error);
-      throw error;
-    }
-  }
-
-  private async waitForAuthResult(popup: Window): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        popup.close();
-        reject(new Error('Authentication timeout'));
-      }, 60000); // 1 minute timeout
-
-      // Listen for message from popup
-      const messageHandler = (event: MessageEvent) => {
-        console.log('Received message:', event.data, 'from origin:', event.origin);
-        
-        // Accept messages from the same origin
-        if (event.origin !== window.location.origin) {
-          console.log('Ignoring message from different origin');
-          return;
-        }
-
-        if (event.data.type === 'oauth_success') {
-          clearTimeout(timeout);
-          popup.close();
-          window.removeEventListener('message', messageHandler);
-          resolve(event.data.result);
-        } else if (event.data.type === 'oauth_error') {
-          clearTimeout(timeout);
-          popup.close();
-          window.removeEventListener('message', messageHandler);
-          reject(new Error(event.data.error));
-        }
-      };
-
-      window.addEventListener('message', messageHandler);
-
-      // Also poll the popup URL to detect when the callback happens
-      const pollInterval = setInterval(() => {
-        try {
-          if (popup.closed) {
-            clearTimeout(timeout);
-            clearInterval(pollInterval);
-            window.removeEventListener('message', messageHandler);
-            reject(new Error('Authentication cancelled'));
-            return;
-          }
-
-          // Check if popup has navigated to our callback URL
-          if (popup.location.href.includes('/auth/callback')) {
-            console.log('Detected callback URL, waiting for message...');
-          }
-        } catch (e) {
-          // Cross-origin error is expected when popup is on Google's domain
-          // This is normal and we'll wait for the postMessage instead
-        }
-      }, 1000);
-    });
-  }
 
   private async handleGoogleAuthResult(authResult: any): Promise<AuthSession> {
     // The backend has already exchanged the code and created/updated the user
@@ -485,57 +504,6 @@ class ApiAuthService {
   }
 }
 
-// For development/testing - simple email auth
-class MockAuthService {
-  private sessionStore: Writable<AuthSession | null> = writable(null);
-
-  async signInWithGoogle(): Promise<AuthSession> {
-    const mockUser: User = {
-      id: 'mock-user-123',
-      email: 'demo@example.com',
-      name: 'Demo User',
-      provider: 'google',
-      public_key: 'mock-public-key'
-    };
-
-    const session: AuthSession = {
-      user: mockUser,
-      accessToken: 'mock-token',
-      isAuthenticated: true
-    };
-
-    this.sessionStore.set(session);
-    return session;
-  }
-
-  async signOut(): Promise<void> {
-    this.sessionStore.set(null);
-  }
-
-  getCurrentSession(): AuthSession | null {
-    return null;
-  }
-
-  getCurrentUser(): User | null {
-    return null;
-  }
-
-  isAuthenticated(): boolean {
-    return false;
-  }
-
-  getAuthHeaders(): Record<string, string> {
-    return {};
-  }
-
-  get store() {
-    return this.sessionStore;
-  }
-}
-
-// For testing without backend - uncomment this to use mock:
-//export const apiAuthService = new MockAuthService();
-//export const apiAuthStore = apiAuthService.store;
 
 // Always use the real auth service (comment out to use mock)
 export const apiAuthService = new ApiAuthService();
