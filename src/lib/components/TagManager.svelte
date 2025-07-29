@@ -350,19 +350,19 @@
 
     .create-tag-section {
         padding-bottom: 1rem;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--color-border);
     }
 
     .create-tag-form {
-        background: var(--surface-color);
+        background: var(--color-surface);
         padding: 1rem;
         border-radius: 0.5rem;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--color-border);
     }
 
     .create-tag-form h3 {
         margin: 0 0 1rem 0;
-        color: var(--text-color);
+        color: var(--color-text);
     }
 
     .form-row {
@@ -374,18 +374,18 @@
     .tag-name-input {
         flex: 1;
         padding: 0.5rem 0.75rem;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--color-border);
         border-radius: 0.375rem;
-        background: var(--background-color);
-        color: var(--text-color);
+        background: var(--color-background);
+        color: var(--color-text);
     }
 
     .color-select {
         padding: 0.5rem 0.75rem;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--color-border);
         border-radius: 0.375rem;
-        background: var(--background-color);
-        color: var(--text-color);
+        background: var(--color-background);
+        color: var(--color-text);
         min-width: 120px;
     }
 
@@ -405,8 +405,8 @@
     .spinner {
         width: 2rem;
         height: 2rem;
-        border: 3px solid var(--border-color);
-        border-top: 3px solid var(--primary-color);
+        border: 3px solid var(--color-border);
+        border-top: 3px solid var(--color-primary);
         border-radius: 50%;
         animation: spin 1s linear infinite;
     }
@@ -418,17 +418,17 @@
 
     .error-message {
         padding: 1rem;
-        background: var(--error-color-bg);
-        border: 1px solid var(--error-color);
+        background: var(--color-background);
+        border: 1px solid var(--color-accent);
         border-radius: 0.5rem;
-        color: var(--error-color);
+        color: var(--color-accent);
         text-align: center;
     }
 
     .empty-state {
         text-align: center;
         padding: 2rem;
-        color: var(--text-secondary);
+        color: var(--color-textSecondary);
     }
 
     .tags-list {
@@ -438,16 +438,16 @@
     }
 
     .tag-item {
-        background: var(--surface-color);
-        border: 1px solid var(--border-color);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
         border-radius: 0.5rem;
         overflow: hidden;
     }
 
     .tag-header {
         padding: 1rem;
-        background: var(--background-color);
-        border-bottom: 1px solid var(--border-color);
+        background: var(--color-background);
+        border-bottom: 1px solid var(--color-border);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -470,14 +470,14 @@
         margin: 0;
         font-size: 1.125rem;
         font-weight: 600;
-        color: var(--text-color);
+        color: var(--color-text);
     }
 
     .user-count {
         font-size: 0.875rem;
-        color: var(--text-secondary);
+        color: var(--color-textSecondary);
         padding: 0.25rem 0.5rem;
-        background: var(--hover-color);
+        background: var(--color-background);
         border-radius: 1rem;
     }
 
@@ -492,7 +492,7 @@
     }
 
     .delete-tag-btn:hover {
-        background: var(--error-color-bg);
+        background: var(--color-background);
     }
 
     .tag-content {
@@ -507,7 +507,7 @@
         margin: 0 0 0.75rem 0;
         font-size: 0.875rem;
         font-weight: 600;
-        color: var(--text-color);
+        color: var(--color-text);
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
@@ -529,9 +529,9 @@
         align-items: center;
         gap: 0.75rem;
         padding: 0.75rem;
-        background: var(--background-color);
+        background: var(--color-background);
         border-radius: 0.375rem;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--color-border);
     }
 
     .user-avatar {
@@ -551,7 +551,7 @@
     .avatar-fallback {
         width: 100%;
         height: 100%;
-        background: var(--accent-color);
+        background: var(--color-accent);
         color: white;
         display: flex;
         align-items: center;
@@ -567,19 +567,19 @@
 
     .user-name {
         font-weight: 500;
-        color: var(--text-color);
+        color: var(--color-text);
         margin-bottom: 0.125rem;
     }
 
     .user-email {
         font-size: 0.8125rem;
-        color: var(--text-secondary);
+        color: var(--color-textSecondary);
     }
 
     .remove-user-btn {
         background: none;
         border: none;
-        color: var(--text-secondary);
+        color: var(--color-textSecondary);
         cursor: pointer;
         padding: 0.25rem;
         border-radius: 0.25rem;
@@ -588,7 +588,7 @@
     }
 
     .remove-user-btn:hover {
-        background: var(--error-color-bg);
-        color: var(--error-color);
+        background: var(--color-background);
+        color: var(--color-accent);
     }
 </style>
