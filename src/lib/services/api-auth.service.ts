@@ -144,12 +144,21 @@ class ApiAuthService {
                 .catch(reject)
                 .finally(() => {
                   if (unlistenDeepLink) unlistenDeepLink();
+                  clearTimeout(timeout);
                 });
             }
           });
 
-          // Store the unlisten function for cleanup
+          // Set up timeout for auth flow (5 minutes)
+          const timeout = setTimeout(() => {
+            console.warn('🔗 Auth flow timeout - user may have closed browser');
+            if (unlistenDeepLink) unlistenDeepLink();
+            reject(new Error('Authentication timeout - please try again'));
+          }, 300000); // 5 minutes
+
+          // Store cleanup functions
           (window as any).__oauth_unlisten = unlistenDeepLink;
+          (window as any).__oauth_timeout = timeout;
           
           // Open URL in external browser
           await openUrl(authUrl);
@@ -188,9 +197,6 @@ class ApiAuthService {
     const responseType = 'code';
     const state = this.generateRandomState();
 
-    // Store state for validation
-    sessionStorage.setItem('oauth_state', state);
-
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -205,12 +211,39 @@ class ApiAuthService {
   }
 
   private generateRandomState(): string {
+    const timestamp = Date.now();
     const randomPart = Math.random().toString(36).substring(2, 15) + 
                       Math.random().toString(36).substring(2, 15);
     
-    // Add platform indicator to state for callback detection
+    // Add platform indicator and timestamp for validation
     const platform = detectTauri() ? 'tauri' : 'web';
-    return `${platform}_${randomPart}`;
+    
+    // Format: platform_timestamp_random (e.g., tauri_1703123456789_abc123def456)
+    return `${platform}_${timestamp}_${randomPart}`;
+  }
+
+  private validateStateFormat(state: string, expectedPlatform: 'tauri' | 'web'): { isValid: boolean; timestamp?: number; error?: string } {
+    if (!state) {
+      return { isValid: false, error: 'No state parameter provided' };
+    }
+
+    // Expected format: platform_timestamp_random
+    const statePattern = new RegExp(`^${expectedPlatform}_(\\d+)_[a-z0-9]+$`);
+    const match = state.match(statePattern);
+    
+    if (!match) {
+      return { isValid: false, error: `Invalid state format. Expected ${expectedPlatform}_timestamp_random, got: ${state}` };
+    }
+
+    const timestamp = parseInt(match[1], 10);
+    const now = Date.now();
+    const maxAge = 10 * 60 * 1000; // 10 minutes
+
+    if (now - timestamp > maxAge) {
+      return { isValid: false, error: `State expired. Generated ${Math.round((now - timestamp) / 1000)}s ago` };
+    }
+
+    return { isValid: true, timestamp };
   }
 
   /**
@@ -235,16 +268,23 @@ class ApiAuthService {
         throw new Error('No authorization code received');
       }
 
-      // Validate state against what we stored when starting OAuth
-      const storedState = sessionStorage.getItem('oauth_state');
-      if (state !== storedState) {
-        console.warn('State validation failed:', { received: state, stored: storedState });
-        // For development, we'll be more lenient with state validation
-        // In production, you might want to be stricter
+      // Validate state format instead of using sessionStorage
+      const stateValidation = this.validateStateFormat(state || '', 'tauri');
+      console.log('🔗 State validation:', { 
+        received: state, 
+        isValid: stateValidation.isValid, 
+        error: stateValidation.error,
+        timestamp: stateValidation.timestamp ? new Date(stateValidation.timestamp).toISOString() : undefined
+      });
+      
+      if (!stateValidation.isValid) {
+        throw new Error(`State validation failed: ${stateValidation.error}`);
       }
+      
+      console.log('🔗 State validation passed - this is a valid Tauri auth callback');
 
       // Exchange the authorization code for tokens via your backend
-      // Use the web callback URL since that's where the OAuth flow completed
+      console.log('🔗 Exchanging authorization code for tokens...');
       const response = await fetch(`${this.API_BASE_URL}/auth/google`, {
         method: 'POST',
         headers: {
@@ -257,21 +297,23 @@ class ApiAuthService {
       });
 
       if (!response.ok) {
-        throw new Error(`Authentication failed: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('🔗 Backend auth failed:', response.status, errorText);
+        throw new Error(`Authentication failed: ${response.statusText} - ${errorText}`);
       }
 
       const authResult = await response.json();
+      console.log('🔗 Backend auth successful, creating session...');
       
       // Create and save the session
       const session = await this.handleGoogleAuthResult(authResult);
       this.saveSession(session);
       
-      // Clean up
-      sessionStorage.removeItem('oauth_state');
+      console.log('🔗 Session saved successfully:', session.user.email);
       
       return session;
     } catch (error) {
-      console.error('Deep link callback processing failed:', error);
+      console.error('🔗 Deep link callback processing failed:', error);
       throw error;
     }
   }
