@@ -340,6 +340,7 @@
         flex-direction: column;
         background: var(--color-background, #f8fafc);
         color: var(--color-text, #1f2937);
+        overflow-y: auto;
     }
 
     .viewer-header {
@@ -402,6 +403,7 @@
         margin: 0 auto;
         padding: 2rem 1.5rem;
         width: 100%;
+        overflow-y: visible;
     }
 
     .loading-state,
@@ -521,6 +523,8 @@
     .entry-content {
         padding: 2rem;
         min-height: 200px;
+        overflow-y: visible;
+        word-wrap: break-word;
     }
 
     .decrypting-state,
