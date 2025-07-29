@@ -231,23 +231,30 @@
         if (url && url.startsWith('diaryx://auth/callback')) {
           console.log('OAuth callback deep link received - user returned to app');
           
-          // Give the auth service a moment to load the session from localStorage
-          setTimeout(() => {
-            const currentSession = apiAuthService.getCurrentSession();
-            if (currentSession && currentSession.isAuthenticated) {
-              showDialog({
-                title: 'Welcome Back!',
-                message: 'You have been successfully signed in.',
-                type: 'info'
-              });
-            } else {
-              showDialog({
-                title: 'Authentication Complete',
-                message: 'Please refresh the app to see your signed-in status.',
-                type: 'info'
-              });
-            }
-          }, 1000);
+          // Give the auth service a moment to process the deep link callback
+          // and then check/reload the session
+          setTimeout(async () => {
+            // Force reload the session from storage in case it was just updated
+            apiAuthService.reloadFromStorage();
+            
+            // Wait a bit more for the session to be processed
+            setTimeout(() => {
+              const currentSession = apiAuthService.getCurrentSession();
+              if (currentSession && currentSession.isAuthenticated) {
+                showDialog({
+                  title: 'Welcome Back!',
+                  message: `Successfully signed in as ${currentSession.user.name || currentSession.user.email}`,
+                  type: 'info'
+                });
+                
+                // Reload entries to show any synced data
+                loadEntries();
+              } else {
+                console.warn('Deep link callback processed but no session found');
+                // Don't show error message to user since the auth might still be processing
+              }
+            }, 500);
+          }, 1500);
         } else {
           console.log('Deep link received but not an OAuth callback:', url);
         }

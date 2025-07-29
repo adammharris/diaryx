@@ -154,6 +154,10 @@ class ApiAuthService {
           // Open URL in external browser
           await openUrl(authUrl);
           
+          console.log('🔗 OAuth URL opened in external browser');
+          console.log('🔗 Deep link listener set up, waiting for callback...');
+          console.log('🔗 Expected deep link format: diaryx://auth/callback?code=...&state=...');
+          
           alert('Please complete the sign-in process in your browser. You\'ll be redirected back to the app automatically.');
         } else {
           // Web environment - navigate directly to OAuth URL
@@ -214,7 +218,8 @@ class ApiAuthService {
    */
   async handleDeepLinkCallback(deepLinkUrl: string): Promise<AuthSession> {
     try {
-      console.log('Processing deep link callback:', deepLinkUrl);
+      console.log('🔗 Processing deep link callback:', deepLinkUrl);
+      console.log('🔗 Deep link received successfully in Tauri app');
       
       // Parse the deep link URL to extract the authorization code and state
       const url = new URL(deepLinkUrl);

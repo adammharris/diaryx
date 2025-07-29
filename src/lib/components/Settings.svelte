@@ -75,7 +75,11 @@
             await apiAuthService.signInWithGoogle();
         } catch (error) {
             console.error('Google sign in failed:', error);
-            alert('Sign in failed. Please try again.');
+            // Only show error for actual failures, not navigation events
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage && !errorMessage.includes('navigation') && !errorMessage.includes('redirect')) {
+                alert('Sign in failed. Please try again.');
+            }
         }
     }
 
