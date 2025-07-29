@@ -3,7 +3,6 @@
     import { whichTauri } from '../utils/tauri.js';
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
-    import { VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_REDIRECT_URI } from '../config/env-validation.js';
     import E2ESetup from './E2ESetup.svelte';
     import TagManager from './TagManager.svelte';
     import BiometricSetup from './BiometricSetup.svelte';
@@ -69,65 +68,13 @@
         } catch (error) { console.error('Sign out failed:', error); }
     }
 
-    // --- (FIXED) Google Sign-In Function ---
+    // --- Google Sign-In Function ---
     async function handleGoogleSignIn() {
         try {
-            // --- CONFIGURATION ---
-            // Environment variables are validated at build time
-            const GOOGLE_CLIENT_ID = VITE_GOOGLE_CLIENT_ID;
-            const REDIRECT_URI = VITE_GOOGLE_REDIRECT_URI;
-
-            // --- PKCE Code Generation ---
-
-            // 1. Generate and store the code verifier
-            const generateRandomString = (length: number) => {
-                const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-                let text = '';
-                for (let i = 0; i < length; i++) {
-                    text += possible.charAt(Math.floor(Math.random() * possible.length));
-                }
-                return text;
-            };
-
-            const codeVerifier = generateRandomString(128);
-            // THIS IS THE CRUCIAL STEP: Store the verifier so the callback page can find it.
-            sessionStorage.setItem('pkce_code_verifier', codeVerifier);
-
-            // 2. Create the code challenge
-            const sha256 = async (plain: string) => {
-                const encoder = new TextEncoder();
-                const data = encoder.encode(plain);
-                return window.crypto.subtle.digest('SHA-256', data);
-            };
-
-            const base64urlencode = (a: ArrayBuffer) => {
-                // @ts-ignore
-                return btoa(String.fromCharCode.apply(null, new Uint8Array(a)))
-                    .replace(/\+/g, '-')
-                    .replace(/\//g, '_')
-                    .replace(/=+$/, '');
-            };
-
-            const hashed = await sha256(codeVerifier);
-            const codeChallenge = base64urlencode(hashed);
-
-            // 3. Build the authorization URL
-            const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-            authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-            authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
-            authUrl.searchParams.set('response_type', 'code');
-            authUrl.searchParams.set('scope', 'openid profile email');
-            authUrl.searchParams.set('code_challenge', codeChallenge);
-            authUrl.searchParams.set('code_challenge_method', 'S256');
-            authUrl.searchParams.set('access_type', 'offline');
-
-            // 4. Redirect the user to Google's login page
-            window.location.href = authUrl.toString();
-
+            // Use the existing auth service which handles both web and Tauri environments
+            await apiAuthService.signInWithGoogle();
         } catch (error) {
             console.error('Google sign in failed:', error);
-            // Note: alert() is generally not recommended in modern web apps.
-            // Consider using a modal or a toast notification for a better user experience.
             alert('Sign in failed. Please try again.');
         }
     }

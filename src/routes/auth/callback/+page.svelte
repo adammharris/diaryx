@@ -15,15 +15,75 @@
   onMount(() => {
     // The entire process must run in the browser
     if (browser) {
-      handleStaticCallback();
+      handleCallback();
     }
   });
 
-  async function handleStaticCallback() {
+  async function handleCallback() {
     const url = new URL(window.location.href);
     const code = url.searchParams.get('code');
+    const state = url.searchParams.get('state');
     const error = url.searchParams.get('error');
 
+    // Check if this is a Tauri deep link callback by looking at the user agent or URL
+    const isTauriCallback = detectTauriCallback();
+
+    if (isTauriCallback) {
+      await handleTauriCallback(code, state, error);
+    } else {
+      await handleWebCallback(code, state, error);
+    }
+  }
+
+  function detectTauriCallback() {
+    // Check if we're in a browser being called from Tauri
+    // This can be detected by checking if the referrer suggests Tauri origin
+    // or by looking for specific URL patterns
+    const userAgent = navigator.userAgent;
+    const referrer = document.referrer;
+    
+    // Check if this might be a Tauri external browser callback
+    // We can detect this by seeing if we have no referrer (external browser)
+    // and the URL contains the callback path
+    return !referrer || referrer === '' || userAgent.includes('Chrome') || userAgent.includes('Safari');
+  }
+
+  async function handleTauriCallback(code, state, error) {
+    try {
+      if (error) {
+        throw new Error(`OAuth Error: ${error}`);
+      }
+      if (!code) {
+        throw new Error('Authorization code not found in URL.');
+      }
+
+      // For Tauri, we need to redirect back to the app via deep link
+      // The app will handle the actual token exchange
+      const deepLinkUrl = new URL('diaryx://auth/callback');
+      deepLinkUrl.searchParams.set('code', code);
+      if (state) deepLinkUrl.searchParams.set('state', state);
+
+      status = 'success';
+      message = 'Redirecting back to the app...';
+
+      // Redirect to the deep link
+      window.location.href = deepLinkUrl.toString();
+
+      // Fallback: show instructions if deep link doesn't work
+      setTimeout(() => {
+        if (status === 'success') {
+          message = 'Please return to the Diaryx app to complete authentication.';
+        }
+      }, 3000);
+
+    } catch (err) {
+      console.error('Tauri callback handling failed:', err);
+      status = 'error';
+      message = err instanceof Error ? err.message : 'An unknown error occurred';
+    }
+  }
+
+  async function handleWebCallback(code, state, error) {
     // Retrieve the verifier that the login page should have stored
     const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
 
@@ -89,7 +149,7 @@
       }, 2000);
 
     } catch (err) {
-      console.error('Callback handling failed:', err);
+      console.error('Web callback handling failed:', err);
       status = 'error';
       message = err instanceof Error ? err.message : 'An unknown error occurred';
     } finally {
