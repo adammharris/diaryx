@@ -25,8 +25,8 @@
     const state = url.searchParams.get('state');
     const error = url.searchParams.get('error');
 
-    // Check if this is a Tauri deep link callback by looking at the user agent or URL
-    const isTauriCallback = detectTauriCallback();
+    // Check if this is a Tauri deep link callback by looking at the state parameter
+    const isTauriCallback = detectTauriCallback(state);
 
     if (isTauriCallback) {
       await handleTauriCallback(code, state, error);
@@ -35,17 +35,18 @@
     }
   }
 
-  function detectTauriCallback() {
+  function detectTauriCallback(state) {
     // Check if we're in a browser being called from Tauri
-    // This can be detected by checking if the referrer suggests Tauri origin
-    // or by looking for specific URL patterns
-    const userAgent = navigator.userAgent;
-    const referrer = document.referrer;
+    // We can detect this by looking at the state parameter which includes platform info
+    if (state && state.startsWith('tauri_')) {
+      return true;
+    }
     
-    // Check if this might be a Tauri external browser callback
-    // We can detect this by seeing if we have no referrer (external browser)
-    // and the URL contains the callback path
-    return !referrer || referrer === '' || userAgent.includes('Chrome') || userAgent.includes('Safari');
+    // Fallback: check referrer from Google OAuth
+    const referrer = document.referrer;
+    const isFromGoogleOAuth = referrer && referrer.includes('accounts.google.com');
+    
+    return isFromGoogleOAuth;
   }
 
   async function handleTauriCallback(code, state, error) {

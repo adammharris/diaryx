@@ -7,7 +7,7 @@
 import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { detectTauri } from '../utils/tauri.js';
-import { VITE_API_BASE_URL, VITE_GOOGLE_CLIENT_ID } from '../config/env-validation.js';
+import { VITE_API_BASE_URL, VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_REDIRECT_URI } from '../config/env-validation.js';
 
 // Import Tauri plugins - these modules may not exist in web environment
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -176,9 +176,9 @@ class ApiAuthService {
   private buildGoogleAuthUrl(): string {
     const clientId = VITE_GOOGLE_CLIENT_ID;
 
-    // Use web callback for OAuth redirect, which will then trigger the deep link
-    // For development, use localhost; for production, use your domain
-    const redirectUri = `${window.location.origin}/auth/callback`;
+    // Always use the configured redirect URI from environment variables
+    // This ensures consistency between web and Tauri environments
+    const redirectUri = VITE_GOOGLE_REDIRECT_URI;
     console.log('Redirect URI:', redirectUri);
     const scope = 'openid email profile';
     const responseType = 'code';
@@ -201,8 +201,12 @@ class ApiAuthService {
   }
 
   private generateRandomState(): string {
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
+    const randomPart = Math.random().toString(36).substring(2, 15) + 
+                      Math.random().toString(36).substring(2, 15);
+    
+    // Add platform indicator to state for callback detection
+    const platform = detectTauri() ? 'tauri' : 'web';
+    return `${platform}_${randomPart}`;
   }
 
   /**
@@ -243,7 +247,7 @@ class ApiAuthService {
         },
         body: JSON.stringify({
           code,
-          redirectUri: `http://localhost:5173/auth/callback`
+          redirectUri: VITE_GOOGLE_REDIRECT_URI
         }),
       });
 
