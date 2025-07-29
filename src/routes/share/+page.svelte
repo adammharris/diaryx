@@ -16,6 +16,9 @@
     let error = $state<string | null>(null);
     let entry = $state<any>(null);
     let decryptedContent = $state('');
+    let decryptedTitle = $state('');
+    let decryptedTags = $state<string[]>([]);
+    let decryptedFrontmatter = $state<Record<string, any>>({});
     let isDecrypting = $state(false);
     let decryptionError = $state<string | null>(null);
 
@@ -135,10 +138,29 @@
                 rawEntryKey
             );
             
-            const decryptedEntry = decryptedContentText ? { content: decryptedContentText } : null;
+            // Parse the decrypted JSON to extract the content
+            let decryptedEntry = null;
+            if (decryptedContentText) {
+                try {
+                    const parsedContent = JSON.parse(decryptedContentText);
+                    decryptedEntry = {
+                        content: parsedContent.content || 'No content available',
+                        title: parsedContent.title || 'Untitled',
+                        frontmatter: parsedContent.frontmatter || {},
+                        tags: parsedContent.tags || []
+                    };
+                } catch (parseError) {
+                    console.error('Failed to parse decrypted content as JSON:', parseError);
+                    // Fallback: treat the decrypted text as plain content
+                    decryptedEntry = { content: decryptedContentText };
+                }
+            }
             
             if (decryptedEntry) {
                 decryptedContent = decryptedEntry.content || 'No content available';
+                decryptedTitle = decryptedEntry.title || 'Untitled Entry';
+                decryptedTags = decryptedEntry.tags || [];
+                decryptedFrontmatter = decryptedEntry.frontmatter || {};
                 console.log('Successfully decrypted shared entry');
             } else {
                 throw new Error('Decryption failed - unable to decrypt content');
@@ -224,7 +246,7 @@
         {:else if entry}
             <article class="entry-article">
                 <header class="entry-header">
-                    <h1 class="entry-title">{entry.title || 'Untitled Entry'}</h1>
+                    <h1 class="entry-title">{decryptedTitle || entry.title || 'Untitled Entry'}</h1>
                     <div class="entry-meta">
                         <div class="meta-item">
                             <span class="meta-label">Shared by:</span>
@@ -235,7 +257,13 @@
                             <span class="meta-value">{formatDate(entry.updated_at || entry.created_at)}</span>
                         </div>
                     </div>
-                    {#if getTags(entry).length > 0}
+                    {#if decryptedTags.length > 0}
+                        <div class="entry-tags">
+                            {#each decryptedTags as tag}
+                                <span class="tag">#{tag}</span>
+                            {/each}
+                        </div>
+                    {:else if getTags(entry).length > 0}
                         <div class="entry-tags">
                             {#each getTags(entry) as tag}
                                 <span class="tag">#{tag}</span>
@@ -263,6 +291,26 @@
                         <div class="markdown-content">
                             <SvelteMarkdown source={decryptedContent} />
                         </div>
+                        
+                        {#if Object.keys(decryptedFrontmatter).length > 0}
+                            <div class="frontmatter-section">
+                                <h3>Additional Information</h3>
+                                <div class="frontmatter-content">
+                                    {#each Object.entries(decryptedFrontmatter) as [key, value]}
+                                        <div class="frontmatter-item">
+                                            <strong>{key}:</strong>
+                                            {#if Array.isArray(value)}
+                                                {value.join(', ')}
+                                            {:else if typeof value === 'object'}
+                                                {JSON.stringify(value)}
+                                            {:else}
+                                                {value}
+                                            {/if}
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
                     {/if}
                 </div>
             </article>
@@ -563,6 +611,38 @@
         background: none;
         padding: 0;
         border: none;
+    }
+
+    .frontmatter-section {
+        margin-top: 2rem;
+        padding: 1.5rem;
+        background: var(--color-background, #f8fafc);
+        border-radius: 8px;
+        border: 1px solid var(--color-border, #e5e7eb);
+    }
+
+    .frontmatter-section h3 {
+        margin: 0 0 1rem 0;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--color-text, #1f2937);
+    }
+
+    .frontmatter-content {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .frontmatter-item {
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: var(--color-text, #1f2937);
+    }
+
+    .frontmatter-item strong {
+        color: var(--color-textSecondary, #6b7280);
+        margin-right: 0.5rem;
     }
 
     .viewer-footer {
