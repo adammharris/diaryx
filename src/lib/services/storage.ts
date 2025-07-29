@@ -1775,7 +1775,7 @@ class StorageService {
 	/**
 	 * Get cloud UUID for a local entry ID
 	 */
-	private async getCloudId(localId: string): Promise<string | null> {
+	async getCloudId(localId: string): Promise<string | null> {
 		const db = await this.initDB();
 		const mapping = await db.get('cloudMappings', localId);
 		return mapping?.cloudId || null;

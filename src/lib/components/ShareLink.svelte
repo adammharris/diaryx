@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { JournalEntry } from '../storage/types.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
+    import { storageService } from '../services/storage.js';
 
     interface Props {
         entry: JournalEntry | null;
@@ -25,9 +26,21 @@
         try {
             isGenerating = true;
             
-            // Fetch the published entry data from the backend
+            // First, check if entry is published and get cloud ID
+            const isPublished = await storageService.getEntryPublishStatus(entry.id);
+            if (!isPublished) {
+                throw new Error('Entry is not published. Please publish the entry first before creating a shareable link.');
+            }
+            
+            // Get the cloud UUID for this local entry
+            const cloudId = await storageService.getCloudId(entry.id);
+            if (!cloudId) {
+                throw new Error('Unable to find cloud ID for this entry. Please try republishing the entry.');
+            }
+            
+            // Fetch the published entry data from the backend using cloud ID
             // This gives us the encryption metadata needed for the shareable link
-            const response = await fetch(`${VITE_API_BASE_URL}/entries/public/${entry.id}`, {
+            const response = await fetch(`${VITE_API_BASE_URL}/entries/public/${cloudId}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json'
@@ -58,7 +71,7 @@
             };
             
             const shareData = {
-                entryId: entry.id,
+                entryId: cloudId,
                 keyData: keyData
             };
             
