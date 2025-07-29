@@ -107,12 +107,13 @@
                 throw new Error('No user secret key available for decryption');
             }
             
-            // Decrypt the entry key using our private key and author's public key
-            const authorPublicKeyBytes = new Uint8Array(atob(publishedEntry.author_public_key).split('').map(c => c.charCodeAt(0)));
+            // Decrypt the entry key using our private key and our own public key
+            // (Since this is the author's own entry, the key was encrypted for ourselves)
+            const ourPublicKeyBytes = userSession.userKeyPair.publicKey;
             const encryptedKeyBytes = new Uint8Array(atob(encryptedEntryKeyB64).split('').map(c => c.charCodeAt(0)));
             const keyNonceBytes = new Uint8Array(atob(keyNonceB64).split('').map(c => c.charCodeAt(0)));
             
-            const rawEntryKey = nacl.box.open(encryptedKeyBytes, keyNonceBytes, authorPublicKeyBytes, userSession.userKeyPair.secretKey);
+            const rawEntryKey = nacl.box.open(encryptedKeyBytes, keyNonceBytes, ourPublicKeyBytes, userSession.userKeyPair.secretKey);
             
             if (!rawEntryKey) {
                 throw new Error('Failed to decrypt entry key locally');
