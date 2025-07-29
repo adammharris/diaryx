@@ -84,23 +84,8 @@
                 throw new Error('E2E encryption session is not active. Please unlock your account first.');
             }
             
-            // Decrypt the entry key locally using our E2E session
-            const encryptedData = {
-                encryptedContentB64: publishedEntry.encrypted_content,
-                contentNonceB64: contentNonceB64,
-                encryptedEntryKeyB64: encryptedEntryKeyB64,
-                keyNonceB64: keyNonceB64
-            };
-            
-            // Use the E2E service to decrypt and get the raw entry key
-            const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, publishedEntry.author_public_key);
-            if (!decryptedEntry) {
-                throw new Error('Failed to decrypt entry locally. Cannot create shareable link.');
-            }
-            
-            // Now we have access to the raw entry key that was used for decryption
-            // We need to extract it from the E2E service or decrypt it ourselves
-            // For now, let's try a different approach - decrypt the entry key directly
+            // We'll decrypt the entry key manually instead of using the E2E service
+            // since we need the raw key for the shareable link
             
             const userSession = e2eEncryptionService.getCurrentSession();
             if (!userSession?.userKeyPair?.secretKey) {
