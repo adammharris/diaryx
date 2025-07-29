@@ -1,6 +1,7 @@
 <script lang="ts">
     import SvelteMarkdown from 'svelte-markdown';
     import { e2eEncryptionService } from '../services/e2e-encryption.service.js';
+    import ShareLink from './ShareLink.svelte';
     import type { JournalEntryMetadata } from '../storage/types.js';
 
     interface SharedEntry extends JournalEntryMetadata {
@@ -28,6 +29,8 @@
 
     let { entry, isVisible, onclose }: Props = $props();
 
+    let showShareDialog = $state(false);
+
     let displayContent = $derived.by(() => {
         if (!entry) return 'No content available';
         
@@ -40,6 +43,14 @@
             return 'Content is encrypted and could not be decrypted';
         }
     });
+
+    function handleShare() {
+        showShareDialog = true;
+    }
+
+    function handleCloseShare() {
+        showShareDialog = false;
+    }
 
     function handleClose() {
         onclose?.();
@@ -88,13 +99,22 @@
                         </div>
                     {/if}
                 </div>
-                <button 
-                    class="close-btn"
-                    onclick={handleClose}
-                    aria-label="Close entry viewer"
-                >
-                    ×
-                </button>
+                <div class="header-actions">
+                    <button 
+                        class="share-btn"
+                        onclick={handleShare}
+                        title="Create shareable link"
+                    >
+                        🔗
+                    </button>
+                    <button 
+                        class="close-btn"
+                        onclick={handleClose}
+                        aria-label="Close entry viewer"
+                    >
+                        ×
+                    </button>
+                </div>
             </div>
 
             <div class="modal-body">
@@ -107,6 +127,12 @@
         </div>
     </div>
 {/if}
+
+<ShareLink 
+    entry={entry}
+    isVisible={showShareDialog}
+    onclose={handleCloseShare}
+/>
 
 <style>
     .modal-overlay {
@@ -187,27 +213,44 @@
         font-weight: 500;
     }
 
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .share-btn,
     .close-btn {
         background: none;
         border: none;
         font-size: 1.5rem;
         cursor: pointer;
         color: var(--color-textSecondary);
-        padding: 0.25rem;
+        padding: 0.5rem;
         line-height: 1;
-        margin-left: 1rem;
-        min-width: 24px;
-        min-height: 24px;
+        min-width: 40px;
+        min-height: 40px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 4px;
-        transition: background-color 0.2s;
+        border-radius: 6px;
+        transition: all 0.2s;
     }
 
+    .share-btn:hover,
     .close-btn:hover {
         background: var(--color-border);
         color: var(--color-text);
+        transform: scale(1.05);
+    }
+
+    .share-btn {
+        color: var(--color-primary);
+    }
+
+    .share-btn:hover {
+        background: var(--color-primaryShadow);
+        color: var(--color-primary);
     }
 
     .modal-body {
