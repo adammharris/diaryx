@@ -522,9 +522,10 @@
 
     .entry-content {
         padding: 2rem;
-        min-height: 200px;
-        overflow-y: visible;
+        max-height: 60vh;
+        overflow-y: auto;
         word-wrap: break-word;
+        border-top: 1px solid var(--color-border, #e5e7eb);
     }
 
     .decrypting-state,
