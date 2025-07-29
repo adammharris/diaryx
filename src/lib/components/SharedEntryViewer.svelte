@@ -1,7 +1,6 @@
 <script lang="ts">
     import SvelteMarkdown from 'svelte-markdown';
     import { e2eEncryptionService } from '../services/e2e-encryption.service.js';
-    import ShareLink from './ShareLink.svelte';
     import type { JournalEntryMetadata } from '../storage/types.js';
 
     interface SharedEntry extends JournalEntryMetadata {
@@ -29,7 +28,6 @@
 
     let { entry, isVisible, onclose }: Props = $props();
 
-    let showShareDialog = $state(false);
 
     let displayContent = $derived.by(() => {
         if (!entry) return 'No content available';
@@ -44,13 +42,6 @@
         }
     });
 
-    function handleShare() {
-        showShareDialog = true;
-    }
-
-    function handleCloseShare() {
-        showShareDialog = false;
-    }
 
     function handleClose() {
         onclose?.();
@@ -101,13 +92,6 @@
                 </div>
                 <div class="header-actions">
                     <button 
-                        class="share-btn"
-                        onclick={handleShare}
-                        title="Create shareable link"
-                    >
-                        🔗
-                    </button>
-                    <button 
                         class="close-btn"
                         onclick={handleClose}
                         aria-label="Close entry viewer"
@@ -128,11 +112,6 @@
     </div>
 {/if}
 
-<ShareLink 
-    entry={entry}
-    isVisible={showShareDialog}
-    onclose={handleCloseShare}
-/>
 
 <style>
     .modal-overlay {

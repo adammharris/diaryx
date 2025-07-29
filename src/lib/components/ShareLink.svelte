@@ -1,25 +1,9 @@
 <script lang="ts">
-    import type { JournalEntryMetadata } from '../storage/types.js';
-
-    interface SharedEntry extends JournalEntryMetadata {
-        author: string;
-        tags: string[];
-        fullContent?: string;
-        authorPublicKey?: string;
-        encryptionInfo?: {
-            encrypted_title: string;
-            encrypted_content: string;
-            encryption_metadata: any;
-            access_key: {
-                encrypted_entry_key: string;
-                key_nonce: string;
-                granted_at: string;
-            };
-        };
-    }
+    import type { JournalEntry } from '../storage/types.js';
+    import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
 
     interface Props {
-        entry: SharedEntry | null;
+        entry: JournalEntry | null;
         isVisible: boolean;
         onclose?: () => void;
     }
@@ -31,39 +15,63 @@
     let copyStatus = $state<'idle' | 'copied' | 'error'>('idle');
     let linkGenerated = $state(false);
 
-    // Generate shareable link
+    // Generate shareable link by fetching data from backend
     async function generateShareableLink() {
-        if (!entry || !entry.encryptionInfo) {
-            console.error('No entry or encryption info available');
+        if (!entry) {
+            console.error('No entry available');
             return;
         }
 
         try {
             isGenerating = true;
             
-            // Extract the entry key from the access key (this is what we need to decrypt)
-            const encryptedEntryKey = entry.encryptionInfo.access_key.encrypted_entry_key;
-            const keyNonce = entry.encryptionInfo.access_key.key_nonce;
+            // Fetch the published entry data from the backend
+            // This gives us the encryption metadata needed for the shareable link
+            const response = await fetch(`${VITE_API_BASE_URL}/entries/public/${entry.id}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new Error('Entry not found or not published for public sharing');
+                } else {
+                    throw new Error(`Failed to fetch entry: ${response.statusText}`);
+                }
+            }
+
+            const result = await response.json();
             
-            // For the shareable link, we need the actual decryption key
-            // In a real implementation, this would involve decrypting the entry key
-            // For now, we'll create a link format that includes the encrypted key and nonce
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch entry data');
+            }
+
+            const publishedEntry = result.data;
+            
+            // Create share data with the encryption information from the backend
             const keyData = {
-                encryptedKey: encryptedEntryKey,
-                nonce: keyNonce,
-                authorPublicKey: entry.authorPublicKey
+                encryptedKey: publishedEntry.encryption_metadata?.entryKey || 'missing_key',
+                nonce: publishedEntry.encryption_metadata?.nonce || 'missing_nonce', 
+                authorPublicKey: publishedEntry.author?.public_key || publishedEntry.author_public_key || 'missing_public_key'
             };
             
-            // Encode the key data as base64url for the URL fragment
-            const keyDataJson = JSON.stringify(keyData);
-            const keyDataBase64 = btoa(keyDataJson)
+            const shareData = {
+                entryId: entry.id,
+                keyData: keyData
+            };
+            
+            // Encode the share data as base64url for the query parameter
+            const shareDataJson = JSON.stringify(shareData);
+            const shareDataBase64 = btoa(shareDataJson)
                 .replace(/\+/g, '-')
                 .replace(/\//g, '_')
                 .replace(/=/g, '');
             
-            // Generate the shareable link
+            // Generate the shareable link using query parameter format for static adapter compatibility
             const baseUrl = window.location.origin;
-            shareableLink = `${baseUrl}/share/${entry.id}#${keyDataBase64}`;
+            shareableLink = `${baseUrl}/share?q=${shareDataBase64}`;
             
             linkGenerated = true;
             console.log('Shareable link generated:', shareableLink);
@@ -135,7 +143,6 @@
                     <div class="entry-info">
                         <h3 class="entry-title">{entry.title}</h3>
                         <div class="entry-meta">
-                            <span class="author">By: {entry.author}</span>
                             <span class="date">{formatDate(entry.modified_at)}</span>
                         </div>
                     </div>

@@ -7,6 +7,7 @@
     import { detectTauri } from '../utils/tauri.js';
     import { save } from '@tauri-apps/plugin-dialog';
     import { writeTextFile } from '@tauri-apps/plugin-fs';
+    import ShareLink from './ShareLink.svelte';
 
     interface Props {
         entry: JournalEntry | null;
@@ -15,6 +16,8 @@
     }
 
     let { entry, isVisible, onclose }: Props = $props();
+
+    let showShareDialog = $state(false);
 
     // Parse frontmatter when entry changes - compute values directly
     let parsedContent = $derived(
@@ -37,6 +40,14 @@
     function handleClose() {
         console.log("InfoModal: handleClose called");
         onclose?.();
+    }
+
+    function handleShare() {
+        showShareDialog = true;
+    }
+
+    function handleCloseShare() {
+        showShareDialog = false;
     }
 
     function handleBackdropClick(event: MouseEvent) {
@@ -250,6 +261,18 @@
             <div class="modal-footer">
                 <button
                     class="btn btn-primary"
+                    onclick={handleShare}
+                    title="Create a shareable link for this entry"
+                >
+                    <img
+                        src="/material-symbols--public.svg"
+                        alt="Share"
+                        class="icon"
+                    />
+                    Share Publicly
+                </button>
+                <button
+                    class="btn btn-primary"
                     onclick={exportAsMarkdown}
                     title="Export this entry as a Markdown file"
                 >
@@ -267,6 +290,12 @@
         </div>
     </div>
 {/if}
+
+<ShareLink 
+    entry={entry}
+    isVisible={showShareDialog}
+    onclose={handleCloseShare}
+/>
 
 <style>
     /* Component-specific styles that can't be replaced with utility classes - InfoModal uses extracted styles */

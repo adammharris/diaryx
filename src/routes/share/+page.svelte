@@ -7,8 +7,8 @@
     import { e2eEncryptionService } from '$lib/services/e2e-encryption.service.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
 
-    // Get entry ID from URL params or extract from URL for static adapter
-    let entryId = $state<string | null>(null);
+    // Parse query parameter for entry data
+    let shareData = $state<{entryId: string, keyData: any} | null>(null);
     
     // State management
     let isLoading = $state(true);
@@ -18,42 +18,33 @@
     let isDecrypting = $state(false);
     let decryptionError = $state<string | null>(null);
 
-    // Key data from URL fragment
-    let keyData = $state<any>(null);
-
     onMount(async () => {
         if (!browser) return;
         
-        // Extract entry ID - prefer page params, fallback to URL parsing for static adapter
-        const paramEntryId = $page.params.entryId;
-        if (paramEntryId && paramEntryId !== '_fallback') {
-            entryId = paramEntryId;
-        } else {
-            // For static adapter fallback: extract from URL
-            const pathParts = window.location.pathname.split('/');
-            const realEntryId = pathParts[pathParts.length - 1];
-            if (realEntryId && realEntryId !== '_fallback') {
-                entryId = realEntryId;
-            }
-        }
-        
-        // Parse encryption key from URL fragment
         try {
-            const fragment = window.location.hash.slice(1); // Remove #
-            if (!fragment) {
-                error = 'No encryption key found in URL. Please use the complete shareable link.';
+            // Parse the 'q' query parameter which contains encoded share data
+            const queryParam = $page.url.searchParams.get('q');
+            if (!queryParam) {
+                error = 'No share data found in URL. Please use the complete shareable link.';
                 isLoading = false;
                 return;
             }
 
-            // Decode base64url key data
-            const keyDataJson = atob(fragment.replace(/-/g, '+').replace(/_/g, '/'));
-            keyData = JSON.parse(keyDataJson);
+            // Decode the share data
+            const shareDataJson = atob(queryParam.replace(/-/g, '+').replace(/_/g, '/'));
+            const parsedData = JSON.parse(shareDataJson);
             
-            console.log('Parsed key data from URL fragment');
+            if (!parsedData.entryId || !parsedData.keyData) {
+                error = 'Invalid share data format. Please check the shareable link.';
+                isLoading = false;
+                return;
+            }
+            
+            shareData = parsedData;
+            console.log('Parsed share data from query parameter');
         } catch (err) {
-            console.error('Failed to parse encryption key from URL:', err);
-            error = 'Invalid encryption key in URL. Please check the shareable link.';
+            console.error('Failed to parse share data from URL:', err);
+            error = 'Invalid share data in URL. Please check the shareable link.';
             isLoading = false;
             return;
         }
@@ -63,8 +54,8 @@
     });
 
     async function loadEntry() {
-        if (!entryId) {
-            error = 'No entry ID provided';
+        if (!shareData) {
+            error = 'No share data available';
             isLoading = false;
             return;
         }
@@ -74,7 +65,7 @@
             error = null;
 
             // Fetch entry from public API (no authentication required)
-            const response = await fetch(`${VITE_API_BASE_URL}/entries/public/${entryId}`, {
+            const response = await fetch(`${VITE_API_BASE_URL}/entries/public/${shareData.entryId}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json'
@@ -111,7 +102,7 @@
     }
 
     async function decryptEntry() {
-        if (!entry || !keyData) {
+        if (!entry || !shareData?.keyData) {
             decryptionError = 'Missing entry data or encryption key';
             return;
         }
@@ -124,14 +115,14 @@
             const encryptedData = {
                 encryptedContentB64: entry.encrypted_content,
                 contentNonceB64: entry.encryption_metadata?.contentNonceB64,
-                encryptedEntryKeyB64: keyData.encryptedKey,
-                keyNonceB64: keyData.nonce
+                encryptedEntryKeyB64: shareData.keyData.encryptedKey,
+                keyNonceB64: shareData.keyData.nonce
             };
 
             console.log('Attempting to decrypt entry with shared key data');
             
             // Decrypt using the E2E encryption service
-            const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, keyData.authorPublicKey);
+            const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, shareData.keyData.authorPublicKey);
             
             if (decryptedEntry) {
                 decryptedContent = decryptedEntry.content || 'No content available';
@@ -163,7 +154,9 @@
     }
 
     function getAuthorName(entry: any): string {
-        return entry.author?.display_name || entry.author?.name || entry.author?.username || 'Unknown Author';
+        // Backend returns flat fields: author_display_name, author_name, author_username
+        return entry.author?.display_name || entry.author?.name || entry.author?.username || 
+               entry.author_display_name || entry.author_name || entry.author_username || 'Unknown Author';
     }
 
     function getTags(entry: any): string[] {
