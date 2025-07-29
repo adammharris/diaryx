@@ -2,6 +2,9 @@
     import type { JournalEntry } from '../storage/types.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
     import { storageService } from '../services/storage.js';
+    import { e2eEncryptionService } from '../services/e2e-encryption.service.js';
+    import { EntryCryptor } from '../crypto/EntryCryptor.js';
+    import nacl from 'tweetnacl';
 
     interface Props {
         entry: JournalEntry | null;
@@ -63,11 +66,63 @@
 
             const publishedEntry = result.data;
             
-            // Create share data with the encryption information from the backend
+            // We need to decrypt the entry key locally and embed the raw key in the shareable link
+            // This allows anonymous users to decrypt without needing the original user's private key
+            
+            // First, let's get the entry key from the published entry's encryption metadata
+            // The backend should return the encrypted entry key and nonce
+            const encryptedEntryKeyB64 = publishedEntry.encryption_metadata?.encryptedEntryKeyB64;
+            const keyNonceB64 = publishedEntry.encryption_metadata?.keyNonceB64;
+            const contentNonceB64 = publishedEntry.encryption_metadata?.contentNonceB64;
+            
+            if (!encryptedEntryKeyB64 || !keyNonceB64 || !contentNonceB64) {
+                throw new Error('Missing encryption metadata from published entry');
+            }
+            
+            // Check if we have an active E2E session to decrypt the entry key
+            if (!e2eEncryptionService.isUnlocked()) {
+                throw new Error('E2E encryption session is not active. Please unlock your account first.');
+            }
+            
+            // Decrypt the entry key locally using our E2E session
+            const encryptedData = {
+                encryptedContentB64: publishedEntry.encrypted_content,
+                contentNonceB64: contentNonceB64,
+                encryptedEntryKeyB64: encryptedEntryKeyB64,
+                keyNonceB64: keyNonceB64
+            };
+            
+            // Use the E2E service to decrypt and get the raw entry key
+            const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, publishedEntry.author_public_key);
+            if (!decryptedEntry) {
+                throw new Error('Failed to decrypt entry locally. Cannot create shareable link.');
+            }
+            
+            // Now we have access to the raw entry key that was used for decryption
+            // We need to extract it from the E2E service or decrypt it ourselves
+            // For now, let's try a different approach - decrypt the entry key directly
+            
+            const userSession = e2eEncryptionService.getCurrentSession();
+            if (!userSession?.userKeyPair?.secretKey) {
+                throw new Error('No user secret key available for decryption');
+            }
+            
+            // Decrypt the entry key using our private key and author's public key
+            const authorPublicKeyBytes = new Uint8Array(atob(publishedEntry.author_public_key).split('').map(c => c.charCodeAt(0)));
+            const encryptedKeyBytes = new Uint8Array(atob(encryptedEntryKeyB64).split('').map(c => c.charCodeAt(0)));
+            const keyNonceBytes = new Uint8Array(atob(keyNonceB64).split('').map(c => c.charCodeAt(0)));
+            
+            const rawEntryKey = nacl.box.open(encryptedKeyBytes, keyNonceBytes, authorPublicKeyBytes, userSession.userKeyPair.secretKey);
+            
+            if (!rawEntryKey) {
+                throw new Error('Failed to decrypt entry key locally');
+            }
+            
+            // Create share data with the RAW decrypted entry key (not encrypted)
             const keyData = {
-                encryptedKey: publishedEntry.encryption_metadata?.entryKey || 'missing_key',
-                nonce: publishedEntry.encryption_metadata?.nonce || 'missing_nonce', 
-                authorPublicKey: publishedEntry.author?.public_key || publishedEntry.author_public_key || 'missing_public_key'
+                rawEntryKey: btoa(String.fromCharCode(...rawEntryKey)), // Raw key as base64
+                contentNonce: contentNonceB64, // Content nonce for decryption
+                authorPublicKey: publishedEntry.author_public_key // Author's public key for verification
             };
             
             const shareData = {

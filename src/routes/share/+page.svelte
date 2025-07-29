@@ -6,6 +6,7 @@
     import { browser } from '$app/environment';
     import { e2eEncryptionService } from '$lib/services/e2e-encryption.service.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
+    import { EntryCryptor } from '$lib/crypto/EntryCryptor.js';
 
     // Parse query parameter for entry data
     let shareData = $state<{entryId: string, keyData: any} | null>(null);
@@ -121,8 +122,20 @@
 
             console.log('Attempting to decrypt entry with shared key data');
             
-            // Decrypt using the E2E encryption service
-            const decryptedEntry = e2eEncryptionService.decryptEntry(encryptedData, shareData.keyData.authorPublicKey);
+            // For public sharing, we have the raw entry key (already decrypted)
+            // Decrypt the content directly using the raw entry key from the share data
+            
+            // The share data contains the raw entry key for public decryption
+            const rawEntryKey = new Uint8Array(atob(shareData.keyData.rawEntryKey).split('').map(c => c.charCodeAt(0)));
+            
+            // Decrypt the content directly with the raw key
+            const decryptedContentText = EntryCryptor.decryptField(
+                entry.encrypted_content,
+                shareData.keyData.contentNonce,
+                rawEntryKey
+            );
+            
+            const decryptedEntry = decryptedContentText ? { content: decryptedContentText } : null;
             
             if (decryptedEntry) {
                 decryptedContent = decryptedEntry.content || 'No content available';
