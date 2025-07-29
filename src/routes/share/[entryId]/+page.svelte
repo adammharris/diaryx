@@ -7,8 +7,8 @@
     import { e2eEncryptionService } from '$lib/services/e2e-encryption.service.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
 
-    // Get entry ID from URL params
-    let entryId = $derived($page.params.entryId);
+    // Get entry ID from URL params or extract from URL for static adapter
+    let entryId = $state<string | null>(null);
     
     // State management
     let isLoading = $state(true);
@@ -23,6 +23,19 @@
 
     onMount(async () => {
         if (!browser) return;
+        
+        // Extract entry ID - prefer page params, fallback to URL parsing for static adapter
+        const paramEntryId = $page.params.entryId;
+        if (paramEntryId && paramEntryId !== '_fallback') {
+            entryId = paramEntryId;
+        } else {
+            // For static adapter fallback: extract from URL
+            const pathParts = window.location.pathname.split('/');
+            const realEntryId = pathParts[pathParts.length - 1];
+            if (realEntryId && realEntryId !== '_fallback') {
+                entryId = realEntryId;
+            }
+        }
         
         // Parse encryption key from URL fragment
         try {
