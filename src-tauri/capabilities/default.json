@@ -21,6 +21,12 @@
     "fs:allow-unwatch",
     "os:default",
     "dialog:default",
-    "deep-link:default"
+    "deep-link:default",
+    "log:default",
+    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "https://*.diaryx.net" }]
+    }
   ]
 }

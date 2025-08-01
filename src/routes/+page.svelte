@@ -224,39 +224,254 @@
       console.log('Setting up deep link listener...');
       
       // Listen for deep link activations
-      const unlisten = await onOpenUrl((urls) => {
+      const unlisten = await onOpenUrl(async (urls) => {
         console.log('🔗 Global deep link received:', urls);
+        
+        // Use Tauri logging if available
+        if (detectTauri()) {
+          try {
+            const { info } = await import('@tauri-apps/plugin-log');
+            await info(`Deep link received: ${JSON.stringify(urls)}`);
+          } catch (logErr) {
+            console.warn('Could not use Tauri logging:', logErr);
+          }
+        }
         
         const url = urls[0];
         if (url && url.startsWith('diaryx://auth/callback')) {
           console.log('🔗 OAuth callback detected - checking if auth service is waiting for it...');
+          console.log('🔗 Full callback URL:', url);
+          
+          // Parse the URL to see what parameters we got
+          try {
+            const parsedUrl = new URL(url);
+            const code = parsedUrl.searchParams.get('code');
+            const state = parsedUrl.searchParams.get('state');
+            const error = parsedUrl.searchParams.get('error');
+            
+            console.log('🔗 Parsed parameters:', { 
+              code: code ? 'present' : 'missing', 
+              state, 
+              error,
+              allParams: Object.fromEntries(parsedUrl.searchParams)
+            });
+            
+            if (detectTauri()) {
+              try {
+                const { info, error: logError } = await import('@tauri-apps/plugin-log');
+                await info(`OAuth callback - code: ${code ? 'present' : 'missing'}, state: ${state}, error: ${error}`);
+                if (error) {
+                  await logError(`OAuth error in deep link: ${error}`);
+                }
+              } catch (logErr) {
+                console.warn('Could not log deep link details:', logErr);
+              }
+            }
+          } catch (parseErr) {
+            console.error('🔗 Failed to parse deep link URL:', parseErr);
+          }
           
           // Check if the auth service has an active OAuth callback waiting
           const authCallback = (window as any).__auth_callback;
+          
+          if (detectTauri()) {
+            try {
+              const { info } = await import('@tauri-apps/plugin-log');
+              await info(`🔗 Auth callback check - authCallback exists: ${!!authCallback}, has handler: ${!!(authCallback && authCallback.handler)}`);
+            } catch (logErr) {
+              console.warn('Could not log auth callback check:', logErr);
+            }
+          }
+          
           if (authCallback && authCallback.handler) {
             console.log('🔗 Auth service is waiting for OAuth callback - delegating to it');
+            
+            if (detectTauri()) {
+              try {
+                const { info } = await import('@tauri-apps/plugin-log');
+                await info('🔗 Delegating to auth service handler');
+              } catch (logErr) {
+                console.warn('Could not log delegation:', logErr);
+              }
+            }
+            
             authCallback.handler(url);
             return;
           }
           
           console.log('🔗 No active auth callback - handling OAuth callback in main page');
+          
+          if (detectTauri()) {
+            try {
+              const { info } = await import('@tauri-apps/plugin-log');
+              await info('🔗 No auth service handler found, proceeding with main page fallback');
+            } catch (logErr) {
+              console.warn('Could not log fallback decision:', logErr);
+            }
+          }
           // Fallback: handle in main page if auth service isn't waiting
           setTimeout(async () => {
-            apiAuthService.reloadFromStorage();
+            console.log('🔗 Processing OAuth callback in main page...');
             
-            setTimeout(() => {
-              const currentSession = apiAuthService.getCurrentSession();
-              if (currentSession && currentSession.isAuthenticated) {
-                showDialog({
-                  title: 'Welcome Back!',
-                  message: `Successfully signed in as ${currentSession.user.name || currentSession.user.email}`,
-                  type: 'info'
-                });
-                loadEntries();
-              } else {
-                console.warn('Deep link callback processed but no session found');
+            // CRITICAL DEBUG: Log immediately to confirm we reach this point
+            try {
+              const { info } = await import('@tauri-apps/plugin-log');
+              await info('🔗 CRITICAL: setTimeout callback has been triggered - processing OAuth callback');
+            } catch (logErr) {
+              console.error('Could not use Tauri logging in setTimeout:', logErr);
+            }
+            
+            if (detectTauri()) {
+              try {
+                const { info } = await import('@tauri-apps/plugin-log');
+                await info('🔗 Starting OAuth callback processing in main page');
+              } catch (logErr) {
+                console.warn('Could not use Tauri logging:', logErr);
               }
-            }, 500);
+            }
+            
+            try {
+              // Parse the deep link URL to extract parameters
+              const deepLinkUrl = new URL(url);
+              const authCode = deepLinkUrl.searchParams.get('code');
+              const authState = deepLinkUrl.searchParams.get('state');
+              
+              if (detectTauri()) {
+                try {
+                  const { info } = await import('@tauri-apps/plugin-log');
+                  await info(`🔗 Parsed deep link - code: ${authCode ? 'present' : 'missing'}, state: ${authState}`);
+                } catch (logErr) {
+                  console.warn('Could not log deep link parsing:', logErr);
+                }
+              }
+              
+              if (!authCode) {
+                throw new Error('Authorization code not found in deep link.');
+              }
+              
+              // Need to perform token exchange just like web callback does
+              // Try both sessionStorage and localStorage (localStorage persists across app restarts)
+              let codeVerifier = sessionStorage.getItem('pkce_code_verifier') || localStorage.getItem('pkce_code_verifier');
+              
+              if (detectTauri()) {
+                try {
+                  const { info } = await import('@tauri-apps/plugin-log');
+                  await info(`🔗 Code verifier check - ${codeVerifier ? 'found' : 'NOT FOUND'}`);
+                } catch (logErr) {
+                  console.warn('Could not log code verifier check:', logErr);
+                }
+              }
+              
+              if (!codeVerifier) {
+                if (detectTauri()) {
+                  try {
+                    const { error: logError } = await import('@tauri-apps/plugin-log');
+                    await logError('🔗 CRITICAL: Code verifier not found in sessionStorage - OAuth flow cannot complete');
+                  } catch (logErr) {
+                    console.warn('Could not log critical error:', logErr);
+                  }
+                }
+                throw new Error('Security code verifier not found. Please start the login process again.');
+              }
+              
+              if (detectTauri()) {
+                const { info } = await import('@tauri-apps/plugin-log');
+                await info(`🔗 Starting token exchange with backend for code: ${authCode ? 'present' : 'missing'}`);
+              }
+              
+              // Import environment variables
+              const { VITE_API_BASE_URL, VITE_GOOGLE_REDIRECT_URI } = await import('$lib/config/env-validation.js');
+              
+              // Exchange the authorization code for an access token via your backend
+              const tokenUrl = `${VITE_API_BASE_URL}/auth/google`;
+              const response = await fetch(tokenUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  code: authCode,
+                  codeVerifier: codeVerifier,
+                  redirectUri: VITE_GOOGLE_REDIRECT_URI
+                }),
+              });
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                throw new Error(data.error_description || 'Failed to exchange code for token.');
+              }
+
+              if (detectTauri()) {
+                const { info } = await import('@tauri-apps/plugin-log');
+                await info('🔗 Token exchange successful, creating session...');
+              }
+
+              // Create the session object that the app expects
+              const session = {
+                user: {
+                  id: data.user.id,
+                  email: data.user.email,
+                  name: data.user.name,
+                  avatar: data.user.avatar,
+                  provider: data.user.provider || 'google',
+                  public_key: data.user.public_key
+                },
+                accessToken: data.access_token,
+                isAuthenticated: true
+              };
+
+              // Store the session with the expected key
+              localStorage.setItem('diaryx_auth_session', JSON.stringify(session));
+              
+              // Clean up the verifier from both storages for security
+              sessionStorage.removeItem('pkce_code_verifier');
+              localStorage.removeItem('pkce_code_verifier');
+              
+              // Notify the auth service about the new session
+              apiAuthService.reloadFromStorage();
+              
+              if (detectTauri()) {
+                const { info } = await import('@tauri-apps/plugin-log');
+                await info('🔗 Session created and stored successfully');
+              }
+              
+              setTimeout(() => {
+                const currentSession = apiAuthService.getCurrentSession();
+                console.log('🔗 Current session after reload:', currentSession ? 'found' : 'not found');
+                
+                if (currentSession && currentSession.isAuthenticated) {
+                  console.log('🔗 Authentication successful!');
+                  showDialog({
+                    title: 'Welcome Back!',
+                    message: `Successfully signed in as ${currentSession.user.name || currentSession.user.email}`,
+                    type: 'info'
+                  });
+                  loadEntries();
+                } else {
+                  console.warn('🔗 Deep link callback processed but no session found');
+                  showDialog({
+                    title: 'Sign In Failed',
+                    message: 'Session was created but could not be loaded. Please try again.',
+                    type: 'error'
+                  });
+                }
+              }, 500);
+              
+            } catch (err) {
+              console.error('🔗 Token exchange failed:', err);
+              
+              if (detectTauri()) {
+                const { error: logError } = await import('@tauri-apps/plugin-log');
+                await logError(`🔗 Token exchange failed: ${err instanceof Error ? err.message : String(err)}`);
+              }
+              
+              showDialog({
+                title: 'Sign In Failed',
+                message: err instanceof Error ? err.message : 'Failed to complete authentication. Please try again.',
+                type: 'error'
+              });
+            }
           }, 1500);
         } else {
           console.log('🔗 Deep link received but not an OAuth callback:', url);

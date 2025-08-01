@@ -1,6 +1,5 @@
 /**
  * API-based authentication service for Google OAuth + custom backend
- * Works with your Vercel API endpoints
  * Supports both web browser and Tauri environment
  */
 
@@ -220,15 +219,20 @@ class ApiAuthService {
       prompt: 'select_account'
     });
 
-    // For web flows, add PKCE parameters
-    if (state.startsWith('web_') && browser) {
+    // Add PKCE parameters for both web and Tauri flows
+    if (browser) {
       const { codeVerifier, codeChallenge } = await this.generatePKCE();
       params.set('code_challenge', codeChallenge);
       params.set('code_challenge_method', 'S256');
       
-      // Store code verifier for the callback
-      sessionStorage.setItem('pkce_code_verifier', codeVerifier);
-      console.log('PKCE enabled for web flow, code verifier stored');
+      // Store code verifier for the callback - use localStorage for Tauri (survives app restart)
+      if (state.startsWith('tauri_')) {
+        localStorage.setItem('pkce_code_verifier', codeVerifier);
+        console.log('PKCE enabled for Tauri flow, code verifier stored in localStorage');
+      } else {
+        sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+        console.log('PKCE enabled for web flow, code verifier stored in sessionStorage');
+      }
     }
 
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -348,11 +352,39 @@ class ApiAuthService {
       console.log('🔗 Processing deep link callback:', deepLinkUrl);
       console.log('🔗 Deep link received successfully in Tauri app');
       
+      // Critical debug - use Tauri logging to ensure this appears in logs
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`🔗 CRITICAL: handleDeepLinkCallback started with URL: ${deepLinkUrl}`);
+        } catch (logErr) {
+          console.error('Could not use Tauri logging in handleDeepLinkCallback:', logErr);
+        }
+      }
+      
       // Parse the deep link URL to extract the authorization code and state
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info('🔗 About to parse URL...');
+        } catch (logErr) {
+          console.error('Log error 1:', logErr);
+        }
+      }
+      
       const url = new URL(deepLinkUrl);
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
       const error = url.searchParams.get('error');
+      
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`🔗 Parsed URL - code: ${code ? 'present' : 'missing'}, state: ${state}, error: ${error}`);
+        } catch (logErr) {
+          console.error('Log error 2:', logErr);
+        }
+      }
 
       if (error) {
         throw new Error(`OAuth error: ${error}`);
@@ -363,6 +395,15 @@ class ApiAuthService {
       }
 
       // Validate state format instead of using sessionStorage
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info('🔗 About to validate state...');
+        } catch (logErr) {
+          console.error('Log error 3:', logErr);
+        }
+      }
+      
       const stateValidation = this.validateStateFormat(state || '', 'tauri');
       console.log('🔗 State validation:', { 
         received: state, 
@@ -371,37 +412,177 @@ class ApiAuthService {
         timestamp: stateValidation.timestamp ? new Date(stateValidation.timestamp).toISOString() : undefined
       });
       
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`🔗 State validation result: ${stateValidation.isValid}, error: ${stateValidation.error}`);
+        } catch (logErr) {
+          console.error('Log error 4:', logErr);
+        }
+      }
+      
       if (!stateValidation.isValid) {
         throw new Error(`State validation failed: ${stateValidation.error}`);
       }
       
       console.log('🔗 State validation passed - this is a valid Tauri auth callback');
 
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info('🔗 About to retrieve code verifier...');
+        } catch (logErr) {
+          console.error('Log error 5:', logErr);
+        }
+      }
+
+      // Retrieve the code verifier from localStorage (stored during login initiation)
+      const codeVerifier = localStorage.getItem('pkce_code_verifier') || sessionStorage.getItem('pkce_code_verifier');
+      
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`🔗 Code verifier check - localStorage: ${!!localStorage.getItem('pkce_code_verifier')}, sessionStorage: ${!!sessionStorage.getItem('pkce_code_verifier')}, final: ${!!codeVerifier}`);
+        } catch (logErr) {
+          console.error('Log error 6:', logErr);
+        }
+      }
+      
+      if (!codeVerifier) {
+        if (detectTauri()) {
+          try {
+            const { error: logError } = await import('@tauri-apps/plugin-log');
+            await logError('🔗 CRITICAL ERROR: PKCE code verifier not found in either storage');
+          } catch (logErr) {
+            console.error('Log error 7:', logErr);
+          }
+        }
+        throw new Error('PKCE code verifier not found. Please restart the authentication process.');
+      }
+      
+      console.log('🔗 Code verifier found, exchanging authorization code for tokens...');
+      
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info('🔗 Code verifier found, about to make backend request...');
+        } catch (logErr) {
+          console.error('Log error 8:', logErr);
+        }
+      }
+
       // Exchange the authorization code for tokens via your backend
-      console.log('🔗 Exchanging authorization code for tokens...');
-      const response = await fetch(`${this.API_BASE_URL}/auth/google`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code,
-          redirectUri: VITE_GOOGLE_REDIRECT_URI
-        }),
-      });
+      const requestBody = {
+        code,
+        codeVerifier,
+        redirectUri: VITE_GOOGLE_REDIRECT_URI
+      };
+      
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`🔗 Making request to: ${this.API_BASE_URL}/auth/google`);
+          await info(`🔗 Request body keys: ${Object.keys(requestBody).join(', ')}`);
+        } catch (logErr) {
+          console.error('Log error 9:', logErr);
+        }
+      }
+      
+      let response;
+      try {
+        // Use Tauri HTTP client in Tauri environment, otherwise use browser fetch
+        if (detectTauri()) {
+          try {
+            const { info } = await import('@tauri-apps/plugin-log');
+            await info('🔗 Using Tauri HTTP client for request...');
+          } catch (logErr) {
+            console.error('Log error (Tauri HTTP):', logErr);
+          }
+          
+          // Import Tauri HTTP client
+          const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+          
+          response = await tauriFetch(`${this.API_BASE_URL}/auth/google`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+          });
+        } else {
+          // Browser environment - use standard fetch with timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          response = await fetch(`${this.API_BASE_URL}/auth/google`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+        }
+      } catch (fetchError) {
+        if (detectTauri()) {
+          try {
+            const { error: logError } = await import('@tauri-apps/plugin-log');
+            await logError(`🔗 Fetch request failed: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+          } catch (logErr) {
+            console.error('Log error 13:', logErr);
+          }
+        }
+        console.error('🔗 Network request failed:', fetchError);
+        throw new Error(`Network request failed: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+      }
+
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`🔗 Backend response status: ${response.status} ${response.statusText}`);
+        } catch (logErr) {
+          console.error('Log error 10:', logErr);
+        }
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('🔗 Backend auth failed:', response.status, errorText);
+        
+        if (detectTauri()) {
+          try {
+            const { error: logError } = await import('@tauri-apps/plugin-log');
+            await logError(`🔗 Backend auth failed: ${response.status} - ${errorText}`);
+          } catch (logErr) {
+            console.error('Log error 11:', logErr);
+          }
+        }
+        
         throw new Error(`Authentication failed: ${response.statusText} - ${errorText}`);
       }
 
       const authResult = await response.json();
       console.log('🔗 Backend auth successful, creating session...');
       
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info('🔗 Backend auth successful, processing response...');
+        } catch (logErr) {
+          console.error('Log error 12:', logErr);
+        }
+      }
+      
       // Create and save the session
       const session = await this.handleGoogleAuthResult(authResult);
       this.saveSession(session);
+      
+      // Clean up the code verifier for security
+      localStorage.removeItem('pkce_code_verifier');
+      sessionStorage.removeItem('pkce_code_verifier');
+      console.log('🔗 Code verifier cleaned up');
       
       console.log('🔗 Session saved successfully:', session.user.email);
       

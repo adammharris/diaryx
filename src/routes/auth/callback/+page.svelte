@@ -3,6 +3,7 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { VITE_API_BASE_URL, VITE_GOOGLE_REDIRECT_URI } from '$lib/config/env-validation.js';
+  import { detectTauri } from '$lib/utils/tauri.js';
 
   // --- CONFIGURATION ---
   // Environment variables are validated at build time
@@ -56,6 +57,23 @@
 
   async function handleTauriCallback(code: string | null, state: string | null, error: string | null): Promise<void> {
     try {
+      // Log all parameters for debugging
+      console.log('Tauri callback - code:', code ? 'present' : 'missing');
+      console.log('Tauri callback - state:', state);
+      console.log('Tauri callback - error:', error);
+      console.log('Tauri callback - full URL:', window.location.href);
+
+      // Use Tauri's log plugin if available
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`Tauri callback received - code: ${code ? 'present' : 'missing'}, state: ${state}, error: ${error}`);
+          await info(`Full callback URL: ${window.location.href}`);
+        } catch (logErr) {
+          console.warn('Could not use Tauri logging:', logErr);
+        }
+      }
+
       if (error) {
         throw new Error(`OAuth Error: ${error}`);
       }
@@ -69,11 +87,23 @@
       deepLinkUrl.searchParams.set('code', code);
       if (state) deepLinkUrl.searchParams.set('state', state);
 
+      const finalDeepLink = deepLinkUrl.toString();
+      console.log('Generated deep link:', finalDeepLink);
+      
+      if (detectTauri()) {
+        try {
+          const { info } = await import('@tauri-apps/plugin-log');
+          await info(`Generated deep link: ${finalDeepLink}`);
+        } catch (logErr) {
+          console.warn('Could not log deep link:', logErr);
+        }
+      }
+
       status = 'success';
       message = 'Redirecting back to the app...';
 
       // Redirect to the deep link
-      window.location.href = deepLinkUrl.toString();
+      window.location.href = finalDeepLink;
 
       // Fallback: show instructions if deep link doesn't work
       setTimeout(() => {
@@ -84,6 +114,17 @@
 
     } catch (err) {
       console.error('Tauri callback handling failed:', err);
+      
+      // Log error with Tauri if available
+      if (detectTauri()) {
+        try {
+          const { error: logError } = await import('@tauri-apps/plugin-log');
+          await logError(`Tauri callback failed: ${err instanceof Error ? err.message : String(err)}`);
+        } catch (logErr) {
+          console.warn('Could not log error:', logErr);
+        }
+      }
+      
       status = 'error';
       message = err instanceof Error ? err.message : 'An unknown error occurred';
     }
