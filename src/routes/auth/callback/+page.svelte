@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { fetch } from '$lib/utils/fetch.js';
   import { VITE_API_BASE_URL, VITE_GOOGLE_REDIRECT_URI } from '$lib/config/env-validation.js';
   import { detectTauri } from '$lib/utils/tauri.js';
 

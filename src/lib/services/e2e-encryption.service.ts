@@ -6,6 +6,7 @@
 
 import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
+import { fetch } from '../utils/fetch.js';
 import { KeyManager, type UserKeyPair, type UserKeyPairB64 } from '../crypto/KeyManager.js';
 import { EntryCryptor, type EntryObject, type EncryptedEntryData } from '../crypto/EntryCryptor.js';
 import { biometricAuthService, type BiometricAuthResult } from './biometric-auth.service.js';

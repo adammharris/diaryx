@@ -4,6 +4,7 @@
     import { goto } from '$app/navigation';
     import SvelteMarkdown from 'svelte-markdown';
     import { browser } from '$app/environment';
+    import { fetch } from '$lib/utils/fetch.js';
     import { e2eEncryptionService } from '$lib/services/e2e-encryption.service.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
     import { EntryCryptor } from '$lib/crypto/EntryCryptor.js';

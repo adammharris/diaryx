@@ -8,6 +8,7 @@
   import Dialog from '../lib/components/Dialog.svelte';
   import { currentTheme } from '../lib/stores/theme.js';
   import { detectTauri } from '../lib/utils/tauri.js';
+  import { fetch } from '../lib/utils/fetch.js';
   import { isKeyboardVisible, keyboardHeight } from '../lib/stores/keyboard.js';
   import { apiAuthService } from '../lib/services/api-auth.service.js';
 

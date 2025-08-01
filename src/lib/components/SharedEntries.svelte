@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { fetch } from '../utils/fetch.js';
     import { apiAuthService, apiAuthStore } from '../services/api-auth.service.js';
     import { e2eEncryptionService, e2eSessionStore } from '../services/e2e-encryption.service.js';
     import EntryCard from './EntryCard.svelte';

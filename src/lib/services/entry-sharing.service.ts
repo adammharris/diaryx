@@ -4,6 +4,7 @@
  */
 
 import { writable, type Writable } from 'svelte/store';
+import { fetch } from '../utils/fetch.js';
 import { apiAuthService } from './api-auth.service.js';
 import { e2eEncryptionService } from './e2e-encryption.service.js';
 import { tagService, type Tag } from './tag.service.js';

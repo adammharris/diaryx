@@ -4,6 +4,7 @@
  */
 
 import { writable, type Writable } from 'svelte/store';
+import { fetch } from '../utils/fetch.js';
 import { apiAuthService } from './api-auth.service.js';
 import type { SearchableUser } from './user-search.service.js';
 

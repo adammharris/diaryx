@@ -3,6 +3,7 @@
  * Handles searching for users to assign tags for sharing
  */
 
+import { fetch } from '../utils/fetch.js';
 import { apiAuthService } from './api-auth.service.js';
 
 export interface SearchableUser {

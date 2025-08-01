@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { JournalEntry } from '../storage/types.js';
+    import { fetch } from '../utils/fetch.js';
     import { VITE_API_BASE_URL } from '$lib/config/env-validation.js';
     import { storageService } from '../services/storage.js';
     import { e2eEncryptionService } from '../services/e2e-encryption.service.js';

@@ -14,6 +14,7 @@ import {
 } from '@tauri-apps/plugin-fs';
 import { openDB, type IDBPDatabase } from 'idb';
 import { detectTauri } from '../utils/tauri';
+import { fetch } from '../utils/fetch';
 import type {
 	JournalEntry,
 	JournalEntryMetadata,
