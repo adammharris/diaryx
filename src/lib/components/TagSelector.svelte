@@ -1,5 +1,6 @@
 <script lang="ts">
     import { tagService, type TagWithUsers } from '../services/tag.service.js';
+    import { tagSyncService } from '../services/tag-sync.service.js';
     import { onMount } from 'svelte';
 
     interface Props {
@@ -7,13 +8,17 @@
         onTagSelectionChange: (tagIds: string[]) => void;
         disabled?: boolean;
         showCreateButton?: boolean;
+        frontmatterTags?: string[]; // Pre-populate with frontmatter tags
+        entryId?: string; // Entry ID for tag sync operations
     }
 
     let { 
         selectedTagIds = [], 
         onTagSelectionChange, 
         disabled = false,
-        showCreateButton = true 
+        showCreateButton = true,
+        frontmatterTags = [],
+        entryId
     }: Props = $props();
 
     // State
@@ -21,6 +26,7 @@
     let isLoading = $state(true);
     let error = $state<string | null>(null);
     let isExpanded = $state(false);
+    let frontmatterTagsPrePopulated = $state(false);
 
     // Reactive derived values
     let selectedTags = $derived(tags.filter(t => selectedTagIds.includes(t.tag.id)));
@@ -34,9 +40,20 @@
         return userIds.size;
     });
 
+    // Get frontmatter tags that don't have backend equivalents
+    let unmatchedFrontmatterTags = $derived(() => {
+        if (frontmatterTags.length === 0) return [];
+        
+        const backendTagNames = new Set(tags.map(t => t.tag.name.toLowerCase()));
+        return frontmatterTags.filter(tag => 
+            !backendTagNames.has(tag.toLowerCase().trim())
+        );
+    });
+
     // Load tags on mount
     onMount(async () => {
         await loadTags();
+        await prePopulateFromFrontmatter();
     });
 
     async function loadTags() {
@@ -50,6 +67,46 @@
             error = err instanceof Error ? err.message : 'Failed to load tags';
         } finally {
             isLoading = false;
+        }
+    }
+
+    async function prePopulateFromFrontmatter() {
+        if (frontmatterTagsPrePopulated || frontmatterTags.length === 0) {
+            return;
+        }
+
+        try {
+            console.log('Pre-populating TagSelector with frontmatter tags:', frontmatterTags);
+            
+            // Find matching backend tags for frontmatter tags
+            const matchingTagIds: string[] = [];
+            const tagNameToIdMap = new Map<string, string>();
+            
+            tags.forEach(tagWithUsers => {
+                tagNameToIdMap.set(tagWithUsers.tag.name.toLowerCase(), tagWithUsers.tag.id);
+            });
+
+            // Match frontmatter tags to backend tags
+            for (const frontmatterTag of frontmatterTags) {
+                const normalizedTag = frontmatterTag.toLowerCase().trim();
+                if (tagNameToIdMap.has(normalizedTag)) {
+                    const tagId = tagNameToIdMap.get(normalizedTag)!;
+                    if (!selectedTagIds.includes(tagId)) {
+                        matchingTagIds.push(tagId);
+                    }
+                }
+            }
+
+            if (matchingTagIds.length > 0) {
+                // Pre-populate with matching tags
+                const newSelectedIds = [...selectedTagIds, ...matchingTagIds];
+                console.log(`Pre-populated ${matchingTagIds.length} tags from frontmatter`);
+                onTagSelectionChange(newSelectedIds);
+            }
+
+            frontmatterTagsPrePopulated = true;
+        } catch (error) {
+            console.warn('Failed to pre-populate from frontmatter tags:', error);
         }
     }
 
@@ -282,6 +339,47 @@
                     </div>
                 {/if}
             {/if}
+        </div>
+    {/if}
+
+    <!-- Frontmatter Tags Info -->
+    {#if frontmatterTags.length > 0}
+        <div class="frontmatter-tags-info">
+            <div class="info-header">
+                <span class="info-icon">📝</span>
+                <h4 class="info-title">Frontmatter Tags</h4>
+            </div>
+            
+            <div class="frontmatter-tags-content">
+                <p class="info-description">
+                    Tags found in this entry's frontmatter will be automatically included when publishing:
+                </p>
+                
+                <div class="frontmatter-tags-list">
+                    {#each frontmatterTags as tag}
+                        <span class="frontmatter-tag">{tag}</span>
+                    {/each}
+                </div>
+                
+                {#if unmatchedFrontmatterTags().length > 0}
+                    <div class="unmatched-tags-notice">
+                        <span class="notice-icon">⚠️</span>
+                        <div class="notice-content">
+                            <p class="notice-text">
+                                Some frontmatter tags don't have sharing equivalents yet:
+                            </p>
+                            <div class="unmatched-tags">
+                                {#each unmatchedFrontmatterTags() as tag}
+                                    <span class="unmatched-tag">{tag}</span>
+                                {/each}
+                            </div>
+                            <p class="notice-helper">
+                                These tags will be automatically created as sharing tags when you publish.
+                            </p>
+                        </div>
+                    </div>
+                {/if}
+            </div>
         </div>
     {/if}
 </div>
@@ -609,6 +707,107 @@
     .encryption-notice {
         font-size: 0.8125rem;
         color: var(--text-secondary);
+        font-style: italic;
+    }
+
+    /* Frontmatter Tags Styling */
+    .frontmatter-tags-info {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: var(--background-color, #f8fafc);
+        border: 1px solid var(--border-color, #e5e7eb);
+        border-radius: 0.375rem;
+    }
+
+    .info-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .info-icon {
+        font-size: 1rem;
+    }
+
+    .info-title {
+        margin: 0;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .info-description {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+    }
+
+    .frontmatter-tags-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .frontmatter-tag {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        background: var(--primary-color, #3b82f6);
+        color: white;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .unmatched-tags-notice {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.75rem;
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        border-radius: 0.25rem;
+        margin-top: 0.75rem;
+    }
+
+    .notice-icon {
+        font-size: 0.875rem;
+        flex-shrink: 0;
+    }
+
+    .notice-content {
+        flex: 1;
+    }
+
+    .notice-text {
+        margin: 0 0 0.5rem 0;
+        font-size: 0.8125rem;
+        color: #92400e;
+        font-weight: 500;
+    }
+
+    .unmatched-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .unmatched-tag {
+        display: inline-block;
+        padding: 0.125rem 0.375rem;
+        background: #f59e0b;
+        color: white;
+        border-radius: 0.1875rem;
+        font-size: 0.6875rem;
+        font-weight: 500;
+    }
+
+    .notice-helper {
+        margin: 0;
+        font-size: 0.75rem;
+        color: #92400e;
         font-style: italic;
     }
 </style>

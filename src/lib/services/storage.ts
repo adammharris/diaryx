@@ -30,6 +30,8 @@ import { e2eEncryptionService } from './e2e-encryption.service';
 import { FrontmatterService } from '../storage/frontmatter.service';
 import type { EntryObject } from '../crypto/EntryCryptor';
 import { entrySharingService } from './entry-sharing.service';
+import { tagSyncService, type TagSyncResult } from './tag-sync.service';
+import { tagService } from './tag.service';
 
 class StorageService {
 	public environment: StorageEnvironment;
@@ -883,11 +885,35 @@ class StorageService {
 
 		return this.acquireCloudLock(entryId, async () => {
 			try {
+				// Sync frontmatter tags to backend tags for comprehensive sharing
+				console.log('Syncing frontmatter tags to backend before publishing...');
+				const tagSyncResult = await this.syncTagsToBackend(entryId, tagIds);
+				
+				let finalTagIds = tagIds;
+				if (tagSyncResult.success) {
+					finalTagIds = tagSyncResult.syncedTags;
+					console.log('Tag sync successful:', {
+						originalTags: tagIds,
+						syncedTags: finalTagIds,
+						createdTags: tagSyncResult.createdTags.length,
+						conflicts: tagSyncResult.conflicts.length
+					});
+					
+					if (tagSyncResult.createdTags.length > 0) {
+						console.log('Created new backend tags from frontmatter:', 
+							tagSyncResult.createdTags.map(t => t.name));
+					}
+				} else {
+					console.warn('Tag sync failed, using original tags:', tagSyncResult.error);
+					// Continue with original tags if sync fails
+				}
+
 				// Check if entry is already published
 				const existingCloudId = await this.getCloudId(entryId);
 				if (existingCloudId) {
 					console.log('Entry already published, updating instead');
-					return this.syncEntryToCloud(entryId);
+					// Pass the synced tag IDs to enable differential access management
+					return this.syncEntryToCloud(entryId, finalTagIds);
 				}
 
 				// Get the entry to publish
@@ -941,7 +967,7 @@ class StorageService {
 					file_path: entry.file_path || `${entryId}.md`,
 					owner_encrypted_entry_key: encryptedData.encryptedEntryKeyB64,
 					owner_key_nonce: encryptedData.keyNonceB64,
-					tag_ids: tagIds, // Include tag IDs for entry_tags creation
+					tag_ids: finalTagIds, // Include synced tag IDs for entry_tags creation
 					// Include local modification time for conflict detection
 					client_modified_at: entry.modified_at
 				};
@@ -991,12 +1017,12 @@ class StorageService {
 					await this.updateEntryPublishStatusInMetadata(entryId, true);
 					
 					// Handle tag-based sharing if tags are specified
-					if (tagIds.length > 0) {
+					if (finalTagIds.length > 0) {
 						try {
-							console.log(`Setting up sharing for ${tagIds.length} tags...`);
+							console.log(`Setting up sharing for ${finalTagIds.length} tags...`);
 							await entrySharingService.shareEntry({
 								entryId: cloudId, // Use cloud ID for sharing
-								tagIds,
+								tagIds: finalTagIds,
 								encryptedEntryKey: encryptedData.encryptedEntryKeyB64,
 								keyNonce: encryptedData.keyNonceB64
 							});
@@ -1038,7 +1064,18 @@ class StorageService {
 				return false;
 			}
 
-			// Call the API to unpublish
+			// CRITICAL: Revoke all user access BEFORE deleting the entry
+			// This must happen first because deleting the entry may cascade delete access keys
+			try {
+				console.log(`Revoking all access to unpublished entry: ${entryId}`);
+				await entrySharingService.revokeAllEntryAccess(cloudId);
+				console.log(`Successfully revoked all access to entry: ${entryId}`);
+			} catch (accessError) {
+				console.error('Failed to revoke entry access during unpublish:', accessError);
+				// Continue with unpublish even if access revocation fails
+			}
+
+			// Call the API to unpublish the entry
 			const apiUrl = (import.meta.env.VITE_API_BASE_URL);
 			console.log("Fetching from:", `${apiUrl}/entries`);
 			const response = await fetch(`${apiUrl}/entries/${cloudId}`, {
@@ -1110,7 +1147,7 @@ class StorageService {
 	/**
 	 * Sync an entry to cloud (update existing published entry)
 	 */
-	async syncEntryToCloud(entryId: string): Promise<boolean> {
+	async syncEntryToCloud(entryId: string, tagIds: string[] = []): Promise<boolean> {
 		if (!apiAuthService.isAuthenticated()) {
 			return false;
 		}
@@ -1143,6 +1180,54 @@ class StorageService {
 					console.error('Sync conflict detected - cloud version is newer. Manual resolution required.');
 					// TODO: Implement conflict resolution UI
 					return false;
+				}
+
+				// SECURITY FIX: Implement differential access management for republishing
+				if (tagIds.length > 0) {
+					console.log('Implementing differential access management for republished entry...');
+					
+					// Get current users who have access to this entry
+					const currentAccessUsers = await entrySharingService.getEntryAccessUsers(cloudId);
+					console.log(`Entry ${cloudId} currently shared with ${currentAccessUsers.length} users`);
+					
+					// Get users who should have access based on new tags
+					const newAccessUsers = new Set<string>();
+					for (const tagId of tagIds) {
+						const usersForTag = await tagService.getTagAssignments(tagId);
+						usersForTag.forEach((user: any) => newAccessUsers.add(user.id));
+					}
+					const newAccessUserIds = Array.from(newAccessUsers);
+					console.log(`Entry ${cloudId} should now be shared with ${newAccessUserIds.length} users based on tags:`, tagIds);
+
+					// Determine users to remove access from (no longer in any tag)
+					const usersToRemove = currentAccessUsers.filter(userId => !newAccessUserIds.includes(userId));
+					
+					// Determine users to grant access to (newly added to tags)
+					const usersToAdd = newAccessUserIds.filter(userId => !currentAccessUsers.includes(userId));
+
+					console.log('Access management changes:', {
+						usersToRemove: usersToRemove.length,
+						usersToAdd: usersToAdd.length,
+						currentUsers: currentAccessUsers.length,
+						newUsers: newAccessUserIds.length
+					});
+
+					// Revoke access for users no longer in any tag
+					if (usersToRemove.length > 0) {
+						console.log(`Revoking access for ${usersToRemove.length} users removed from tags...`);
+						try {
+							await entrySharingService.revokeEntryAccessForUsers(cloudId, usersToRemove);
+							console.log(`Successfully revoked access for ${usersToRemove.length} users`);
+						} catch (error) {
+							console.error('Failed to revoke access for some users:', error);
+							// Continue with the update - access revocation failure shouldn't block content sync
+						}
+					}
+
+					// Grant access for new users will be handled by the sharing service after update
+					if (usersToAdd.length > 0) {
+						console.log(`Will grant access to ${usersToAdd.length} new users after entry update`);
+					}
 				}
 
 				// CRITICAL FIX: Fetch existing encryption keys to maintain consistency
@@ -1265,6 +1350,23 @@ class StorageService {
 					// Store the server's new timestamp for future conflict detection
 					await this.updateCloudMappingTimestamp(entryId, updatedServerTimestamp);
 					console.log('Updated server timestamp for entry:', entryId, updatedServerTimestamp);
+				}
+
+				// Grant access to new users after successful update
+				if (tagIds.length > 0) {
+					try {
+						console.log('Updating entry sharing after successful sync...');
+						await entrySharingService.shareEntry({
+							entryId: cloudId,
+							tagIds: tagIds,
+							encryptedEntryKey: apiPayload.owner_encrypted_entry_key,
+							keyNonce: apiPayload.owner_key_nonce
+						});
+						console.log('Successfully updated entry sharing for republished entry');
+					} catch (sharingError) {
+						console.error('Failed to update sharing after sync, but sync succeeded:', sharingError);
+						// Don't fail the whole operation if sharing fails
+					}
 				}
 
 				console.log('Entry synced to cloud. Local ID:', entryId, 'Cloud ID:', cloudId);
@@ -1482,7 +1584,7 @@ class StorageService {
 					}
 					
 					// Create the entry locally
-					const journalEntry: JournalEntry = {
+					let journalEntry: JournalEntry = {
 						id: localId,
 						title: decryptedEntry.title,
 						content: decryptedEntry.content,
@@ -1490,6 +1592,41 @@ class StorageService {
 						modified_at: cloudEntry.updated_at,
 						file_path: `${localId}.md`
 					};
+
+					// Sync backend tags to frontmatter if entry has associated tags
+					try {
+						// Extract tag IDs from cloud entry (may be in various locations)
+						let backendTagIds: string[] = [];
+						
+						// Check for tags in different possible locations in cloud entry structure
+						if (cloudEntry.tags && Array.isArray(cloudEntry.tags)) {
+							backendTagIds = cloudEntry.tags.map((tag: any) => tag.id || tag.tag_id).filter(Boolean);
+						} else if (cloudEntry.entry_tags && Array.isArray(cloudEntry.entry_tags)) {
+							backendTagIds = cloudEntry.entry_tags.map((et: any) => et.tag_id).filter(Boolean);
+						} else if (cloudEntry.tag_ids && Array.isArray(cloudEntry.tag_ids)) {
+							backendTagIds = cloudEntry.tag_ids;
+						}
+
+						if (backendTagIds.length > 0) {
+							console.log(`Syncing ${backendTagIds.length} backend tags to frontmatter for imported entry:`, localId);
+							
+							// Sync backend tags to frontmatter
+							const syncResult = await tagSyncService.syncBackendToFrontmatter(
+								localId,
+								journalEntry.content,
+								backendTagIds
+							);
+							
+							if (syncResult.success && syncResult.addedTags.length > 0) {
+								// Update journal entry content with synced frontmatter
+								journalEntry.content = syncResult.updatedContent;
+								console.log(`Added ${syncResult.addedTags.length} tags to frontmatter:`, syncResult.addedTags);
+							}
+						}
+					} catch (tagSyncError) {
+						console.warn('Failed to sync backend tags to frontmatter during import:', tagSyncError);
+						// Continue with import even if tag sync fails
+					}
 
 					// Save to appropriate storage based on environment
 					if (this.environment === 'tauri') {
@@ -1987,6 +2124,127 @@ class StorageService {
 		console.warn('Cancelling all sync operations');
 		this.syncInProgress = false;
 		this.cloudOperationLocks.clear();
+	}
+
+	/**
+	 * Sync frontmatter tags to backend tags for sharing
+	 */
+	async syncTagsToBackend(entryId: string, existingBackendTagIds: string[] = []): Promise<TagSyncResult> {
+		try {
+			// Get entry content to extract frontmatter tags
+			const entry = await this.getEntry(entryId);
+			if (!entry) {
+				return {
+					success: false,
+					syncedTags: existingBackendTagIds,
+					createdTags: [],
+					conflicts: [],
+					error: 'Entry not found'
+				};
+			}
+
+			console.log('Syncing frontmatter tags to backend for entry:', entryId);
+			
+			// Use TagSyncService to perform the sync
+			const syncResult = await tagSyncService.syncFrontmatterToBackend(
+				entryId,
+				entry.content,
+				existingBackendTagIds
+			);
+
+			if (syncResult.success && syncResult.createdTags.length > 0) {
+				console.log(`Created ${syncResult.createdTags.length} new backend tags from frontmatter`);
+			}
+
+			return syncResult;
+		} catch (error) {
+			console.error('Failed to sync tags to backend:', error);
+			return {
+				success: false,
+				syncedTags: existingBackendTagIds,
+				createdTags: [],
+				conflicts: [],
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	/**
+	 * Sync backend tags to frontmatter tags and update entry content
+	 */
+	async syncTagsFromBackend(entryId: string, backendTagIds: string[]): Promise<boolean> {
+		try {
+			// Get entry to update its frontmatter
+			const entry = await this.getEntry(entryId);
+			if (!entry) {
+				console.error('Entry not found for tag sync:', entryId);
+				return false;
+			}
+
+			console.log('Syncing backend tags to frontmatter for entry:', entryId);
+
+			// Use TagSyncService to sync tags to frontmatter
+			const syncResult = await tagSyncService.syncBackendToFrontmatter(
+				entryId,
+				entry.content,
+				backendTagIds
+			);
+
+			if (!syncResult.success) {
+				console.error('Failed to sync backend tags to frontmatter');
+				return false;
+			}
+
+			// Update entry content if tags were added
+			if (syncResult.addedTags.length > 0) {
+				console.log(`Added ${syncResult.addedTags.length} tags to frontmatter:`, syncResult.addedTags);
+				
+				// Save the updated content
+				const saveSuccess = await this.saveEntry(entryId, syncResult.updatedContent);
+				if (!saveSuccess) {
+					console.error('Failed to save entry with updated frontmatter');
+					return false;
+				}
+
+				// Update cached metadata with new title/preview if content changed
+				await this.updateDecryptedTitle(entryId, syncResult.updatedContent);
+			}
+
+			return true;
+		} catch (error) {
+			console.error('Failed to sync tags from backend:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Get frontmatter tags from an entry
+	 */
+	async getFrontmatterTags(entryId: string): Promise<string[]> {
+		try {
+			const entry = await this.getEntry(entryId);
+			if (!entry) {
+				return [];
+			}
+
+			return tagSyncService.getFrontmatterTags(entry.content);
+		} catch (error) {
+			console.error('Failed to get frontmatter tags:', error);
+			return [];
+		}
+	}
+
+	/**
+	 * Check if an entry needs tag synchronization
+	 */
+	async needsTagSync(entryId: string, backendTagIds: string[]): Promise<boolean> {
+		try {
+			const frontmatterTags = await this.getFrontmatterTags(entryId);
+			return await tagSyncService.needsSync(entryId, frontmatterTags, backendTagIds);
+		} catch (error) {
+			console.error('Failed to check tag sync status:', error);
+			return false;
+		}
 	}
 }
 

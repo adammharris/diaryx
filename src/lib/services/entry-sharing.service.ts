@@ -415,6 +415,155 @@ class EntrySharingService {
   clear(): void {
     this.accessKeysStore.set(new Map());
   }
+
+  /**
+   * Revoke all access to an entry for all users
+   */
+  async revokeAllEntryAccess(entryId: string): Promise<void> {
+    if (!apiAuthService.isAuthenticated()) {
+      throw new Error('User must be authenticated to revoke access');
+    }
+
+    try {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys/entry/${entryId}`, {
+        method: 'DELETE',
+        headers: {
+          ...apiAuthService.getAuthHeaders()
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to revoke all access: ${response.status}`);
+      }
+
+      console.log(`Successfully revoked all access to entry ${entryId}`);
+      
+      // Update local cache
+      this.accessKeysStore.update(keysByEntry => {
+        keysByEntry.delete(entryId);
+        return keysByEntry;
+      });
+    } catch (error) {
+      console.error('Failed to revoke all entry access:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Revoke access to an entry for specific users
+   */
+  async revokeEntryAccessForUsers(entryId: string, userIds: string[]): Promise<void> {
+    if (!apiAuthService.isAuthenticated()) {
+      throw new Error('User must be authenticated to revoke access');
+    }
+
+    if (userIds.length === 0) {
+      return; // Nothing to revoke
+    }
+
+    try {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys/bulk-revoke`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...apiAuthService.getAuthHeaders()
+        },
+        body: JSON.stringify({
+          entry_id: entryId,
+          user_ids: userIds
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to revoke access for users: ${response.status}`);
+      }
+
+      console.log(`Successfully revoked access for ${userIds.length} users to entry ${entryId}`);
+      
+      // Update local cache
+      this.accessKeysStore.update(keysByEntry => {
+        const currentKeys = keysByEntry.get(entryId) || [];
+        const filteredKeys = currentKeys.filter(key => !userIds.includes(key.user_id));
+        if (filteredKeys.length > 0) {
+          keysByEntry.set(entryId, filteredKeys);
+        } else {
+          keysByEntry.delete(entryId);
+        }
+        return keysByEntry;
+      });
+    } catch (error) {
+      console.error('Failed to revoke entry access for users:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all users who currently have access to an entry
+   */
+  async getEntryAccessUsers(entryId: string): Promise<string[]> {
+    if (!apiAuthService.isAuthenticated()) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(`${this.API_BASE_URL}/entry-access-keys/entry/${entryId}/users`, {
+        method: 'GET',
+        headers: {
+          ...apiAuthService.getAuthHeaders()
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return []; // No access keys found
+        }
+        throw new Error(`Failed to get entry access users: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const accessKeys = result.data as EntryAccessKey[];
+      
+      return accessKeys.map(key => key.user_id);
+    } catch (error) {
+      console.error('Failed to get entry access users:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find all entries that are shared with a specific tag
+   */
+  async getEntriesSharedWithTag(tagId: string): Promise<string[]> {
+    if (!apiAuthService.isAuthenticated()) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(`${this.API_BASE_URL}/entries/shared-with-tag/${tagId}`, {
+        method: 'GET',
+        headers: {
+          ...apiAuthService.getAuthHeaders()
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return []; // No entries found
+        }
+        throw new Error(`Failed to get entries shared with tag: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const entries = result.data as Array<{ id: string }>;
+      
+      return entries.map(entry => entry.id);
+    } catch (error) {
+      console.error('Failed to get entries shared with tag:', error);
+      return [];
+    }
+  }
 }
 
 // Export singleton instance

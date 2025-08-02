@@ -7,6 +7,7 @@ import { writable, type Writable } from 'svelte/store';
 import { fetch } from '../utils/fetch.js';
 import { apiAuthService } from './api-auth.service.js';
 import type { SearchableUser } from './user-search.service.js';
+import { entrySharingService } from './entry-sharing.service.js';
 
 export interface Tag {
   id: string;
@@ -335,6 +336,33 @@ class TagService {
         throw new Error(errorData.message || `Failed to remove tag assignment: ${response.status}`);
       }
 
+      // CRITICAL: Revoke access to all entries shared with this tag
+      try {
+        console.log(`Revoking entry access for user ${userId} removed from tag ${tagId}`);
+        
+        // Get all entries shared with this tag
+        const sharedEntryIds = await entrySharingService.getEntriesSharedWithTag(tagId);
+        
+        if (sharedEntryIds.length > 0) {
+          console.log(`Found ${sharedEntryIds.length} entries shared with tag ${tagId}, revoking access...`);
+          
+          // Revoke access for this user to all entries shared with this tag
+          await Promise.all(
+            sharedEntryIds.map(entryId => 
+              entrySharingService.revokeEntryAccessForUsers(entryId, [userId])
+            )
+          );
+          
+          console.log(`Successfully revoked access to ${sharedEntryIds.length} entries for user ${userId}`);
+        } else {
+          console.log(`No entries shared with tag ${tagId}, no access to revoke`);
+        }
+      } catch (accessError) {
+        console.error('Failed to revoke entry access, but tag removal succeeded:', accessError);
+        // Don't throw - tag removal succeeded, access revocation is secondary
+        // This prevents the UI from showing an error when the primary operation succeeded
+      }
+
       // Update local stores
       await Promise.all([
         this.loadTags(),
@@ -420,8 +448,11 @@ class TagService {
    */
   async getUserTagAssignments(): Promise<UserTag[]> {
     return new Promise((resolve) => {
-      const unsubscribe = this.userTagsStore.subscribe((userTags) => {
-        unsubscribe();
+      let unsubscribe: (() => void) | null = null;
+      unsubscribe = this.userTagsStore.subscribe((userTags) => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
         resolve(userTags);
       });
     });

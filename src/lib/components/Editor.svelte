@@ -8,6 +8,7 @@
     // Removed old crypto imports - now using E2E encryption service
     import InfoModal from './InfoModal.svelte';
     import TagSelector from './TagSelector.svelte';
+    import { FrontmatterService } from '../storage/frontmatter.service.js';
 
     interface Props {
         storageService: any; // The storage service instance
@@ -42,6 +43,7 @@
     // Tag selection for sharing
     let selectedTagIds = $state<string[]>([]);
     let showTagSelector = $state(false);
+    let frontmatterTags = $state<string[]>([]);
     
     // Entry locking state (for E2E encryption)
     let isEntryLocked = $state(false);
@@ -113,6 +115,9 @@
             saveTimeout = setTimeout(() => {
                 handleAutosave();
             }, AUTOSAVE_DELAY);
+            
+            // Update frontmatter tags when content changes
+            updateFrontmatterTags();
         }
     });
 
@@ -143,6 +148,9 @@
             }
             
             isLoading = false;
+            
+            // Extract frontmatter tags for TagSelector pre-population
+            updateFrontmatterTags();
             return;
         }
         
@@ -174,6 +182,9 @@
             console.error('Failed to load entry:', error);
         } finally {
             isLoading = false;
+            
+            // Extract frontmatter tags for TagSelector pre-population
+            updateFrontmatterTags();
         }
     }
 
@@ -322,6 +333,31 @@
     function handleCancelPublish() {
         showTagSelector = false;
         selectedTagIds = [];
+    }
+
+    function updateFrontmatterTags() {
+        try {
+            if (!content) {
+                frontmatterTags = [];
+                return;
+            }
+
+            const parsedContent = FrontmatterService.parseContent(content);
+            const extractedTags = FrontmatterService.extractTags(parsedContent.frontmatter);
+            
+            // Only update if tags have actually changed to avoid unnecessary re-renders
+            if (!arraysEqual(frontmatterTags, extractedTags)) {
+                frontmatterTags = extractedTags;
+                console.log('Updated frontmatter tags:', frontmatterTags);
+            }
+        } catch (error) {
+            console.warn('Failed to extract frontmatter tags:', error);
+            frontmatterTags = [];
+        }
+    }
+
+    function arraysEqual<T>(a: T[], b: T[]): boolean {
+        return a.length === b.length && a.every((val, i) => val === b[i]);
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -634,6 +670,8 @@
                         onTagSelectionChange={handleTagSelectionChange}
                         disabled={false}
                         showCreateButton={true}
+                        frontmatterTags={frontmatterTags}
+                        entryId={entryId}
                     />
                 </div>
                 
