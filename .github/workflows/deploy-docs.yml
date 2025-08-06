@@ -52,17 +52,22 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      # 5. Build TypeDoc Documentation
+      # 5. Sync SvelteKit
+      # Generates the .svelte-kit directory with tsconfig.json needed by TypeDoc
+      - name: Sync SvelteKit
+        run: bun svelte-kit sync
+
+      # 6. Build TypeDoc Documentation
       # Runs TypeDoc to generate API documentation
       - name: Build TypeDoc
         run: bun run docs
 
-      # 6. Build Storybook Documentation
+      # 7. Build Storybook Documentation
       # Runs Storybook to generate component documentation
       - name: Build Storybook
         run: bun run build-storybook
 
-      # 7. Create Combined Documentation Structure
+      # 8. Create Combined Documentation Structure
       # Creates a unified documentation structure with both TypeDoc and Storybook
       - name: Create Documentation Structure
         run: |
@@ -167,7 +172,7 @@ jobs:
           </html>
           EOF
 
-      # 8. Deploy to docs repository
+      # 9. Deploy to docs repository
       # Push the built documentation to the separate diaryx-docs repository
       - name: Deploy to docs repository
         uses: peaceiris/actions-gh-pages@v3
