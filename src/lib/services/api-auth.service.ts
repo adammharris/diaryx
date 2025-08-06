@@ -1,6 +1,30 @@
 /**
- * API-based authentication service for Google OAuth + custom backend
- * Supports both web browser and Tauri environment
+ * API-based Authentication Service
+ * 
+ * Handles Google OAuth authentication with a custom backend API.
+ * Supports both web browser and Tauri desktop environments with deep linking.
+ * Implements PKCE (Proof Key for Code Exchange) for enhanced security.
+ * 
+ * @description This service manages the complete OAuth flow including:
+ * - Google OAuth 2.0 with PKCE
+ * - Cross-platform authentication (web + Tauri)
+ * - Session management and persistence
+ * - Deep link handling for Tauri apps
+ * - Automatic post-login synchronization
+ * 
+ * @example
+ * ```typescript
+ * // Sign in with Google
+ * const session = await apiAuthService.signInWithGoogle();
+ * 
+ * // Check authentication status
+ * if (apiAuthService.isAuthenticated()) {
+ *   const user = apiAuthService.getCurrentUser();
+ * }
+ * 
+ * // Sign out
+ * await apiAuthService.signOut();
+ * ```
  */
 
 import { writable, type Writable } from 'svelte/store';
@@ -14,6 +38,9 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { fetch } from '../utils/fetch.js';
 import { info as tauriInfo, error as tauriError } from '@tauri-apps/plugin-log';
 
+/**
+ * User profile information
+ */
 interface User {
   id: string;
   email: string;
@@ -23,12 +50,18 @@ interface User {
   public_key?: string;
 }
 
+/**
+ * Active authentication session
+ */
 interface AuthSession {
   user: User;
   accessToken: string;
   isAuthenticated: boolean;
 }
 
+/**
+ * Google OAuth API response structure
+ */
 interface GoogleAuthResponse {
   access_token: string;
   id_token: string;
@@ -37,6 +70,12 @@ interface GoogleAuthResponse {
   expires_in: number;
 }
 
+/**
+ * Main authentication service class
+ * 
+ * Provides OAuth authentication, session management, and API integration
+ * for both web and desktop (Tauri) environments.
+ */
 class ApiAuthService {
   private currentSession: AuthSession | null = null;
   private sessionStore: Writable<AuthSession | null> = writable(null);
@@ -49,6 +88,14 @@ class ApiAuthService {
     }
   }
 
+  /**
+   * Initialize authentication state from localStorage
+   * 
+   * Attempts to restore a previous session from storage.
+   * Handles errors gracefully by clearing invalid sessions.
+   * 
+   * @private
+   */
   private initializeFromStorage(): void {
     try {
       const stored = localStorage.getItem(this.STORAGE_KEY);
@@ -73,6 +120,14 @@ class ApiAuthService {
     }
   }
 
+  /**
+   * Save authentication session to storage and trigger post-login actions
+   * 
+   * Persists the session and initiates cloud synchronization if E2E encryption is ready.
+   * 
+   * @private
+   * @param {AuthSession} session - The authenticated session to save
+   */
   private saveSession(session: AuthSession): void {
     console.log('saveSession: setting currentSession and store');
     this.currentSession = session;
@@ -109,6 +164,11 @@ class ApiAuthService {
     }
   }
 
+  /**
+   * Clear authentication session from memory and storage
+   * 
+   * @private
+   */
   private clearSession(): void {
     this.currentSession = null;
     this.sessionStore.set(null);
@@ -120,6 +180,22 @@ class ApiAuthService {
 
   /**
    * Sign in with Google OAuth
+   * 
+   * Initiates the Google OAuth 2.0 flow with PKCE for enhanced security.
+   * Handles both web browser navigation and Tauri deep link flows.
+   * 
+   * @returns {Promise<AuthSession>} The authenticated session
+   * @throws {Error} If OAuth flow fails or times out
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   const session = await apiAuthService.signInWithGoogle();
+   *   console.log('Signed in as:', session.user.email);
+   * } catch (error) {
+   *   console.error('Sign in failed:', error);
+   * }
+   * ```
    */
   async signInWithGoogle(): Promise<AuthSession> {
     if (!browser) throw new Error('OAuth only works in browser');
@@ -200,6 +276,15 @@ class ApiAuthService {
     });
   }
 
+  /**
+   * Build Google OAuth authorization URL with PKCE parameters
+   * 
+   * Constructs the complete OAuth URL including state validation,
+   * PKCE challenge, and appropriate redirect URI.
+   * 
+   * @private
+   * @returns {Promise<string>} Complete OAuth authorization URL
+   */
   private async buildGoogleAuthUrl(): Promise<string> {
     const clientId = VITE_GOOGLE_CLIENT_ID;
 
@@ -240,6 +325,15 @@ class ApiAuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
+  /**
+   * Generate a cryptographically secure state parameter
+   * 
+   * Creates a state parameter with platform detection and timestamp
+   * for OAuth flow validation and security.
+   * 
+   * @private
+   * @returns {string} Random state string with format: platform_timestamp_random
+   */
   private generateRandomState(): string {
     const timestamp = Date.now();
     const randomPart = Math.random().toString(36).substring(2, 15) + 
@@ -252,6 +346,15 @@ class ApiAuthService {
     return `${platform}_${timestamp}_${randomPart}`;
   }
 
+  /**
+   * Generate PKCE (Proof Key for Code Exchange) parameters
+   * 
+   * Creates code verifier and challenge for OAuth PKCE flow.
+   * Uses SHA256 hashing when available, falls back to plain text.
+   * 
+   * @private
+   * @returns {Promise<Object>} Object containing codeVerifier and codeChallenge
+   */
   private async generatePKCE(): Promise<{ codeVerifier: string; codeChallenge: string }> {
     // Generate a cryptographically random code verifier (43-128 characters)
     const codeVerifier = this.generateRandomString(128);
@@ -280,6 +383,13 @@ class ApiAuthService {
     }
   }
 
+  /**
+   * Generate cryptographically secure random string
+   * 
+   * @private
+   * @param {number} length - Length of string to generate
+   * @returns {string} Random string using URL-safe characters
+   */
   private generateRandomString(length: number): string {
     const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
     let result = '';
@@ -302,6 +412,13 @@ class ApiAuthService {
     return result;
   }
 
+  /**
+   * Encode string as Base64URL
+   * 
+   * @private
+   * @param {string} str - String to encode
+   * @returns {string} Base64URL encoded string
+   */
   private base64URLEncode(str: string): string {
     // Convert string to base64 and make it URL-safe
     const base64 = btoa(str);
@@ -311,6 +428,14 @@ class ApiAuthService {
       .replace(/=/g, '');
   }
 
+  /**
+   * Validate OAuth state parameter format and age
+   * 
+   * @private
+   * @param {string} state - State parameter to validate
+   * @param {'tauri' | 'web'} expectedPlatform - Expected platform identifier
+   * @returns {Object} Validation result with isValid flag and optional error
+   */
   private validateStateFormat(state: string, expectedPlatform: 'tauri' | 'web'): { isValid: boolean; timestamp?: number; error?: string } {
     if (!state) {
       return { isValid: false, error: 'No state parameter provided' };
@@ -348,6 +473,21 @@ class ApiAuthService {
 
   /**
    * Handle deep link callback from OAuth
+   * 
+   * Processes the OAuth callback received via deep link in Tauri apps.
+   * Validates state, exchanges authorization code for tokens, and creates session.
+   * 
+   * @param {string} deepLinkUrl - The deep link URL containing OAuth callback data
+   * @returns {Promise<AuthSession>} The authenticated session
+   * @throws {Error} If callback processing fails
+   * 
+   * @example
+   * ```typescript
+   * // This is typically called automatically by the deep link handler
+   * const session = await apiAuthService.handleDeepLinkCallback(
+   *   'diaryx://auth/callback?code=abc123&state=tauri_1234567890_xyz'
+   * );
+   * ```
    */
   async handleDeepLinkCallback(deepLinkUrl: string): Promise<AuthSession> {
     try {
@@ -585,6 +725,16 @@ class ApiAuthService {
 
   /**
    * Sign out
+   * 
+   * Clears the current authentication session from memory and storage.
+   * 
+   * @returns {Promise<void>}
+   * 
+   * @example
+   * ```typescript
+   * await apiAuthService.signOut();
+   * console.log('User signed out');
+   * ```
    */
   async signOut(): Promise<void> {
     this.clearSession();
@@ -592,6 +742,18 @@ class ApiAuthService {
 
   /**
    * Get current session
+   * 
+   * Returns the active authentication session if one exists.
+   * 
+   * @returns {AuthSession | null} Current session or null if not authenticated
+   * 
+   * @example
+   * ```typescript
+   * const session = apiAuthService.getCurrentSession();
+   * if (session) {
+   *   console.log('Current user:', session.user.email);
+   * }
+   * ```
    */
   getCurrentSession(): AuthSession | null {
     return this.currentSession;
@@ -599,6 +761,16 @@ class ApiAuthService {
 
   /**
    * Set session (used by OAuth callback)
+   * 
+   * Manually sets the authentication session. Primarily used by OAuth callback handlers.
+   * 
+   * @param {AuthSession | null} session - Session to set or null to clear
+   * 
+   * @example
+   * ```typescript
+   * // Typically used by OAuth callback page
+   * apiAuthService.setSession(sessionData);
+   * ```
    */
   setSession(session: AuthSession | null): void {
     console.log('setSession called with:', session ? 'session data' : 'null');
@@ -611,7 +783,15 @@ class ApiAuthService {
   }
 
   /**
-   * Reload session from localStorage (useful after external authentication)
+   * Reload session from localStorage
+   * 
+   * Useful after external authentication or when session state needs to be refreshed.
+   * 
+   * @example
+   * ```typescript
+   * // Refresh session after external auth
+   * apiAuthService.reloadFromStorage();
+   * ```
    */
   reloadFromStorage(): void {
     console.log('Reloading session from localStorage...');
@@ -620,6 +800,18 @@ class ApiAuthService {
 
   /**
    * Get current user
+   * 
+   * Returns the current user profile information if authenticated.
+   * 
+   * @returns {User | null} Current user or null if not authenticated
+   * 
+   * @example
+   * ```typescript
+   * const user = apiAuthService.getCurrentUser();
+   * if (user) {
+   *   console.log('Welcome,', user.name);
+   * }
+   * ```
    */
   getCurrentUser(): User | null {
     return this.currentSession?.user || null;
@@ -627,6 +819,21 @@ class ApiAuthService {
 
   /**
    * Check if authenticated
+   * 
+   * Returns whether the user is currently authenticated.
+   * 
+   * @returns {boolean} True if user is authenticated
+   * 
+   * @example
+   * ```typescript
+   * if (apiAuthService.isAuthenticated()) {
+   *   // User is logged in
+   *   showDashboard();
+   * } else {
+   *   // Show login screen
+   *   showLogin();
+   * }
+   * ```
    */
   isAuthenticated(): boolean {
     return !!this.currentSession?.isAuthenticated;
@@ -634,6 +841,21 @@ class ApiAuthService {
 
   /**
    * Get auth headers for API requests
+   * 
+   * Returns HTTP headers needed for authenticated API requests.
+   * Includes Authorization Bearer token and User ID header.
+   * 
+   * @returns {Record<string, string>} Object containing auth headers
+   * 
+   * @example
+   * ```typescript
+   * const headers = {
+   *   'Content-Type': 'application/json',
+   *   ...apiAuthService.getAuthHeaders()
+   * };
+   * 
+   * fetch('/api/data', { headers });
+   * ```
    */
   getAuthHeaders(): Record<string, string> {
     if (!this.currentSession) {
@@ -648,6 +870,19 @@ class ApiAuthService {
 
   /**
    * Get reactive store
+   * 
+   * Returns a Svelte store that components can subscribe to for session state changes.
+   * 
+   * @returns {Writable<AuthSession | null>} Reactive store for session state
+   * 
+   * @example
+   * ```typescript
+   * // In a Svelte component
+   * import { apiAuthService } from './services/api-auth.service';
+   * 
+   * $: session = apiAuthService.store;
+   * $: isLoggedIn = $session?.isAuthenticated ?? false;
+   * ```
    */
   get store() {
     return this.sessionStore;

@@ -1,6 +1,28 @@
 /**
  * Tag Management Service
- * Handles CRUD operations for tags and user-tag assignments
+ * 
+ * Handles CRUD operations for tags and user-tag assignments.
+ * Provides functionality for creating tags, assigning tags to users,
+ * and managing tag-based sharing relationships.
+ * 
+ * @description This service manages the tag system that enables content sharing
+ * based on user classifications. Tags can be created by users and assigned to
+ * other users to create sharing groups.
+ * 
+ * @example
+ * ```typescript
+ * // Create a new tag
+ * const tag = await tagService.createTag({
+ *   name: 'Work Team',
+ *   color: '#3B82F6'
+ * });
+ * 
+ * // Assign tag to users
+ * await tagService.assignTagToUser(tag.id, 'user123');
+ * 
+ * // Get all tags with user assignments
+ * const tags = await tagService.getTags();
+ * ```
  */
 
 import { writable, type Writable } from 'svelte/store';
@@ -9,6 +31,9 @@ import { apiAuthService } from './api-auth.service.js';
 import type { SearchableUser } from './user-search.service.js';
 import { entrySharingService } from './entry-sharing.service.js';
 
+/**
+ * Tag entity structure
+ */
 export interface Tag {
   id: string;
   name: string;
@@ -19,6 +44,9 @@ export interface Tag {
   updated_at: string;
 }
 
+/**
+ * User-tag assignment relationship
+ */
 export interface UserTag {
   id: string;
   tagger_id: string;
@@ -30,22 +58,37 @@ export interface UserTag {
   target_user?: SearchableUser;
 }
 
+/**
+ * Tag with associated user assignments
+ */
 export interface TagWithUsers {
   tag: Tag;
   assignedUsers: SearchableUser[];
   userCount: number;
 }
 
+/**
+ * Data required to create a new tag
+ */
 export interface CreateTagData {
   name: string;
   color: string;
 }
 
+/**
+ * Data for updating an existing tag
+ */
 export interface UpdateTagData {
   name?: string;
   color?: string;
 }
 
+/**
+ * Main tag management service class
+ * 
+ * Provides comprehensive tag and user-tag assignment management
+ * with reactive stores for UI updates.
+ */
 class TagService {
   private readonly API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   private tagsStore: Writable<TagWithUsers[]> = writable([]);
@@ -71,6 +114,24 @@ class TagService {
 
   /**
    * Create a new tag
+   * 
+   * Creates a new tag that can be assigned to users for content sharing.
+   * Automatically generates a URL-safe slug from the tag name.
+   * 
+   * @param {CreateTagData} tagData - Tag creation data
+   * @param {string} tagData.name - Name of the tag
+   * @param {string} tagData.color - Hex color code for the tag
+   * @returns {Promise<Tag>} The created tag
+   * @throws {Error} If user is not authenticated or validation fails
+   * 
+   * @example
+   * ```typescript
+   * const tag = await tagService.createTag({
+   *   name: 'Project Alpha',
+   *   color: '#10B981'
+   * });
+   * console.log('Created tag:', tag.name);
+   * ```
    */
   async createTag(tagData: CreateTagData): Promise<Tag> {
     if (!apiAuthService.isAuthenticated()) {
@@ -290,6 +351,53 @@ class TagService {
       const result = await response.json();
       const userTag = result.data as UserTag;
 
+      // CRITICAL: Grant access to existing entries shared with this tag
+      try {
+        console.log(`Granting entry access for user ${userId} added to tag ${tagId}`);
+        
+        // Get all entries currently shared with this tag
+        const sharedEntryIds = await entrySharingService.getEntriesSharedWithTag(tagId);
+        console.log(`Found ${sharedEntryIds.length} entries shared with tag ${tagId}`);
+
+        if (sharedEntryIds.length > 0) {
+          console.log(`Granting access to ${sharedEntryIds.length} entries for user ${userId}...`);
+          
+          // Check if E2E encryption is available
+          const { e2eEncryptionService } = await import('./e2e-encryption.service.js');
+          if (!e2eEncryptionService.isUnlocked()) {
+            console.warn('Cannot grant entry access: E2E encryption not unlocked');
+          } else {
+            // For each entry, get the author's access key and share it with the new user
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const entryId of sharedEntryIds) {
+              try {
+                // Use the dedicated method for granting access to existing entries
+                const success = await entrySharingService.grantAccessToExistingEntry(entryId, userId);
+                
+                if (success) {
+                  successCount++;
+                } else {
+                  failCount++;
+                }
+                
+              } catch (entryError) {
+                console.error(`Failed to grant access to entry ${entryId} for user ${userId}:`, entryError);
+                failCount++;
+              }
+            }
+            
+            console.log(`Entry access granting complete: ${successCount} success, ${failCount} failed`);
+          }
+        } else {
+          console.log(`No entries shared with tag ${tagId}, no access to grant`);
+        }
+      } catch (accessError) {
+        console.error('Failed to grant entry access, but tag assignment succeeded:', accessError);
+        // Don't throw - tag assignment succeeded, access granting is secondary
+      }
+
       // Update local stores
       await Promise.all([
         this.loadTags(),
@@ -324,6 +432,12 @@ class TagService {
         throw new Error('Tag assignment not found');
       }
 
+      // CRITICAL: Get entries shared with this tag BEFORE removing the user
+      // This must happen before deletion because the query joins on current tag assignments
+      console.log(`Getting entries shared with tag ${tagId} before removing user ${userId}`);
+      const sharedEntryIds = await entrySharingService.getEntriesSharedWithTag(tagId);
+      console.log(`Found ${sharedEntryIds.length} entries shared with tag ${tagId}`);
+
       const response = await fetch(`${this.API_BASE_URL}/user-tags/${userTag.id}`, {
         method: 'DELETE',
         headers: {
@@ -340,11 +454,8 @@ class TagService {
       try {
         console.log(`Revoking entry access for user ${userId} removed from tag ${tagId}`);
         
-        // Get all entries shared with this tag
-        const sharedEntryIds = await entrySharingService.getEntriesSharedWithTag(tagId);
-        
         if (sharedEntryIds.length > 0) {
-          console.log(`Found ${sharedEntryIds.length} entries shared with tag ${tagId}, revoking access...`);
+          console.log(`Revoking access to ${sharedEntryIds.length} entries for user ${userId}...`);
           
           // Revoke access for this user to all entries shared with this tag
           await Promise.all(
@@ -474,14 +585,14 @@ class TagService {
   /**
    * Get reactive store for tags
    */
-  get tagsStore() {
+  getTagsStore() {
     return this.tagsStore;
   }
 
   /**
    * Get reactive store for user-tag assignments
    */
-  get userTagsStore() {
+  getUserTagsStore() {
     return this.userTagsStore;
   }
 

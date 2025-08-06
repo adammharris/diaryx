@@ -173,15 +173,34 @@
         error = '';
 
         try {
-            // Generate new encryption keys
-            const keyPair = e2eEncryptionService.generateUserKeys();
+            // Check if user already has encryption keys in the cloud
+            const hasExistingKeys = await e2eEncryptionService.hasCloudEncryptionKeys(currentUser.id);
             
-            // Complete signup with the generated keys
-            const success = e2eEncryptionService.completeSignup(
-                currentUser.id,
-                keyPair,
-                password
-            );
+            let success = false;
+            
+            if (hasExistingKeys) {
+                console.log('User already has encryption keys, attempting to restore from cloud...');
+                // Try to restore existing keys instead of generating new ones
+                success = await e2eEncryptionService.restoreKeysFromCloud(currentUser.id, password);
+                
+                if (!success) {
+                    error = 'Failed to restore existing encryption keys. Please check your password.';
+                    setupStep = 'password';
+                    isLoading = false;
+                    return;
+                }
+            } else {
+                console.log('User has no existing encryption keys, generating new ones...');
+                // Generate new encryption keys only for first-time setup
+                const keyPair = e2eEncryptionService.generateUserKeys();
+                
+                // Complete signup with the generated keys
+                success = await e2eEncryptionService.completeSignup(
+                    currentUser.id,
+                    keyPair,
+                    password
+                );
+            }
 
             if (success) {
                 setupStep = 'success';

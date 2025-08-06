@@ -1,6 +1,38 @@
 /**
- * EntryCryptor Module - Handles encryption and decryption of individual journal entries
- * Part of the client-side E2E encryption system
+ * EntryCryptor Module
+ * 
+ * Handles encryption and decryption of individual journal entries using hybrid cryptography.
+ * Part of the client-side end-to-end encryption system.
+ * 
+ * @description This module implements a hybrid encryption scheme for journal entries:
+ * 1. Each entry is encrypted with a unique symmetric key (AES-256 equivalent)
+ * 2. The symmetric key is then encrypted with the user's public key (asymmetric)
+ * 3. This allows efficient encryption of large content while enabling secure sharing
+ * 
+ * The encryption process:
+ * - Generate random symmetric key for entry content
+ * - Encrypt entry content with symmetric key using XSalsa20-Poly1305
+ * - Encrypt symmetric key with user's key pair using Curve25519-XSalsa20-Poly1305
+ * - Return all encrypted data with nonces for secure storage/transmission
+ * 
+ * @example
+ * ```typescript
+ * const entry = {
+ *   title: "My Secret Entry",
+ *   content: "This is confidential content",
+ *   tags: ["personal", "private"]
+ * };
+ * 
+ * // Encrypt entry
+ * const encrypted = EntryCryptor.encryptEntry(entry, userKeyPair);
+ * 
+ * // Later, decrypt entry
+ * const decrypted = EntryCryptor.decryptEntry(
+ *   encrypted,
+ *   userKeyPair.secretKey,
+ *   userKeyPair.publicKey
+ * );
+ * ```
  */
 
 import nacl from 'tweetnacl';
@@ -9,6 +41,10 @@ import type { UserKeyPair } from './KeyManager.js';
 
 /**
  * Helper function to convert Uint8Array to hex string (for non-sensitive debugging only)
+ * 
+ * @private
+ * @param {Uint8Array} arr - Array to convert
+ * @returns {string} Hex string representation
  */
 function uint8ArrayToHex(arr: Uint8Array): string {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -16,6 +52,11 @@ function uint8ArrayToHex(arr: Uint8Array): string {
 
 /**
  * Securely clear a Uint8Array from memory
+ * 
+ * Best-effort attempt to overwrite sensitive data in memory with zeros.
+ * 
+ * @private
+ * @param {Uint8Array} arr - Array to clear
  */
 function secureClear(arr: Uint8Array): void {
   if (arr && arr.fill) {
@@ -23,6 +64,11 @@ function secureClear(arr: Uint8Array): void {
   }
 }
 
+/**
+ * Journal entry object structure
+ * 
+ * Represents the unencrypted structure of a journal entry with all its metadata.
+ */
 export interface EntryObject {
   title: string;
   content: string;
@@ -31,6 +77,11 @@ export interface EntryObject {
   [key: string]: any;
 }
 
+/**
+ * Encrypted entry data structure
+ * 
+ * Contains all the encrypted components needed to store and later decrypt an entry.
+ */
 export interface EncryptedEntryData {
   encryptedContentB64: string;
   contentNonceB64: string;
@@ -38,17 +89,46 @@ export interface EncryptedEntryData {
   keyNonceB64: string;
 }
 
+/**
+ * Re-wrapped encryption key for sharing
+ * 
+ * Contains an entry key that has been re-encrypted for a different user.
+ */
 export interface RewrappedKey {
   encryptedEntryKeyB64: string;
   keyNonceB64: string;
 }
 
+/**
+ * Entry encryption and decryption service
+ * 
+ * Provides static methods for encrypting and decrypting journal entries
+ * using hybrid cryptography with NaCl (tweetnacl).
+ */
 export class EntryCryptor {
   /**
    * Encrypt a new entry for the owner
-   * @param entryObject - The entry data to encrypt
-   * @param ownerKeyPair - The owner's public/private key pair
-   * @returns Object ready to be sent to the API
+   * 
+   * Creates an encrypted entry using hybrid cryptography. Generates a unique
+   * symmetric key for the entry content, then encrypts that key with the user's
+   * public key for secure storage.
+   * 
+   * @param {EntryObject} entryObject - The entry data to encrypt
+   * @param {UserKeyPair} ownerKeyPair - The owner's public/private key pair
+   * @returns {EncryptedEntryData} Object ready to be sent to the API
+   * @throws {Error} If encryption fails or invalid inputs provided
+   * 
+   * @example
+   * ```typescript
+   * const entry = {
+   *   title: "My Journal Entry",
+   *   content: "Today I learned about cryptography...",
+   *   tags: ["learning", "crypto"]
+   * };
+   * 
+   * const encrypted = EntryCryptor.encryptEntry(entry, myKeyPair);
+   * // Returns: { encryptedContentB64, contentNonceB64, encryptedEntryKeyB64, keyNonceB64 }
+   * ```
    */
   static encryptEntry(entryObject: EntryObject, ownerKeyPair: UserKeyPair): EncryptedEntryData {
     // Input validation
@@ -112,12 +192,41 @@ export class EntryCryptor {
     } catch (error) {
       throw new Error(`Entry encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }  /**
+  }
+
+  /**
    * Decrypt an entry (either owned or shared)
-   * @param encryptedData - The encrypted entry data from the API
-   * @param userSecretKey - The current user's secret key
-   * @param authorPublicKey - The entry author's public key
-   * @returns The decrypted entry object, or null if decryption fails
+   * 
+   * Decrypts an encrypted journal entry using the reverse of the encryption process.
+   * Works for both self-owned entries and entries shared by other users.
+   * 
+   * @param {EncryptedEntryData} encryptedData - The encrypted entry data from the API
+   * @param {Uint8Array} userSecretKey - The current user's secret key
+   * @param {Uint8Array} authorPublicKey - The entry author's public key
+   * @returns {EntryObject | null} The decrypted entry object, or null if decryption fails
+   * 
+   * @example
+   * ```typescript
+   * // Decrypt your own entry
+   * const myEntry = EntryCryptor.decryptEntry(
+   *   encryptedData,
+   *   myKeyPair.secretKey,
+   *   myKeyPair.publicKey  // For own entries, use own public key
+   * );
+   * 
+   * // Decrypt a shared entry
+   * const sharedEntry = EntryCryptor.decryptEntry(
+   *   encryptedData,
+   *   myKeyPair.secretKey,
+   *   authorKeyPair.publicKey  // For shared entries, use author's public key
+   * );
+   * 
+   * if (sharedEntry) {
+   *   console.log('Decrypted:', sharedEntry.title);
+   * } else {
+   *   console.error('Decryption failed');
+   * }
+   * ```
    */
   static decryptEntry(
     encryptedData: EncryptedEntryData,

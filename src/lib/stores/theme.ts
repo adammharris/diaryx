@@ -1,5 +1,47 @@
+/**
+ * Theme Management System
+ * 
+ * Provides comprehensive theming capabilities with multiple color schemes,
+ * light/dark mode support, and persistent user preferences.
+ * 
+ * @description This module manages the visual appearance of the application through:
+ * - Pre-defined color themes (Ocean Blue, Forest Green, Sunset Orange, etc.)
+ * - Light and dark mode variants for each theme
+ * - System preference detection and following
+ * - Persistent theme storage in localStorage
+ * - Real-time theme switching with CSS custom properties
+ * 
+ * The theming system uses CSS custom properties (--color-*) that are dynamically
+ * updated when themes change, providing smooth transitions and consistent styling.
+ * 
+ * @example
+ * ```typescript
+ * import { setTheme, setColorMode, currentTheme, colorMode } from '$lib/stores/theme';
+ * 
+ * // Set a specific theme
+ * setTheme('forest');
+ * 
+ * // Toggle color mode
+ * setColorMode('dark');
+ * 
+ * // Subscribe to theme changes in a component
+ * $: console.log('Current theme:', $currentTheme, $colorMode);
+ * 
+ * // Use theme colors in CSS
+ * // .my-element {
+ * //   background-color: var(--color-primary);
+ * //   color: var(--color-text);
+ * // }
+ * ```
+ */
 import { writable } from 'svelte/store';
 
+/**
+ * Color palette interface defining all theme colors
+ * 
+ * Contains all the color variables used throughout the application.
+ * Each theme must provide both light and dark variants of this palette.
+ */
 export interface ColorPalette {
     primary: string;
     primaryHover: string;
@@ -15,12 +57,35 @@ export interface ColorPalette {
     gradient: string;
 }
 
+/**
+ * Theme definition containing light and dark color palettes
+ */
 export interface Theme {
     name: string;
     lightColors: ColorPalette;
     darkColors: ColorPalette;
 }
 
+/**
+ * Available themes collection
+ * 
+ * Contains all pre-defined themes with their light and dark color variants.
+ * Themes include: Ocean Blue (default), Forest Green, Sunset Orange, Royal Purple,
+ * Warm Sepia, Cool Mint, and High Contrast for accessibility.
+ * 
+ * @example
+ * ```typescript
+ * // Access a specific theme
+ * const forestTheme = themes.forest;
+ * console.log(forestTheme.name); // "Forest Green"
+ * console.log(forestTheme.lightColors.primary); // "#059669"
+ * 
+ * // List all available themes
+ * Object.keys(themes).forEach(key => {
+ *   console.log(`${key}: ${themes[key].name}`);
+ * });
+ * ```
+ */
 export const themes: Record<string, Theme> = {
     default: {
         name: 'Ocean Blue',
@@ -241,7 +306,12 @@ export const themes: Record<string, Theme> = {
     }
 };
 
-// Get saved theme from localStorage or default
+/**
+ * Get the initial theme from localStorage or return default
+ * 
+ * @private
+ * @returns {string} Theme name
+ */
 function getInitialTheme(): string {
     if (typeof window !== 'undefined') {
         return localStorage.getItem('diaryx-theme') || 'default';
@@ -249,9 +319,38 @@ function getInitialTheme(): string {
     return 'default';
 }
 
+/**
+ * Reactive store for the current theme name
+ * 
+ * Subscribe to this store to react to theme changes in components.
+ * 
+ * @example
+ * ```typescript
+ * // In a Svelte component
+ * $: themeName = $currentTheme;
+ * ```
+ */
 export const currentTheme = writable<string>(getInitialTheme());
+
+/**
+ * Reactive store for the current color mode (light/dark)
+ * 
+ * Subscribe to this store to react to color mode changes in components.
+ * 
+ * @example
+ * ```typescript
+ * // In a Svelte component
+ * $: isDark = $colorMode === 'dark';
+ * ```
+ */
 export const colorMode = writable<'light' | 'dark'>(getInitialColorMode());
 
+/**
+ * Get the initial color mode from localStorage or system preference
+ * 
+ * @private
+ * @returns {'light' | 'dark'} Color mode
+ */
 function getInitialColorMode(): 'light' | 'dark' {
     if (typeof window !== 'undefined') {
         const savedMode = localStorage.getItem('diaryx-color-mode') as 'light' | 'dark';
@@ -273,7 +372,16 @@ if (typeof window !== 'undefined') {
     });
 }
 
-// Apply theme and color mode
+/**
+ * Apply theme and color mode to the document
+ * 
+ * Updates CSS custom properties and data attributes to reflect the current theme.
+ * Also persists the selection to localStorage.
+ * 
+ * @private
+ * @param {string} themeName - Name of the theme to apply
+ * @param {'light' | 'dark'} mode - Color mode to apply
+ */
 function applyTheme(themeName: string, mode: 'light' | 'dark') {
     if (typeof window !== 'undefined') {
         const theme = themes[themeName];
@@ -302,12 +410,50 @@ currentTheme.subscribe((themeName) => {
     });
 });
 
+/**
+ * Set the current theme
+ * 
+ * Changes the active theme if the specified theme exists.
+ * The change is immediately applied and persisted to localStorage.
+ * 
+ * @param {string} themeName - Name of the theme to activate
+ * 
+ * @example
+ * ```typescript
+ * // Switch to forest theme
+ * setTheme('forest');
+ * 
+ * // Switch to high contrast theme for accessibility
+ * setTheme('contrast');
+ * ```
+ */
 export function setTheme(themeName: string) {
     if (themes[themeName]) {
         currentTheme.set(themeName);
     }
 }
 
+/**
+ * Set the current color mode
+ * 
+ * Changes between light and dark mode for the current theme.
+ * The change is immediately applied and persisted to localStorage.
+ * 
+ * @param {'light' | 'dark'} mode - Color mode to activate
+ * 
+ * @example
+ * ```typescript
+ * // Switch to dark mode
+ * setColorMode('dark');
+ * 
+ * // Switch to light mode
+ * setColorMode('light');
+ * 
+ * // Toggle based on current state
+ * const current = get(colorMode);
+ * setColorMode(current === 'light' ? 'dark' : 'light');
+ * ```
+ */
 export function setColorMode(mode: 'light' | 'dark') {
     colorMode.set(mode);
 }

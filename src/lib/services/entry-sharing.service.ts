@@ -90,8 +90,22 @@ class EntrySharingService {
         }
       }
 
+      // CRITICAL: Always include the author/current user so they can later share the entry
+      const currentUser = apiAuthService.getCurrentUser();
+      if (currentUser && !allUsersToShareWith.has(currentUser.id)) {
+        console.log(`Adding entry author ${currentUser.id} to recipients list`);
+        allUsersToShareWith.set(currentUser.id, {
+          id: currentUser.id,
+          username: currentUser.email || currentUser.id,
+          email: currentUser.email || '', 
+          public_key: currentUser.public_key || '',
+          display_name: currentUser.email || currentUser.id,
+          discoverable: true
+        });
+      }
+
       const uniqueUsers = Array.from(allUsersToShareWith.values());
-      console.log(`Total unique users to share with: ${uniqueUsers.length}`);
+      console.log(`Total unique users to share with (including author): ${uniqueUsers.length}`);
 
       if (uniqueUsers.length === 0) {
         console.log('No users to share with, skipping key generation');
@@ -406,6 +420,179 @@ class EntrySharingService {
   async refresh(): Promise<void> {
     if (apiAuthService.isAuthenticated()) {
       await this.loadUserAccessKeys();
+    }
+  }
+
+  /**
+   * Grant access to an existing entry by reusing the author's access key
+   * This is used when adding users to tags retroactively
+   */
+  async grantAccessToExistingEntry(entryId: string, newUserId: string): Promise<boolean> {
+    if (!apiAuthService.isAuthenticated()) {
+      throw new Error('User must be authenticated to grant access');
+    }
+
+    if (!e2eEncryptionService.isUnlocked()) {
+      throw new Error('E2E encryption must be unlocked to grant access');
+    }
+
+    try {
+      console.log(`Granting access to entry ${entryId} for user ${newUserId}`);
+
+      // Get the author's access key for this entry
+      const authorAccessKey = await this.getEntryAccessKey(entryId);
+      if (!authorAccessKey) {
+        throw new Error('No access key found for current user (author should have one)');
+      }
+
+      // DETAILED DEBUGGING: Let's trace exactly what's happening
+      console.log('=== DETAILED ENTRY KEY DECRYPTION DEBUGGING ===');
+      console.log('Entry ID:', entryId);
+      console.log('Author access key user_id:', authorAccessKey.user_id);
+      console.log('Current user ID:', e2eEncryptionService.getCurrentUserId());
+      console.log('IDs match:', authorAccessKey.user_id === e2eEncryptionService.getCurrentUserId());
+      
+      const currentSession = e2eEncryptionService.getCurrentSession();
+      if (currentSession) {
+        console.log('Current session public key (B64):', e2eEncryptionService.getCurrentPublicKey());
+        console.log('Current session user ID:', currentSession.userId);
+        console.log('Session unlocked:', currentSession.isUnlocked);
+        
+        // Let's manually test the decryption step by step
+        try {
+          const { decodeBase64 } = await import('tweetnacl-util');
+          const nacl = (await import('tweetnacl')).default;
+          
+          console.log('--- Decryption Parameters ---');
+          console.log('Encrypted entry key (B64):', authorAccessKey.encrypted_entry_key);
+          console.log('Key nonce (B64):', authorAccessKey.key_nonce);
+          
+          const encryptedKeyBytes = decodeBase64(authorAccessKey.encrypted_entry_key);
+          const nonceBytes = decodeBase64(authorAccessKey.key_nonce);
+          
+          console.log('Encrypted key length (bytes):', encryptedKeyBytes.length);
+          console.log('Nonce length (bytes):', nonceBytes.length);
+          console.log('Expected encrypted key length:', nacl.box.overheadLength + 32); // 32 = secretbox key length
+          console.log('Expected nonce length:', nacl.box.nonceLength);
+          
+          console.log('--- Key Pair Information ---');
+          console.log('Public key length:', currentSession.userKeyPair.publicKey.length);
+          console.log('Secret key length:', currentSession.userKeyPair.secretKey.length);
+          console.log('Expected public key length:', nacl.box.publicKeyLength);
+          console.log('Expected secret key length:', nacl.box.secretKeyLength);
+          
+          // Test decryption
+          console.log('--- Attempting Decryption ---');
+          const decryptedKey = nacl.box.open(
+            encryptedKeyBytes,
+            nonceBytes,
+            currentSession.userKeyPair.publicKey,
+            currentSession.userKeyPair.secretKey
+          );
+          
+          console.log('Decryption result:', decryptedKey ? 'SUCCESS' : 'FAILED');
+          if (decryptedKey) {
+            console.log('Decrypted key length:', decryptedKey.length);
+            console.log('Expected key length:', nacl.secretbox.keyLength);
+            decryptedKey.fill(0); // Clear from memory
+          }
+          
+        } catch (debugError) {
+          console.error('Debug decryption error:', debugError);
+        }
+      } else {
+        console.error('No current session available');
+      }
+      // CRITICAL TEST: Check what public key is stored in the user's cloud profile
+      try {
+        const { userSearchService } = await import('./user-search.service.js');
+        const currentUserProfile = await userSearchService.getUserById(currentSession?.userId || '');
+        
+        console.log('--- Cloud Profile vs Session Comparison ---');
+        console.log('Current session public key:', e2eEncryptionService.getCurrentPublicKey());
+        console.log('Cloud profile public key  :', currentUserProfile?.public_key);
+        console.log('Keys match:', e2eEncryptionService.getCurrentPublicKey() === currentUserProfile?.public_key);
+        
+        if (e2eEncryptionService.getCurrentPublicKey() !== currentUserProfile?.public_key) {
+          console.error('🚨 FOUND THE PROBLEM: Session public key differs from cloud profile public key!');
+          console.error('This means the user has different encryption keys in their session vs cloud profile.');
+          console.error('The entry was encrypted with the cloud profile key, but session has different keys.');
+        } else {
+          console.log('✅ Keys match, so this is NOT a key mismatch issue');
+          console.log('🔍 This suggests the encrypted data in the database may be corrupted');
+          console.log('🔍 Or the entry was created with a different key pair that had the same public key (extremely unlikely)');
+          
+          // Let's test if the current user can decrypt a NEWLY created entry
+          console.log('--- Testing Fresh Entry Decryption ---');
+          console.log('Can we decrypt the entry we just created? Entry ID: cfa074c9-03b0-4ed8-8161-ebc7c59e5505');
+          
+          try {
+            const freshAccessKey = await this.getEntryAccessKey('cfa074c9-03b0-4ed8-8161-ebc7c59e5505');
+            if (freshAccessKey) {
+              const freshEncryptedKeyBytes = decodeBase64(freshAccessKey.encrypted_entry_key);
+              const freshNonceBytes = decodeBase64(freshAccessKey.key_nonce);
+              
+              const freshDecryptedKey = nacl.box.open(
+                freshEncryptedKeyBytes,
+                freshNonceBytes,
+                currentSession.userKeyPair.publicKey,
+                currentSession.userKeyPair.secretKey
+              );
+              
+              console.log('Fresh entry decryption result:', freshDecryptedKey ? 'SUCCESS' : 'FAILED');
+              if (freshDecryptedKey) {
+                freshDecryptedKey.fill(0); // Clear from memory
+                console.log('✅ Fresh entry CAN be decrypted - this confirms the old entry data is corrupted');
+              } else {
+                console.log('❌ Fresh entry CANNOT be decrypted - this suggests a deeper encryption issue');
+              }
+            } else {
+              console.log('Could not get access key for fresh entry');
+            }
+          } catch (freshTestError) {
+            console.error('Fresh entry test error:', freshTestError);
+          }
+        }
+      } catch (profileError) {
+        console.error('Failed to fetch user profile for comparison:', profileError);
+      }
+      
+      console.log('=== END DEBUGGING ===');
+
+      // Get the new user's public key using direct user lookup
+      const { userSearchService } = await import('./user-search.service.js');
+      const targetUser = await userSearchService.getUserById(newUserId);
+      if (!targetUser || !targetUser.public_key) {
+        throw new Error('Target user not found or has no public key');
+      }
+
+      // Use the e2e encryption service to rewrap the key for the new user
+      const rewrappedKey = e2eEncryptionService.rewrapEntryKeyForUser(
+        authorAccessKey.encrypted_entry_key,
+        authorAccessKey.key_nonce,
+        targetUser.public_key
+      );
+
+      if (!rewrappedKey) {
+        // This entry was likely created with old encryption keys that no longer match
+        // the current user's session. This can happen if keys were regenerated.
+        console.warn(`Cannot grant access to entry ${entryId}: Entry key is inaccessible (may have been created with previous encryption keys)`);
+        return false; // Return false to indicate this specific entry failed, but don't throw
+      }
+
+      // Store the new access key
+      await this.storeEntryAccessKeys(entryId, [{
+        userId: newUserId,
+        encryptedEntryKey: rewrappedKey.encryptedEntryKeyB64,
+        keyNonce: rewrappedKey.keyNonceB64
+      }]);
+
+      console.log(`Successfully granted access to entry ${entryId} for user ${newUserId}`);
+      return true;
+
+    } catch (error) {
+      console.error(`Failed to grant access to entry ${entryId} for user ${newUserId}:`, error);
+      return false;
     }
   }
 

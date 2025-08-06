@@ -1,11 +1,36 @@
 /**
  * Biometric Authentication Service
- * Uses WebAuthn API to provide biometric authentication for encryption password storage
- * Supports fingerprint, facial recognition, and other platform authenticators
+ * 
+ * Uses WebAuthn API to provide biometric authentication for secure password storage.
+ * Supports fingerprint, facial recognition, and other platform authenticators.
+ * 
+ * @description This service manages biometric credentials and handles encryption/decryption
+ * of sensitive data using biometric authentication. It leverages the WebAuthn standard
+ * for secure, passwordless authentication and stores encrypted passwords locally.
+ * 
+ * @example
+ * ```typescript
+ * // Check if biometric auth is supported
+ * const supported = await biometricAuthService.isSupported();
+ * 
+ * if (supported) {
+ *   // Create a biometric credential
+ *   const credential = await biometricAuthService.createCredential('user123');
+ *   
+ *   // Authenticate with biometrics
+ *   const result = await biometricAuthService.authenticate();
+ *   if (result.success) {
+ *     // Use result.authenticatorData for encryption
+ *   }
+ * }
+ * ```
  */
 
 import { browser } from '$app/environment';
 
+/**
+ * Biometric credential data structure
+ */
 export interface BiometricCredential {
   credentialId: string;
   publicKey: string;
@@ -13,12 +38,21 @@ export interface BiometricCredential {
   created: string;
 }
 
+/**
+ * Result of biometric authentication attempt
+ */
 export interface BiometricAuthResult {
   success: boolean;
   error?: string;
   authenticatorData?: ArrayBuffer;
 }
 
+/**
+ * Main biometric authentication service class
+ * 
+ * Provides WebAuthn-based biometric authentication with secure password storage.
+ * Handles credential creation, authentication, and password encryption/decryption.
+ */
 export class BiometricAuthService {
   private readonly CREDENTIAL_STORAGE_KEY = 'diaryx_biometric_credential';
   private readonly APP_NAME = 'Diaryx Journal';
@@ -33,6 +67,19 @@ export class BiometricAuthService {
 
   /**
    * Check if WebAuthn is supported and biometric authenticators are available
+   * 
+   * Verifies that the current environment supports WebAuthn and has
+   * platform authenticators (built-in biometrics) available.
+   * 
+   * @returns {Promise<boolean>} True if biometric authentication is supported
+   * 
+   * @example
+   * ```typescript
+   * const canUseBiometrics = await biometricAuthService.isSupported();
+   * if (canUseBiometrics) {
+   *   // Show biometric authentication option
+   * }
+   * ```
    */
   async isSupported(): Promise<boolean> {
     if (!browser || !window.PublicKeyCredential) {
@@ -51,6 +98,18 @@ export class BiometricAuthService {
 
   /**
    * Check if biometric authentication is currently enabled
+   * 
+   * Determines if a biometric credential has been previously created and stored.
+   * 
+   * @returns {boolean} True if biometric auth is enabled
+   * 
+   * @example
+   * ```typescript
+   * if (biometricAuthService.isEnabled()) {
+   *   // User has biometric auth set up
+   *   showBiometricLoginOption();
+   * }
+   * ```
    */
   isEnabled(): boolean {
     if (!browser) return false;
@@ -61,6 +120,25 @@ export class BiometricAuthService {
 
   /**
    * Create a new biometric credential for authentication
+   * 
+   * Initiates the WebAuthn credential creation flow, prompting the user
+   * to register their biometric (fingerprint, face, etc.) for authentication.
+   * 
+   * @param {string} userId - Unique identifier for the user
+   * @returns {Promise<BiometricCredential | null>} Created credential or null if failed
+   * @throws {Error} If biometric auth is not supported or creation fails
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   const credential = await biometricAuthService.createCredential('user123');
+   *   if (credential) {
+   *     console.log('Biometric credential created:', credential.created);
+   *   }
+   * } catch (error) {
+   *   console.error('Failed to create biometric credential:', error);
+   * }
+   * ```
    */
   async createCredential(userId: string): Promise<BiometricCredential | null> {
     if (!browser) {
@@ -135,6 +213,25 @@ export class BiometricAuthService {
 
   /**
    * Authenticate using stored biometric credential
+   * 
+   * Prompts the user to authenticate using their registered biometric.
+   * Returns authenticator data that can be used for encryption operations.
+   * 
+   * @returns {Promise<BiometricAuthResult>} Authentication result with success status
+   * 
+   * @example
+   * ```typescript
+   * const result = await biometricAuthService.authenticate();
+   * if (result.success && result.authenticatorData) {
+   *   // Use authenticatorData for encryption/decryption
+   *   const encrypted = await biometricAuthService.encryptPassword(
+   *     'myPassword',
+   *     result.authenticatorData
+   *   );
+   * } else {
+   *   console.error('Authentication failed:', result.error);
+   * }
+   * ```
    */
   async authenticate(): Promise<BiometricAuthResult> {
     if (!browser) {
@@ -206,6 +303,15 @@ export class BiometricAuthService {
 
   /**
    * Remove stored biometric credential
+   * 
+   * Deletes the locally stored biometric credential, effectively disabling
+   * biometric authentication for this device.
+   * 
+   * @example
+   * ```typescript
+   * biometricAuthService.removeCredential();
+   * console.log('Biometric authentication disabled');
+   * ```
    */
   removeCredential(): void {
     if (!browser) return;
@@ -216,6 +322,20 @@ export class BiometricAuthService {
 
   /**
    * Get information about the stored credential (without sensitive data)
+   * 
+   * Returns non-sensitive information about the stored biometric credential.
+   * 
+   * @returns {Object | null} Credential info or null if no credential exists
+   * @returns {string} returns.created - ISO timestamp when credential was created
+   * @returns {boolean} returns.hasCredential - Whether credential exists
+   * 
+   * @example
+   * ```typescript
+   * const info = biometricAuthService.getCredentialInfo();
+   * if (info) {
+   *   console.log('Biometric setup on:', new Date(info.created));
+   * }
+   * ```
    */
   getCredentialInfo(): { created: string; hasCredential: boolean } | null {
     if (!browser) return null;
@@ -231,6 +351,26 @@ export class BiometricAuthService {
 
   /**
    * Encrypt password using biometric authentication data
+   * 
+   * Uses authenticator data from biometric authentication to derive an encryption key
+   * and encrypt the provided password. The encrypted result can be safely stored.
+   * 
+   * @param {string} password - The password to encrypt
+   * @param {ArrayBuffer} authenticatorData - Data from successful biometric authentication
+   * @returns {Promise<string>} Base64-encoded encrypted password
+   * @throws {Error} If encryption fails
+   * 
+   * @example
+   * ```typescript
+   * const authResult = await biometricAuthService.authenticate();
+   * if (authResult.success && authResult.authenticatorData) {
+   *   const encrypted = await biometricAuthService.encryptPassword(
+   *     'userPassword123',
+   *     authResult.authenticatorData
+   *   );
+   *   // Store encrypted for later use
+   * }
+   * ```
    */
   async encryptPassword(password: string, authenticatorData: ArrayBuffer): Promise<string> {
     try {
@@ -281,6 +421,30 @@ export class BiometricAuthService {
 
   /**
    * Decrypt password using biometric authentication data
+   * 
+   * Uses authenticator data from biometric authentication to derive the decryption key
+   * and decrypt a previously encrypted password.
+   * 
+   * @param {string} encryptedPassword - Base64-encoded encrypted password
+   * @param {ArrayBuffer} authenticatorData - Data from successful biometric authentication
+   * @returns {Promise<string>} The decrypted password
+   * @throws {Error} If decryption fails
+   * 
+   * @example
+   * ```typescript
+   * const authResult = await biometricAuthService.authenticate();
+   * if (authResult.success && authResult.authenticatorData) {
+   *   try {
+   *     const password = await biometricAuthService.decryptPassword(
+   *       storedEncryptedPassword,
+   *       authResult.authenticatorData
+   *     );
+   *     // Use decrypted password
+   *   } catch (error) {
+   *     console.error('Decryption failed:', error);
+   *   }
+   * }
+   * ```
    */
   async decryptPassword(encryptedPassword: string, authenticatorData: ArrayBuffer): Promise<string> {
     try {
@@ -328,6 +492,12 @@ export class BiometricAuthService {
 
   // Private helper methods
 
+  /**
+   * Retrieve stored biometric credential from localStorage
+   * 
+   * @private
+   * @returns {BiometricCredential | null} Stored credential or null if not found
+   */
   private getStoredCredential(): BiometricCredential | null {
     if (!browser) return null;
     
@@ -340,6 +510,15 @@ export class BiometricAuthService {
     }
   }
 
+  /**
+   * Get the relying party identifier for WebAuthn
+   * 
+   * Determines the appropriate RP ID based on the current environment
+   * (localhost for development, hostname for web, tauri.localhost for Tauri apps).
+   * 
+   * @private
+   * @returns {string} Relying party identifier
+   */
   private getRelyingPartyId(): string {
     if (!browser) return 'localhost';
     
@@ -357,6 +536,13 @@ export class BiometricAuthService {
     return window.location.hostname;
   }
 
+  /**
+   * Convert ArrayBuffer to Base64 string
+   * 
+   * @private
+   * @param {ArrayBuffer} buffer - Buffer to convert
+   * @returns {string} Base64-encoded string
+   */
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
     let binary = '';
@@ -366,6 +552,13 @@ export class BiometricAuthService {
     return btoa(binary);
   }
 
+  /**
+   * Convert Base64 string to ArrayBuffer
+   * 
+   * @private
+   * @param {string} base64 - Base64-encoded string
+   * @returns {ArrayBuffer} Converted ArrayBuffer
+   */
   private base64ToArrayBuffer(base64: string): ArrayBuffer {
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);

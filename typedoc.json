@@ -1,0 +1,35 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/lib/services/e2e-encryption.service.ts",
+    "src/lib/services/storage.ts",
+    "src/lib/services/api-auth.service.ts", 
+    "src/lib/services/biometric-auth.service.ts",
+    "src/lib/services/tag.service.ts",
+    "src/lib/utils/fetch.ts",
+    "src/lib/utils/tauri.ts",
+    "src/lib/crypto/KeyManager.ts",
+    "src/lib/crypto/EntryCryptor.ts",
+    "src/lib/storage/frontmatter.service.ts",
+    "src/lib/storage/title.service.ts",
+    "src/lib/storage/preview.service.ts",
+    "src/lib/stores/theme.ts",
+    "src/lib/config/env-validation.ts"
+  ],
+  "out": "docs",
+  "name": "Diaryx Services API Documentation",
+  "theme": "default",
+  "readme": "docs-readme.md",
+  "includeVersion": true,
+  "sort": ["source-order"],
+  "excludePrivate": false,
+  "excludeProtected": false,
+  "excludeInternal": false,
+  "validation": {
+    "notExported": false,
+    "invalidLink": false,
+    "notDocumented": false
+  },
+  "treatWarningsAsErrors": false,
+  "skipErrorChecking": true
+}

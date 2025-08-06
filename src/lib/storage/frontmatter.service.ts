@@ -1,9 +1,56 @@
 /**
- * Service for parsing YAML frontmatter from markdown content
+ * Frontmatter Service
+ * 
+ * Handles parsing and extraction of YAML frontmatter from markdown content.
+ * Supports the industry-standard frontmatter format used by static site generators
+ * and markdown processors.
+ * 
+ * @description This service provides comprehensive frontmatter processing capabilities:
+ * - YAML frontmatter parsing with error handling
+ * - Tag extraction and normalization
+ * - Metadata extraction for display purposes
+ * - Content validation and parsing
+ * 
+ * Frontmatter format supported:
+ * ```markdown
+ * ---
+ * title: "My Entry Title"
+ * tags: [personal, work, important]
+ * date: 2025-01-18
+ * custom_field: "Custom value"
+ * ---
+ * 
+ * # Entry content starts here
+ * This is the actual markdown content...
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * const markdown = `---
+ * title: "My Journal Entry"
+ * tags: [personal, thoughts]
+ * date: 2025-01-18
+ * ---
+ * 
+ * # Today's Thoughts
+ * This was an interesting day...`;
+ * 
+ * const parsed = FrontmatterService.parseContent(markdown);
+ * console.log(parsed.frontmatter.title); // "My Journal Entry"
+ * console.log(parsed.content); // "# Today's Thoughts\nThis was..."
+ * 
+ * const tags = FrontmatterService.extractTags(parsed.frontmatter);
+ * console.log(tags); // ["personal", "thoughts"]
+ * ```
  */
 
 import * as yaml from 'js-yaml';
 
+/**
+ * Frontmatter data structure
+ * 
+ * Represents parsed YAML frontmatter with common fields and extensibility.
+ */
 export interface FrontmatterData {
     tags?: string[];
     title?: string;
@@ -11,15 +58,44 @@ export interface FrontmatterData {
     [key: string]: any;
 }
 
+/**
+ * Result of parsing markdown content with frontmatter
+ */
 export interface ParsedContent {
     frontmatter: FrontmatterData;
     content: string;
     hasFrontmatter: boolean;
 }
 
+/**
+ * Frontmatter parsing and processing service
+ * 
+ * Provides static methods for handling YAML frontmatter in markdown documents.
+ * All methods are designed to be safe and handle malformed input gracefully.
+ */
 export class FrontmatterService {
     /**
      * Parses YAML frontmatter from markdown content
+     * 
+     * Extracts and parses YAML frontmatter from the beginning of markdown content.
+     * Handles malformed YAML gracefully by returning the original content.
+     * 
+     * @param {string} markdown - The markdown content to parse
+     * @returns {ParsedContent} Object containing parsed frontmatter and content
+     * 
+     * @example
+     * ```typescript
+     * const markdown = `---
+     * title: "Hello World"
+     * tags: [greeting, test]
+     * ---
+     * # Content here`;
+     * 
+     * const result = FrontmatterService.parseContent(markdown);
+     * console.log(result.frontmatter.title); // "Hello World"
+     * console.log(result.hasFrontmatter); // true
+     * console.log(result.content); // "# Content here"
+     * ```
      */
     static parseContent(markdown: string): ParsedContent {
         try {
@@ -78,6 +154,30 @@ export class FrontmatterService {
 
     /**
      * Extracts tags from frontmatter, normalizing them to lowercase strings
+     * 
+     * Handles various tag formats including arrays and comma-separated strings.
+     * Normalizes all tags to lowercase and removes empty entries.
+     * 
+     * @param {FrontmatterData} frontmatter - The parsed frontmatter object
+     * @returns {string[]} Array of normalized tag strings
+     * 
+     * @example
+     * ```typescript
+     * const frontmatter = {
+     *   tags: ["Personal", "WORK", "Important"]
+     * };
+     * 
+     * const tags = FrontmatterService.extractTags(frontmatter);
+     * console.log(tags); // ["personal", "work", "important"]
+     * 
+     * // Also handles comma-separated strings
+     * const frontmatter2 = {
+     *   tags: "Personal, Work, Important"
+     * };
+     * 
+     * const tags2 = FrontmatterService.extractTags(frontmatter2);
+     * console.log(tags2); // ["personal", "work", "important"]
+     * ```
      */
     static extractTags(frontmatter: FrontmatterData): string[] {
         if (!frontmatter.tags) {
@@ -102,6 +202,32 @@ export class FrontmatterService {
 
     /**
      * Gets all metadata from frontmatter for display purposes
+     * 
+     * Extracts and formats all frontmatter fields for UI display.
+     * Handles special cases like arrays, dates, and provides type information.
+     * 
+     * @param {FrontmatterData} frontmatter - The parsed frontmatter object
+     * @returns {Array<{key: string, value: any, type: string}>} Formatted metadata entries
+     * 
+     * @example
+     * ```typescript
+     * const frontmatter = {
+     *   title: "My Entry",
+     *   tags: ["personal", "work"],
+     *   date: "2025-01-18",
+     *   priority: 5
+     * };
+     * 
+     * const metadata = FrontmatterService.getMetadataInfo(frontmatter);
+     * metadata.forEach(item => {
+     *   console.log(`${item.key}: ${item.value} (${item.type})`);
+     * });
+     * // Output:
+     * // Title: My Entry (string)
+     * // Tags: personal, work (array)
+     * // Date: 1/18/2025, 12:00:00 AM (date)
+     * // Priority: 5 (number)
+     * ```
      */
     static getMetadataInfo(frontmatter: FrontmatterData): Array<{key: string, value: any, type: string}> {
         const metadata: Array<{key: string, value: any, type: string}> = [];
@@ -141,6 +267,26 @@ export class FrontmatterService {
 
     /**
      * Checks if content has YAML frontmatter
+     * 
+     * Quick check to determine if markdown content contains frontmatter
+     * by looking for the opening delimiter.
+     * 
+     * @param {string} markdown - The markdown content to check
+     * @returns {boolean} True if content starts with frontmatter delimiter
+     * 
+     * @example
+     * ```typescript
+     * const withFrontmatter = `---
+     * title: "Test"
+     * ---
+     * Content here`;
+     * 
+     * const withoutFrontmatter = `# Just a title
+     * Regular content`;
+     * 
+     * console.log(FrontmatterService.hasFrontmatter(withFrontmatter)); // true
+     * console.log(FrontmatterService.hasFrontmatter(withoutFrontmatter)); // false
+     * ```
      */
     static hasFrontmatter(markdown: string): boolean {
         return markdown.trim().startsWith('---');

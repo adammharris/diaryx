@@ -1,7 +1,21 @@
 /**
  * End-to-End Encryption Service
- * Integrates KeyManager and EntryCryptor with the application
- * Handles user flows: signup, login, entry creation, sharing, and reading
+ * 
+ * Integrates KeyManager and EntryCryptor with the application.
+ * Handles user flows including signup, login, entry creation, sharing, and reading.
+ * Provides secure encryption/decryption of journal entries using NaCl cryptography.
+ * 
+ * @description This service manages user key pairs, session state, and entry encryption/decryption.
+ * It supports both password-based and biometric authentication for key management.
+ * 
+ * @example
+ * ```typescript
+ * // Check if service is unlocked
+ * if (e2eEncryptionService.isUnlocked()) {
+ *   // Encrypt an entry
+ *   const encrypted = e2eEncryptionService.encryptEntry(entryObject);
+ * }
+ * ```
  */
 
 import { writable, type Writable } from 'svelte/store';
@@ -13,6 +27,9 @@ import { biometricAuthService, type BiometricAuthResult } from './biometric-auth
 import nacl from 'tweetnacl';
 import { decodeBase64 } from 'tweetnacl-util';
 
+/**
+ * Represents an active E2E encryption session
+ */
 interface E2ESession {
   userId: string;
   userKeyPair: UserKeyPair;
@@ -20,6 +37,9 @@ interface E2ESession {
   isUnlocked: boolean;
 }
 
+/**
+ * Structure for storing encrypted user keys in localStorage
+ */
 interface StoredUserKeys {
   encryptedSecretKeyB64: string;
   publicKeyB64: string;
@@ -29,6 +49,12 @@ interface StoredUserKeys {
   encryptedPasswordB64?: string; // E2E password encrypted with biometric data
 }
 
+/**
+ * End-to-End Encryption Service
+ * 
+ * Manages user encryption keys, session state, and entry encryption/decryption.
+ * Provides a secure layer for protecting journal entries using NaCl cryptography.
+ */
 export class E2EEncryptionService {
   private currentSession: E2ESession | null = null;
   private sessionStore: Writable<E2ESession | null> = writable(null);
@@ -41,6 +67,11 @@ export class E2EEncryptionService {
   }
   /**
    * Initialize session from stored encrypted keys if available
+   * 
+   * Attempts to restore a locked session from localStorage.
+   * The session remains locked until the user provides their password.
+   * 
+   * @private
    */
   private initializeFromStorage(): void {
     try {
@@ -63,6 +94,17 @@ export class E2EEncryptionService {
 
   /**
    * Generate new user keys during signup
+   * 
+   * Creates a new cryptographic key pair for the user.
+   * This should only be called during initial user registration.
+   * 
+   * @returns {UserKeyPairB64} Base64-encoded public and secret key pair
+   * 
+   * @example
+   * ```typescript
+   * const keyPair = e2eEncryptionService.generateUserKeys();
+   * console.log('Public key:', keyPair.publicKey);
+   * ```
    */
   generateUserKeys(): UserKeyPairB64 {
     return KeyManager.generateUserKeysB64();
@@ -70,8 +112,25 @@ export class E2EEncryptionService {
 
   /**
    * Complete user signup - store encrypted keys locally
+   * 
+   * Finalizes user registration by encrypting and storing the user's key pair.
+   * The secret key is encrypted with the user's password before storage.
+   * 
+   * @param {string} userId - Unique identifier for the user
+   * @param {UserKeyPairB64} keyPair - Base64-encoded key pair from generateUserKeys()
+   * @param {string} password - User's password (minimum 8 characters)
+   * @returns {Promise<boolean>} True if signup completed successfully
+   * 
+   * @example
+   * ```typescript
+   * const success = await e2eEncryptionService.completeSignup(
+   *   'user123',
+   *   keyPair,
+   *   'securePassword123'
+   * );
+   * ```
    */
-  completeSignup(userId: string, keyPair: UserKeyPairB64, password: string): boolean {
+  async completeSignup(userId: string, keyPair: UserKeyPairB64, password: string): Promise<boolean> {
     // Input validation
     if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
       console.error('Invalid user ID provided');
@@ -125,8 +184,15 @@ export class E2EEncryptionService {
       
       this.sessionStore.set(this.currentSession);
       
-      // Update user profile with encryption keys in the backend
-      this.updateUserEncryptionKeys(userId, keyPair.publicKey, encryptedSecretKeyB64);
+      // Update user profile with encryption keys in the backend ONLY if this is first-time signup
+      // Check if user already has keys to avoid overwriting existing keys
+      const hasExistingKeys = await this.hasCloudEncryptionKeys(userId);
+      if (!hasExistingKeys) {
+        console.log('First-time signup: storing encryption keys in backend');
+        this.updateUserEncryptionKeys(userId, keyPair.publicKey, encryptedSecretKeyB64);
+      } else {
+        console.log('User already has encryption keys in backend, skipping update to prevent key overwrite');
+      }
       
       return true;
     } catch (error) {
@@ -137,6 +203,20 @@ export class E2EEncryptionService {
 
   /**
    * Login with password - decrypt stored keys
+   * 
+   * Authenticates the user and unlocks their encryption session.
+   * Decrypts the stored secret key using the provided password.
+   * 
+   * @param {string} password - User's password
+   * @returns {boolean} True if login successful and session unlocked
+   * 
+   * @example
+   * ```typescript
+   * const success = e2eEncryptionService.login('userPassword');
+   * if (success) {
+   *   console.log('Session unlocked, ready for encryption');
+   * }
+   * ```
    */
   login(password: string): boolean {
     // Input validation
@@ -198,6 +278,14 @@ export class E2EEncryptionService {
 
   /**
    * Logout - clear session and sensitive data
+   * 
+   * Securely clears the current session and removes sensitive key material from memory.
+   * This should be called when the user logs out or the session expires.
+   * 
+   * @example
+   * ```typescript
+   * e2eEncryptionService.logout();
+   * ```
    */
   logout(): void {
     if (this.currentSession) {
@@ -211,6 +299,19 @@ export class E2EEncryptionService {
 
   /**
    * Check if biometric authentication is available and enabled
+   * 
+   * Determines if the device supports biometric authentication and if the user
+   * has stored keys that could be used with biometrics.
+   * 
+   * @returns {Promise<boolean>} True if biometric auth is available
+   * 
+   * @example
+   * ```typescript
+   * const canUseBiometrics = await e2eEncryptionService.isBiometricAvailable();
+   * if (canUseBiometrics) {
+   *   // Show biometric login option
+   * }
+   * ```
    */
   async isBiometricAvailable(): Promise<boolean> {
     if (!browser) return false;
@@ -223,6 +324,11 @@ export class E2EEncryptionService {
 
   /**
    * Check if biometric authentication is enabled for the current user
+   * 
+   * Determines if the current user has previously enabled biometric authentication
+   * and has the necessary encrypted data stored.
+   * 
+   * @returns {boolean} True if biometric auth is enabled for current user
    */
   isBiometricEnabled(): boolean {
     if (!browser) return false;
@@ -241,6 +347,20 @@ export class E2EEncryptionService {
 
   /**
    * Enable biometric authentication for the current user
+   * 
+   * Sets up biometric authentication by encrypting the user's password
+   * with biometric-derived keys. Requires a valid password for verification.
+   * 
+   * @param {string} password - User's current password for verification
+   * @returns {Promise<boolean>} True if biometric auth was successfully enabled
+   * 
+   * @example
+   * ```typescript
+   * const enabled = await e2eEncryptionService.enableBiometric('userPassword');
+   * if (enabled) {
+   *   console.log('Biometric authentication enabled');
+   * }
+   * ```
    */
   async enableBiometric(password: string): Promise<boolean> {
     if (!browser) {
@@ -311,6 +431,11 @@ export class E2EEncryptionService {
 
   /**
    * Disable biometric authentication
+   * 
+   * Removes biometric authentication capability and cleans up stored biometric data.
+   * The user will need to use password authentication after this.
+   * 
+   * @returns {boolean} True if biometric auth was successfully disabled
    */
   disableBiometric(): boolean {
     if (!browser) return false;
@@ -345,6 +470,19 @@ export class E2EEncryptionService {
 
   /**
    * Attempt to login using biometric authentication
+   * 
+   * Authenticates the user using biometric data and unlocks the encryption session.
+   * Requires biometric authentication to be previously enabled.
+   * 
+   * @returns {Promise<boolean>} True if biometric login successful
+   * 
+   * @example
+   * ```typescript
+   * const success = await e2eEncryptionService.loginWithBiometric();
+   * if (success) {
+   *   console.log('Biometric login successful');
+   * }
+   * ```
    */
   async loginWithBiometric(): Promise<boolean> {
     if (!browser) {
@@ -405,6 +543,11 @@ export class E2EEncryptionService {
 
   /**
    * Get biometric credential information
+   * 
+   * Returns information about the current biometric setup including
+   * whether it's enabled and credential details.
+   * 
+   * @returns {Object} Object containing enabled status and credential info
    */
   getBiometricInfo(): { enabled: boolean; credentialInfo: any } {
     return {
@@ -415,6 +558,14 @@ export class E2EEncryptionService {
 
   /**
    * Clear all stored keys (for account deletion or reset)
+   * 
+   * Permanently removes all stored encryption keys and session data.
+   * This is irreversible and should only be used for account deletion or reset.
+   * 
+   * @example
+   * ```typescript
+   * e2eEncryptionService.clearStoredKeys();
+   * ```
    */
   clearStoredKeys(): void {
     if (browser) {
@@ -425,6 +576,11 @@ export class E2EEncryptionService {
 
   /**
    * Check if user has stored keys (but may be locked)
+   * 
+   * Determines if the user has encryption keys stored locally.
+   * The session may still be locked even if keys exist.
+   * 
+   * @returns {boolean} True if stored keys exist
    */
   hasStoredKeys(): boolean {
     if (!browser) return false;
@@ -434,6 +590,18 @@ export class E2EEncryptionService {
 
   /**
    * Check if session is unlocked and ready for crypto operations
+   * 
+   * Indicates whether the encryption session is active and ready
+   * for encrypting/decrypting entries.
+   * 
+   * @returns {boolean} True if session is unlocked and ready
+   * 
+   * @example
+   * ```typescript
+   * if (e2eEncryptionService.isUnlocked()) {
+   *   // Safe to perform encryption operations
+   * }
+   * ```
    */
   isUnlocked(): boolean {
     return this.currentSession?.isUnlocked || false;
@@ -441,6 +609,11 @@ export class E2EEncryptionService {
 
   /**
    * Get current user's public key (Base64)
+   * 
+   * Returns the public key for the current user session.
+   * Used for entry sharing and verification.
+   * 
+   * @returns {string | null} Base64-encoded public key or null if not unlocked
    */
   getCurrentPublicKey(): string | null {
     return this.currentSession?.publicKeyB64 || null;
@@ -448,17 +621,34 @@ export class E2EEncryptionService {
 
   /**
    * Get current user ID
+   * 
+   * Returns the unique identifier for the current user.
+   * 
+   * @returns {string | null} User ID or null if not logged in
    */
   getCurrentUserId(): string | null {
     return this.currentSession?.userId || null;
   }
 
   /**
-   * Encrypt a new entry for the current user
-   */
-  /**
    * Encrypt an entry with an existing entry key (for updates)
-   * This maintains key consistency while generating a new content nonce
+   * 
+   * This maintains key consistency while generating a new content nonce.
+   * Used when updating existing entries to preserve sharing relationships.
+   * 
+   * @param {EntryObject} entryObject - The entry data to encrypt
+   * @param {string} existingEncryptedEntryKeyB64 - Existing encrypted entry key
+   * @param {string} existingKeyNonceB64 - Existing key nonce
+   * @returns {Promise<EncryptedEntryData | null>} Encrypted entry data or null if failed
+   * 
+   * @example
+   * ```typescript
+   * const encrypted = await e2eEncryptionService.encryptEntryWithExistingKey(
+   *   entryObject,
+   *   existingKey,
+   *   existingNonce
+   * );
+   * ```
    */
   async encryptEntryWithExistingKey(
     entryObject: EntryObject, 
@@ -534,6 +724,26 @@ export class E2EEncryptionService {
     }
   }
 
+  /**
+   * Encrypt a new entry for the current user
+   * 
+   * Creates a new encrypted entry with a fresh entry key.
+   * Used for newly created entries.
+   * 
+   * @param {EntryObject} entryObject - The entry data to encrypt
+   * @returns {EncryptedEntryData | null} Encrypted entry data or null if failed
+   * 
+   * @example
+   * ```typescript
+   * const entryObject = {
+   *   title: 'My Entry',
+   *   content: 'Entry content...',
+   *   frontmatter: {},
+   *   tags: ['personal']
+   * };
+   * const encrypted = e2eEncryptionService.encryptEntry(entryObject);
+   * ```
+   */
   encryptEntry(entryObject: EntryObject): EncryptedEntryData | null {
     if (!this.currentSession || !this.currentSession.isUnlocked) {
       console.error('Cannot encrypt entry - session not unlocked');
@@ -555,6 +765,24 @@ export class E2EEncryptionService {
 
   /**
    * Decrypt an entry (owned or shared)
+   * 
+   * Decrypts an encrypted entry using the current user's keys.
+   * Works for both self-owned entries and entries shared with the user.
+   * 
+   * @param {EncryptedEntryData} encryptedData - The encrypted entry data
+   * @param {string} authorPublicKeyB64 - Public key of the entry's author
+   * @returns {EntryObject | null} Decrypted entry object or null if failed
+   * 
+   * @example
+   * ```typescript
+   * const decrypted = e2eEncryptionService.decryptEntry(
+   *   encryptedData,
+   *   authorPublicKey
+   * );
+   * if (decrypted) {
+   *   console.log('Entry title:', decrypted.title);
+   * }
+   * ```
    */
   decryptEntry(encryptedData: EncryptedEntryData, authorPublicKeyB64: string): EntryObject | null {
     if (!this.currentSession || !this.currentSession.isUnlocked) {
@@ -635,6 +863,23 @@ export class E2EEncryptionService {
 
   /**
    * Re-wrap an entry key for sharing with another user
+   * 
+   * Takes an encrypted entry key and re-encrypts it for a different user.
+   * Used when sharing entries with other users.
+   * 
+   * @param {string} encryptedEntryKey - The encrypted entry key to re-wrap
+   * @param {string} keyNonce - The nonce used with the entry key
+   * @param {string} recipientPublicKeyB64 - Public key of the recipient user
+   * @returns {Object | null} New encrypted key and nonce for recipient, or null if failed
+   * 
+   * @example
+   * ```typescript
+   * const rewrapped = e2eEncryptionService.rewrapEntryKeyForUser(
+   *   encryptedKey,
+   *   keyNonce,
+   *   recipientPublicKey
+   * );
+   * ```
    */
   rewrapEntryKeyForUser(
     encryptedEntryKey: string,
@@ -672,6 +917,18 @@ export class E2EEncryptionService {
 
   /**
    * Generate content hashes for indexing
+   * 
+   * Creates searchable hashes from entry content for server-side indexing
+   * without revealing the actual content.
+   * 
+   * @param {EntryObject} entryObject - The entry to generate hashes for
+   * @returns {Object} Object containing title, content, and preview hashes
+   * 
+   * @example
+   * ```typescript
+   * const hashes = e2eEncryptionService.generateHashes(entryObject);
+   * console.log('Title hash:', hashes.titleHash);
+   * ```
    */
   generateHashes(entryObject: EntryObject): {
     titleHash: string;
@@ -687,6 +944,10 @@ export class E2EEncryptionService {
 
   /**
    * Create encryption metadata for database storage
+   * 
+   * Generates metadata about the encryption process for storage with the entry.
+   * 
+   * @returns {Record<string, any>} Encryption metadata object
    */
   createEncryptionMetadata(): Record<string, any> {
     return EntryCryptor.createEncryptionMetadata();
@@ -694,6 +955,11 @@ export class E2EEncryptionService {
 
   /**
    * Validate encrypted entry data structure
+   * 
+   * Checks if an object has the correct structure for encrypted entry data.
+   * 
+   * @param {any} data - Data to validate
+   * @returns {boolean} True if data is valid EncryptedEntryData
    */
   validateEncryptedEntryData(data: any): data is EncryptedEntryData {
     return EntryCryptor.validateEncryptedEntryData(data);
@@ -701,6 +967,21 @@ export class E2EEncryptionService {
 
   /**
    * Change password - re-encrypt stored secret key
+   * 
+   * Changes the user's password by re-encrypting the stored secret key.
+   * Requires the current password for verification.
+   * 
+   * @param {string} oldPassword - Current password
+   * @param {string} newPassword - New password (minimum 8 characters)
+   * @returns {boolean} True if password change successful
+   * 
+   * @example
+   * ```typescript
+   * const success = e2eEncryptionService.changePassword(
+   *   'oldPassword',
+   *   'newSecurePassword'
+   * );
+   * ```
    */
   changePassword(oldPassword: string, newPassword: string): boolean {
     // Input validation
@@ -776,6 +1057,18 @@ export class E2EEncryptionService {
 
   /**
    * Get reactive store for UI updates
+   * 
+   * Returns a Svelte store that components can subscribe to for session state changes.
+   * 
+   * @returns {Writable<E2ESession | null>} Reactive store for session state
+   * 
+   * @example
+   * ```typescript
+   * import { e2eEncryptionService } from './services/e2e-encryption.service';
+   * 
+   * // In a Svelte component
+   * $: session = e2eEncryptionService.store;
+   * ```
    */
   get store() {
     return this.sessionStore;

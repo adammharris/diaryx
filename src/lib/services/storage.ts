@@ -1,5 +1,25 @@
 /**
- * Unified storage service for Diaryx
+ * Unified Storage Service for Diaryx
+ * 
+ * Provides a unified interface for journal entry storage across different environments.
+ * Supports both local storage (Tauri filesystem + IndexedDB cache, or IndexedDB only for web)
+ * and cloud synchronization with end-to-end encryption.
+ * 
+ * @description This service automatically detects the environment (Tauri vs web) and adapts
+ * storage mechanisms accordingly. It handles entry CRUD operations, file watching,
+ * cloud publishing/syncing, and maintains metadata caches for performance.
+ * 
+ * @example
+ * ```typescript
+ * // Get all entries
+ * const entries = await storageService.getAllEntries();
+ * 
+ * // Create a new entry
+ * const entryId = await storageService.createEntry('My Journal Entry');
+ * 
+ * // Save entry content
+ * await storageService.saveEntry(entryId, 'Entry content...');
+ * ```
  */
 
 import {
@@ -33,6 +53,12 @@ import { entrySharingService } from './entry-sharing.service';
 import { tagSyncService, type TagSyncResult } from './tag-sync.service';
 import { tagService } from './tag.service';
 
+/**
+ * Main storage service class providing unified entry management
+ * 
+ * Handles storage operations across different platforms and manages
+ * synchronization between local storage and cloud services.
+ */
 class StorageService {
 	public environment: StorageEnvironment;
 	private db: IDBPDatabase<DBSchema> | null = null;
@@ -56,6 +82,14 @@ class StorageService {
 		// Removed old encryption service callback setup
 	}
 
+	/**
+	 * Get the journal storage path for display purposes
+	 * 
+	 * Returns a user-friendly representation of where journal files are stored.
+	 * In Tauri mode, this is typically ~/Documents/Diaryx/
+	 * 
+	 * @returns {string} Display path for journal storage location
+	 */
 	public getJournalPath(): string {
 		if (this.environment === 'tauri') {
 			// In Tauri, the journal folder is relative to the user's documents directory
@@ -67,6 +101,15 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Detect the current runtime environment
+	 * 
+	 * Determines whether the app is running in Tauri (desktop), web browser,
+	 * or build/SSR environment and adapts storage accordingly.
+	 * 
+	 * @private
+	 * @returns {StorageEnvironment} The detected environment type
+	 */
 	private detectEnvironment(): StorageEnvironment {
 		if (typeof window === 'undefined' || typeof document === 'undefined') {
 			return 'build';
@@ -74,6 +117,15 @@ class StorageService {
 		return detectTauri() ? 'tauri' : 'web';
 	}
 
+	/**
+	 * Initialize IndexedDB database for caching and web storage
+	 * 
+	 * Creates or upgrades the IndexedDB schema for storing entries,
+	 * metadata, and cloud mappings.
+	 * 
+	 * @private
+	 * @returns {Promise<IDBPDatabase<DBSchema>>} Initialized database connection
+	 */
 	private async initDB(): Promise<IDBPDatabase<DBSchema>> {
 		if (!this.db) {
 			this.db = await openDB<DBSchema>(this.dbName, this.dbVersion, {
@@ -95,6 +147,20 @@ class StorageService {
 		return this.db;
 	}
 
+	/**
+	 * Get all journal entries metadata
+	 * 
+	 * Retrieves metadata for all entries, trying filesystem first in Tauri mode,
+	 * falling back to cache if needed. Updates the metadata store for UI reactivity.
+	 * 
+	 * @returns {Promise<JournalEntryMetadata[]>} Array of entry metadata sorted by modification date
+	 * 
+	 * @example
+	 * ```typescript
+	 * const entries = await storageService.getAllEntries();
+	 * console.log(`Found ${entries.length} entries`);
+	 * ```
+	 */
 	async getAllEntries(): Promise<JournalEntryMetadata[]> {
 		if (this.environment === 'build') {
 			return [];
@@ -123,6 +189,23 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Get a specific journal entry by ID
+	 * 
+	 * Retrieves the full entry content, trying filesystem first in Tauri mode,
+	 * falling back to cache if the file is unavailable.
+	 * 
+	 * @param {string} id - The unique identifier for the entry
+	 * @returns {Promise<JournalEntry | null>} The complete entry or null if not found
+	 * 
+	 * @example
+	 * ```typescript
+	 * const entry = await storageService.getEntry('2024-01-15T10-30-45');
+	 * if (entry) {
+	 *   console.log('Entry content:', entry.content);
+	 * }
+	 * ```
+	 */
 	async getEntry(id: string): Promise<JournalEntry | null> {
 		if (this.environment === 'build') {
 			return null;
@@ -144,6 +227,24 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Save entry content
+	 * 
+	 * Saves the entry content to the appropriate storage (filesystem in Tauri,
+	 * IndexedDB in web) and updates the cache and metadata.
+	 * 
+	 * @param {string} id - The entry identifier
+	 * @param {string} content - The entry content to save
+	 * @returns {Promise<boolean>} True if save was successful
+	 * 
+	 * @example
+	 * ```typescript
+	 * const success = await storageService.saveEntry(
+	 *   'my-entry-id',
+	 *   '# My Entry\nThis is the content...'
+	 * );
+	 * ```
+	 */
 	async saveEntry(id: string, content: string): Promise<boolean> {
 		if (this.environment === 'build') {
 			return false;
@@ -171,6 +272,23 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Create a new journal entry
+	 * 
+	 * Creates a new entry with the given title, generating a unique ID
+	 * and initializing the entry in the appropriate storage.
+	 * 
+	 * @param {string} title - The title for the new entry
+	 * @returns {Promise<string | null>} The generated entry ID or null if creation failed
+	 * 
+	 * @example
+	 * ```typescript
+	 * const entryId = await storageService.createEntry('My New Journal Entry');
+	 * if (entryId) {
+	 *   // Entry created successfully, can now edit it
+	 * }
+	 * ```
+	 */
 	async createEntry(title: string): Promise<string | null> {
 		if (this.environment === 'build') {
 			return null;
@@ -183,6 +301,23 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Delete an entry
+	 * 
+	 * Deletes an entry from both local storage and cloud (if published).
+	 * This operation is irreversible.
+	 * 
+	 * @param {string} id - The entry identifier to delete
+	 * @returns {Promise<boolean>} True if deletion was successful
+	 * 
+	 * @example
+	 * ```typescript
+	 * const deleted = await storageService.deleteEntry('old-entry-id');
+	 * if (deleted) {
+	 *   console.log('Entry deleted successfully');
+	 * }
+	 * ```
+	 */
 	async deleteEntry(id: string): Promise<boolean> {
 		if (this.environment === 'build') {
 			return false;
@@ -194,6 +329,13 @@ class StorageService {
 
 	/**
 	 * Delete an entry with proper cloud synchronization
+	 * 
+	 * Internal method that handles deletion from both local storage and cloud,
+	 * ensuring proper cleanup of sharing relationships and cloud mappings.
+	 * 
+	 * @private
+	 * @param {string} id - The entry identifier to delete
+	 * @returns {Promise<boolean>} True if deletion was successful
 	 */
 	async deleteEntryWithCloudSync(id: string): Promise<boolean> {
 		return this.acquireCloudLock(id, async () => {
@@ -255,6 +397,13 @@ class StorageService {
 
 	/**
 	 * Delete an entry from the cloud server
+	 * 
+	 * Sends a DELETE request to remove the entry from the cloud backend.
+	 * Handles 404 responses gracefully (entry already deleted).
+	 * 
+	 * @private
+	 * @param {string} cloudId - The cloud UUID of the entry to delete
+	 * @returns {Promise<boolean>} True if deletion was successful or entry didn't exist
 	 */
 	private async deleteFromCloud(cloudId: string): Promise<boolean> {
 		try {
@@ -285,6 +434,24 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Rename an entry
+	 * 
+	 * Changes the title of an entry and updates its ID if necessary.
+	 * Handles both filesystem and cache updates.
+	 * 
+	 * @param {string} oldId - Current entry identifier
+	 * @param {string} newTitle - New title for the entry
+	 * @returns {Promise<string | null>} New entry ID or null if rename failed
+	 * 
+	 * @example
+	 * ```typescript
+	 * const newId = await storageService.renameEntry(
+	 *   'old-entry-id',
+	 *   'Updated Entry Title'
+	 * );
+	 * ```
+	 */
 	async renameEntry(oldId: string, newTitle: string): Promise<string | null> {
 		if (this.environment === 'build') {
 			return null;
@@ -325,6 +492,25 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Start file system watching for automatic updates
+	 * 
+	 * Sets up file system monitoring to detect external changes to journal files.
+	 * Only works in Tauri mode. Filters out read-only access events.
+	 * 
+	 * @param {Function} onChange - Callback function for file changes
+	 * @param {string[]} onChange.changedFiles - Array of changed file paths
+	 * @param {string} onChange.eventType - Type of file system event
+	 * @returns {Promise<void>}
+	 * 
+	 * @example
+	 * ```typescript
+	 * await storageService.startFileWatching((files, type) => {
+	 *   console.log(`Files ${type}:`, files);
+	 *   // Refresh UI or reload entries
+	 * });
+	 * ```
+	 */
 	async startFileWatching(
 		onChange: (changedFiles?: string[], eventType?: string) => void
 	): Promise<void> {
@@ -389,6 +575,16 @@ class StorageService {
 		}
 	}
 
+	/**
+	 * Stop file system watching
+	 * 
+	 * Cleanly stops the file system watcher if it's currently active.
+	 * 
+	 * @example
+	 * ```typescript
+	 * storageService.stopFileWatching();
+	 * ```
+	 */
 	stopFileWatching(): void {
 		if (this.fileWatcher) {
 			this.fileWatcher();
@@ -397,6 +593,15 @@ class StorageService {
 	}
 
 	// Tauri-specific methods
+	/**
+	 * Get entries from Tauri filesystem
+	 * 
+	 * Reads journal files directly from the filesystem and generates metadata.
+	 * Only used in Tauri environment.
+	 * 
+	 * @private
+	 * @returns {Promise<JournalEntryMetadata[]>} Array of entry metadata
+	 */
 	private async getTauriEntries(): Promise<JournalEntryMetadata[]> {
 		await this.ensureDirectoryExists();
 		const entries = await readDir(this.journalFolder, { baseDir: this.baseDir });
@@ -416,6 +621,13 @@ class StorageService {
 		);
 	}
 
+	/**
+	 * Get a single entry from Tauri filesystem
+	 * 
+	 * @private
+	 * @param {string} id - Entry identifier
+	 * @returns {Promise<JournalEntry | null>} Complete entry or null if not found
+	 */
 	private async getTauriEntry(id: string): Promise<JournalEntry | null> {
 		const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
 		if (!(await exists(filePath, { baseDir: this.baseDir }))) {
@@ -427,6 +639,14 @@ class StorageService {
 		return { id, title, content, created_at: now, modified_at: now, file_path: filePath };
 	}
 
+	/**
+	 * Save entry to Tauri filesystem
+	 * 
+	 * @private
+	 * @param {string} id - Entry identifier
+	 * @param {string} content - Entry content to save
+	 * @returns {Promise<boolean>} True if save successful
+	 */
 	private async saveTauriEntry(id: string, content: string): Promise<boolean> {
 		await this.ensureDirectoryExists();
 		const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
@@ -434,6 +654,13 @@ class StorageService {
 		return true;
 	}
 
+	/**
+	 * Create new entry in Tauri filesystem
+	 * 
+	 * @private
+	 * @param {string} title - Entry title
+	 * @returns {Promise<string | null>} Generated entry ID or null if failed
+	 */
 	private async createTauriEntry(title: string): Promise<string | null> {
 		await this.ensureDirectoryExists();
 		const filename = await this.generateUniqueFilename(title);
@@ -443,6 +670,13 @@ class StorageService {
 		return filename;
 	}
 
+	/**
+	 * Delete entry from Tauri filesystem
+	 * 
+	 * @private
+	 * @param {string} id - Entry identifier
+	 * @returns {Promise<boolean>} True if deletion successful
+	 */
 	private async deleteTauriEntry(id: string): Promise<boolean> {
 		const filePath = `${this.journalFolder}/${id}${this.fileExtension}`;
 		if (await exists(filePath, { baseDir: this.baseDir })) {
@@ -451,6 +685,14 @@ class StorageService {
 		return true;
 	}
 
+	/**
+	 * Rename entry in Tauri filesystem
+	 * 
+	 * @private
+	 * @param {string} oldId - Current entry ID
+	 * @param {string} newTitle - New title
+	 * @returns {Promise<string | null>} New entry ID or null if failed
+	 */
 	private async renameTauriEntry(oldId: string, newTitle: string): Promise<string | null> {
 		const oldFilePath = `${this.journalFolder}/${oldId}${this.fileExtension}`;
 		if (!(await exists(oldFilePath, { baseDir: this.baseDir }))) {
@@ -486,6 +728,14 @@ class StorageService {
 	}
 
 	// Web-specific methods
+	/**
+	 * Save entry in web environment (IndexedDB)
+	 * 
+	 * @private
+	 * @param {string} id - Entry identifier
+	 * @param {string} content - Entry content
+	 * @returns {Promise<boolean>} True if save successful
+	 */
 	private async saveWebEntry(id: string, content: string): Promise<boolean> {
 		const entry = await this.getCachedEntry(id);
 		if (!entry) return false;
@@ -495,6 +745,13 @@ class StorageService {
 		return true;
 	}
 
+	/**
+	 * Create entry in web environment
+	 * 
+	 * @private
+	 * @param {string} title - Entry title
+	 * @returns {Promise<string>} Generated entry ID
+	 */
 	private async createWebEntry(title: string): Promise<string> {
 		const id = this.titleToSafeFilename(title);
 		const now = new Date().toISOString();
@@ -623,7 +880,21 @@ class StorageService {
 		console.log('Cleaned up all cached data for entry:', id);
 	}
 
-	// Method to update metadata for decrypted entries with proper previews
+	/**
+	 * Update metadata for decrypted entries with proper previews
+	 * 
+	 * Updates cached metadata when an encrypted entry is decrypted,
+	 * generating proper titles and previews from the decrypted content.
+	 * 
+	 * @param {string} entryId - Entry identifier
+	 * @param {string} decryptedContent - Decrypted entry content
+	 * @returns {Promise<void>}
+	 * 
+	 * @example
+	 * ```typescript
+	 * await storageService.updateDecryptedTitle('entry-id', 'Decrypted content...');
+	 * ```
+	 */
 	async updateDecryptedTitle(entryId: string, decryptedContent: string): Promise<void> {
 		try {
 			const db = await this.initDB();
@@ -831,6 +1102,15 @@ class StorageService {
 
 	/**
 	 * Acquire a lock for cloud operations on a specific entry
+	 * 
+	 * Ensures only one cloud operation per entry runs at a time to prevent
+	 * race conditions and data corruption.
+	 * 
+	 * @private
+	 * @template T
+	 * @param {string} entryId - Entry identifier
+	 * @param {Function} operation - Async operation to execute with lock
+	 * @returns {Promise<T>} Result of the operation
 	 */
 	private async acquireCloudLock<T>(entryId: string, operation: () => Promise<T>): Promise<T> {
 		const lockKey = `cloud_${entryId}`;
@@ -854,6 +1134,22 @@ class StorageService {
 
 	/**
 	 * Publish an entry to the cloud with E2E encryption and optional tag-based sharing
+	 * 
+	 * Makes an entry available in the cloud with end-to-end encryption.
+	 * Optionally shares the entry with users based on tag assignments.
+	 * 
+	 * @param {string} entryId - Local entry identifier
+	 * @param {string[]} tagIds - Array of tag IDs for sharing (optional)
+	 * @returns {Promise<boolean>} True if publishing successful
+	 * 
+	 * @example
+	 * ```typescript
+	 * // Publish entry without sharing
+	 * await storageService.publishEntry('my-entry-id');
+	 * 
+	 * // Publish and share with users who have specific tags
+	 * await storageService.publishEntry('my-entry-id', ['tag1', 'tag2']);
+	 * ```
 	 */
 	async publishEntry(entryId: string, tagIds: string[] = []): Promise<boolean> {
 		return this.publishEntryWithSharing(entryId, tagIds);
@@ -1049,6 +1345,20 @@ class StorageService {
 
 	/**
 	 * Unpublish an entry from the cloud
+	 * 
+	 * Removes an entry from the cloud and revokes all user access.
+	 * The entry remains available locally.
+	 * 
+	 * @param {string} entryId - Local entry identifier
+	 * @returns {Promise<boolean>} True if unpublishing successful
+	 * 
+	 * @example
+	 * ```typescript
+	 * const success = await storageService.unpublishEntry('my-entry-id');
+	 * if (success) {
+	 *   console.log('Entry is now private');
+	 * }
+	 * ```
 	 */
 	async unpublishEntry(entryId: string): Promise<boolean> {
 		if (!apiAuthService.isAuthenticated()) {
@@ -1106,6 +1416,19 @@ class StorageService {
 
 	/**
 	 * Get publish status of an entry from the cloud
+	 * 
+	 * Checks whether an entry is currently published to the cloud.
+	 * 
+	 * @param {string} entryId - Local entry identifier
+	 * @returns {Promise<boolean | null>} True if published, false if not, null if error
+	 * 
+	 * @example
+	 * ```typescript
+	 * const isPublished = await storageService.getEntryPublishStatus('my-entry-id');
+	 * if (isPublished) {
+	 *   console.log('Entry is published to cloud');
+	 * }
+	 * ```
 	 */
 	async getEntryPublishStatus(entryId: string): Promise<boolean | null> {
 		if (!apiAuthService.isAuthenticated()) {
@@ -1146,6 +1469,18 @@ class StorageService {
 
 	/**
 	 * Sync an entry to cloud (update existing published entry)
+	 * 
+	 * Updates an already published entry with local changes.
+	 * Handles conflict detection and maintains encryption key consistency.
+	 * 
+	 * @param {string} entryId - Local entry identifier
+	 * @param {string[]} tagIds - Updated tag IDs for sharing
+	 * @returns {Promise<boolean>} True if sync successful
+	 * 
+	 * @example
+	 * ```typescript
+	 * const synced = await storageService.syncEntryToCloud('my-entry-id', ['tag1']);
+	 * ```
 	 */
 	async syncEntryToCloud(entryId: string, tagIds: string[] = []): Promise<boolean> {
 		if (!apiAuthService.isAuthenticated()) {
@@ -1380,6 +1715,16 @@ class StorageService {
 
 	/**
 	 * Fetch user's entries from the cloud
+	 * 
+	 * Retrieves all entries owned by the current user from the cloud backend.
+	 * 
+	 * @returns {Promise<any[]>} Array of cloud entries
+	 * 
+	 * @example
+	 * ```typescript
+	 * const cloudEntries = await storageService.fetchCloudEntries();
+	 * console.log(`Found ${cloudEntries.length} cloud entries`);
+	 * ```
 	 */
 	async fetchCloudEntries(): Promise<any[]> {
 		if (!apiAuthService.isAuthenticated()) {
@@ -1411,6 +1756,17 @@ class StorageService {
 
 	/**
 	 * Import cloud entries as local entries
+	 * 
+	 * Downloads and decrypts cloud entries, storing them locally.
+	 * Handles tag synchronization and avoids duplicate imports.
+	 * 
+	 * @returns {Promise<number>} Number of entries successfully imported
+	 * 
+	 * @example
+	 * ```typescript
+	 * const imported = await storageService.importCloudEntries();
+	 * console.log(`Imported ${imported} entries from cloud`);
+	 * ```
 	 */
 	async importCloudEntries(): Promise<number> {
 		// Prevent concurrent import operations
@@ -1692,6 +2048,8 @@ class StorageService {
 
 	/**
 	 * Check if user has E2E encryption set up by checking if they have any entries in the cloud
+	 * 
+	 * @returns {Promise<boolean>} True if user has cloud entries
 	 */
 	async hasCloudEntries(): Promise<boolean> {
 		const cloudEntries = await this.fetchCloudEntries();
@@ -1911,7 +2269,50 @@ class StorageService {
 	}
 
 	/**
+	 * Get the local entry ID from a cloud UUID (reverse mapping)
+	 * 
+	 * Finds the local identifier for an entry given its cloud UUID.
+	 * 
+	 * @param {string} cloudId - Cloud UUID
+	 * @returns {Promise<string | null>} Local entry ID or null if not found
+	 * 
+	 * @example
+	 * ```typescript
+	 * const localId = await storageService.getLocalEntryIdFromCloudId('cloud-uuid');
+	 * ```
+	 */
+	async getLocalEntryIdFromCloudId(cloudId: string): Promise<string | null> {
+		try {
+			const db = await this.initDB();
+			const transaction = db.transaction(['cloudMappings'], 'readonly');
+			const store = transaction.objectStore('cloudMappings');
+			
+			// Get all mappings and find the one with matching cloudId
+			const allMappings = await store.getAll();
+			const mapping = allMappings.find(m => m.cloudId === cloudId);
+			
+			return mapping ? mapping.localId : null;
+		} catch (error) {
+			console.error('Failed to get local entry ID from cloud ID:', error);
+			return null;
+		}
+	}
+
+	/**
 	 * Get cloud UUID for a local entry ID
+	 * 
+	 * Looks up the cloud identifier for a local entry.
+	 * 
+	 * @param {string} localId - Local entry identifier
+	 * @returns {Promise<string | null>} Cloud UUID or null if not published
+	 * 
+	 * @example
+	 * ```typescript
+	 * const cloudId = await storageService.getCloudId('local-entry-id');
+	 * if (cloudId) {
+	 *   console.log('Entry is published with cloud ID:', cloudId);
+	 * }
+	 * ```
 	 */
 	async getCloudId(localId: string): Promise<string | null> {
 		const db = await this.initDB();
@@ -1947,6 +2348,17 @@ class StorageService {
 
 	/**
 	 * Get entries shared with the current user
+	 * 
+	 * Retrieves entries that other users have shared with the current user.
+	 * Attempts to decrypt shared entries for preview generation.
+	 * 
+	 * @returns {Promise<JournalEntryMetadata[]>} Array of shared entry metadata
+	 * 
+	 * @example
+	 * ```typescript
+	 * const sharedEntries = await storageService.getSharedEntries();
+	 * console.log(`You have ${sharedEntries.length} shared entries`);
+	 * ```
 	 */
 	async getSharedEntries(): Promise<JournalEntryMetadata[]> {
 		if (!apiAuthService.isAuthenticated()) {
@@ -2016,6 +2428,19 @@ class StorageService {
 
 	/**
 	 * Get a shared entry by its cloud ID
+	 * 
+	 * Retrieves and decrypts a specific shared entry for viewing.
+	 * 
+	 * @param {string} cloudId - The cloud UUID of the shared entry
+	 * @returns {Promise<JournalEntry | null>} Decrypted entry or null if unavailable
+	 * 
+	 * @example
+	 * ```typescript
+	 * const sharedEntry = await storageService.getSharedEntry('cloud-uuid-123');
+	 * if (sharedEntry) {
+	 *   console.log('Shared entry:', sharedEntry.title);
+	 * }
+	 * ```
 	 */
 	async getSharedEntry(cloudId: string): Promise<JournalEntry | null> {
 		if (!apiAuthService.isAuthenticated()) {
@@ -2109,6 +2534,20 @@ class StorageService {
 
 	/**
 	 * Get current sync status
+	 * 
+	 * Returns information about ongoing synchronization operations.
+	 * 
+	 * @returns {Object} Sync status with inProgress flag and active operations
+	 * @returns {boolean} returns.inProgress - Whether sync is currently running
+	 * @returns {string[]} returns.activeOperations - List of active operation keys
+	 * 
+	 * @example
+	 * ```typescript
+	 * const status = storageService.getSyncStatus();
+	 * if (status.inProgress) {
+	 *   console.log('Sync in progress:', status.activeOperations);
+	 * }
+	 * ```
 	 */
 	public getSyncStatus(): { inProgress: boolean; activeOperations: string[] } {
 		return {
@@ -2119,6 +2558,14 @@ class StorageService {
 
 	/**
 	 * Cancel all ongoing sync operations (emergency stop)
+	 * 
+	 * Forcibly cancels all cloud operations. Use only in emergency situations
+	 * as this may leave operations in inconsistent states.
+	 * 
+	 * @example
+	 * ```typescript
+	 * storageService.cancelSyncOperations();
+	 * ```
 	 */
 	public cancelSyncOperations(): void {
 		console.warn('Cancelling all sync operations');
@@ -2128,6 +2575,21 @@ class StorageService {
 
 	/**
 	 * Sync frontmatter tags to backend tags for sharing
+	 * 
+	 * Synchronizes tags found in entry frontmatter with backend tag system
+	 * for proper sharing functionality.
+	 * 
+	 * @param {string} entryId - Entry identifier
+	 * @param {string[]} existingBackendTagIds - Currently assigned backend tag IDs
+	 * @returns {Promise<TagSyncResult>} Result of synchronization operation
+	 * 
+	 * @example
+	 * ```typescript
+	 * const result = await storageService.syncTagsToBackend('entry-id', ['tag1']);
+	 * if (result.success) {
+	 *   console.log('Created tags:', result.createdTags);
+	 * }
+	 * ```
 	 */
 	async syncTagsToBackend(entryId: string, existingBackendTagIds: string[] = []): Promise<TagSyncResult> {
 		try {

@@ -12,7 +12,30 @@ vite.config.ts.timestamp-*
 # Build outputs
 dist/
 target/
+docs/
+
+# TypeDoc/JSDoc generated files and directories
+docs/assets/
+docs/modules/
+docs/classes/
+docs/interfaces/
+docs/functions/
+docs/variables/
+docs/enums/
+docs/typealiases/
+docs/README.md
+.typedoc/
 
 # Cache files
 .vite
 .vercel
+
+# Storybook
+*storybook.log
+storybook-static
+.storybook-out/
+.storybook-build/
+
+# Coverage reports
+coverage/
+*.coverage.*
