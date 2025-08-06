@@ -177,7 +177,7 @@ jobs:
       - name: Deploy to docs repository
         uses: peaceiris/actions-gh-pages@v3
         with:
-          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          github_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           external_repository: adammharris/diaryx-docs
           publish_dir: ./docs-site
           publish_branch: gh-pages
