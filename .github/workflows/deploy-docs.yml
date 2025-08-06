@@ -1,0 +1,178 @@
+# GitHub Action for building and deploying documentation to separate docs repository
+
+name: Deploy Documentation to GitHub Pages
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push events but only for the "main" branch
+  push:
+    branches: ["main"]
+    paths:
+      - 'src/lib/services/**'
+      - 'src/lib/utils/**'
+      - 'src/lib/crypto/**'
+      - 'src/lib/storage/**'
+      - 'src/lib/stores/**'
+      - 'src/lib/config/**'
+      - 'typedoc.json'
+      - 'docs-readme.md'
+      - '.storybook/**'
+      - 'src/lib/components/**/*.stories.@(js|ts|svelte)'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This job handles the documentation build and deploy process
+  deploy-docs:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout Repository
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Setup Bun
+      # Installs the Bun runtime for building the project
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest 
+
+      # 3. Configure GitHub Pages
+      # Configures the environment for GitHub Pages deployment
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      # 4. Install Dependencies
+      # Installs the project dependencies using Bun's fast installer
+      - name: Install dependencies
+        run: bun install
+
+      # 5. Build TypeDoc Documentation
+      # Runs TypeDoc to generate API documentation
+      - name: Build TypeDoc
+        run: bun run docs
+
+      # 6. Build Storybook Documentation
+      # Runs Storybook to generate component documentation
+      - name: Build Storybook
+        run: bun run build-storybook
+
+      # 7. Create Combined Documentation Structure
+      # Creates a unified documentation structure with both TypeDoc and Storybook
+      - name: Create Documentation Structure
+        run: |
+          # Create the main documentation directory
+          mkdir -p docs-site
+          
+          # Copy TypeDoc documentation to root
+          cp -r docs/* docs-site/
+          
+          # Copy Storybook to subdirectory
+          mkdir -p docs-site/storybook
+          cp -r storybook-static/* docs-site/storybook/
+          
+          # Create CNAME file for custom domain
+          echo "docs.diaryx.net" > docs-site/CNAME
+          
+          # Create navigation index
+          cat > docs-site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Diaryx Documentation</title>
+            <style>
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+              }
+              .container {
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                padding: 40px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+              }
+              h1 {
+                color: #333;
+                text-align: center;
+                margin-bottom: 40px;
+              }
+              .nav-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                margin-top: 30px;
+              }
+              .nav-card {
+                padding: 30px;
+                border: 2px solid #e1e4e8;
+                border-radius: 8px;
+                text-align: center;
+                transition: all 0.3s ease;
+                text-decoration: none;
+                color: #0366d6;
+              }
+              .nav-card:hover {
+                border-color: #0366d6;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+              }
+              .nav-card h2 {
+                margin: 0 0 10px 0;
+                font-size: 24px;
+              }
+              .nav-card p {
+                margin: 0;
+                color: #586069;
+                line-height: 1.5;
+              }
+              .nav-card .icon {
+                font-size: 48px;
+                margin-bottom: 15px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>📚 Diaryx Documentation</h1>
+              <p style="text-align: center; color: #586069; font-size: 18px;">
+                Welcome to the complete documentation for Diaryx. Choose from the following resources:
+              </p>
+              
+              <div class="nav-grid">
+                <a href="modules.html" class="nav-card">
+                  <div class="icon">🔧</div>
+                  <h2>API Documentation</h2>
+                  <p>Complete API reference for all services, utilities, and components</p>
+                </a>
+                
+                <a href="storybook/index.html" class="nav-card">
+                  <div class="icon">🎨</div>
+                  <h2>Component Stories</h2>
+                  <p>Interactive examples and documentation for all UI components</p>
+                </a>
+              </div>
+            </div>
+          </body>
+          </html>
+          EOF
+
+      # 8. Deploy to docs repository
+      # Push the built documentation to the separate diaryx-docs repository
+      - name: Deploy to docs repository
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          external_repository: adammharris/diaryx-docs
+          publish_dir: ./docs-site
+          publish_branch: gh-pages

@@ -17,7 +17,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "docs:all": "bun run docs && bun run build-storybook",
-    "docs:serve-all": "bun run docs:all && echo 'TypeDoc: http://localhost:8080' && echo 'Storybook: http://localhost:8081' && cd storybook-static && python3 -m http.server 8081 & cd docs && python3 -m http.server 8080"
+    "docs:serve-all": "bun run docs:all && echo 'TypeDoc: http://localhost:8080' && echo 'Storybook: http://localhost:8081' && cd storybook-static && python3 -m http.server 8081 & cd docs && python3 -m http.server 8080",
+    "docs:deploy": "bun run docs:all && mkdir -p docs-site && cp -r docs/* docs-site/ && cp storybook-static/index.html docs-site/storybook.html"
   },
   "license": "MIT",
   "dependencies": {
