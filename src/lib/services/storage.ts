@@ -906,7 +906,6 @@ class StorageService {
 
 			// Generate preview from decrypted content
 			const preview = PreviewService.createPreview(decryptedContent);
-			console.log('Generated new preview for unlocked entry:', entryId, preview.substring(0, 50) + '...');
 
 			// Create a temporary entry object for title extraction
 			const tempEntry: JournalEntry = {
@@ -931,7 +930,6 @@ class StorageService {
 			// Notify metadata store of the update
 			metadataStore.updateEntryMetadata(entryId, updatedMetadata);
 
-			console.log('Updated metadata for unlocked entry:', entryId);
 		} catch (error) {
 			console.error('Failed to update decrypted metadata:', error);
 		}

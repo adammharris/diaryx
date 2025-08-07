@@ -1,28 +1,22 @@
 <script lang="ts">
-    import SvelteMarkdown from 'svelte-markdown';
-    import type { EditorContentProps } from './editor-types';
-    import { scrollToCursor } from './mobile-utils';
+    import SvelteMarkdown from "svelte-markdown";
+    import type { EditorContentProps } from "./editor-types";
+    import { scrollToCursor } from "./mobile-utils";
 
-    let { 
-        content,
+    let {
+        content = $bindable(), // Make content bindable for two-way binding
         isPreview,
         isLoading,
         isEntryLocked,
         isMobile,
         textareaFocused,
-        onContentChange,
         onTextareaFocus,
         onTextareaBlur,
         onTextareaInput,
         onTextareaClick,
         onUnlockEntry,
-        textareaElement = $bindable()
+        textareaElement = $bindable(),
     }: EditorContentProps = $props();
-
-    function handleContentChange(event: Event) {
-        const target = event.target as HTMLTextAreaElement;
-        onContentChange(target.value);
-    }
 
     function handleTextareaFocus(event: FocusEvent) {
         const target = event.target as HTMLTextAreaElement;
@@ -67,16 +61,26 @@
     {:else if isEntryLocked}
         <div class="locked-state">
             <div class="lock-icon-container">
-                <img src="/material-symbols--lock.svg" class="lock-icon" alt="Locked" />
+                <img
+                    src="/material-symbols--lock.svg"
+                    class="lock-icon"
+                    alt="Locked"
+                />
             </div>
             <h3 class="locked-title">Entry is Encrypted</h3>
-            <p class="locked-description">This entry is encrypted and requires a password to view or edit.</p>
-            <button 
+            <p class="locked-description">
+                This entry is encrypted and requires a password to view or edit.
+            </p>
+            <button
                 class="btn btn-unlock-large"
                 onclick={handleUnlockClick}
                 type="button"
             >
-                <img src="/material-symbols--lock-open-right.svg" class="icon" alt="Unlock" />
+                <img
+                    src="/material-symbols--lock-open-right.svg"
+                    class="icon"
+                    alt="Unlock"
+                />
                 Unlock Entry
             </button>
         </div>
@@ -128,8 +132,12 @@
     }
 
     @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
     }
 
     .loading-text {
@@ -200,7 +208,8 @@
         padding: 1.5rem;
         border: none;
         resize: none;
-        font-family: 'SF Mono', 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace;
+        font-family:
+            "SF Mono", "Cascadia Code", "Roboto Mono", "Courier New", monospace;
         font-size: 0.875rem;
         line-height: 1.6;
         background: var(--color-surface);
@@ -269,7 +278,9 @@
         background: var(--color-background);
         padding: 0.125rem 0.25rem;
         border-radius: 3px;
-        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        font-family:
+            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+            "Courier New", monospace;
         font-size: 0.875em;
     }
 

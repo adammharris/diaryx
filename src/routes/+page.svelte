@@ -513,7 +513,6 @@
 
 
   async function handleSelectEntry(event: { id: string }) {
-    console.log('handleSelectEntry called for id:', event.id);
     const entryId = event.id;
     
     try {
@@ -611,12 +610,9 @@
     // Update metadata for the entry (no encryption to worry about)
     try {
       await storageService.updateDecryptedTitle(data.id, data.content);
-      console.log('Updated storage metadata for entry:', data.id);
     } catch (error) {
       console.error('Failed to update metadata:', error);
     }
-    
-    console.log('Entry saved, suppression set for', data.id);
   }
 
 

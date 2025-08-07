@@ -304,23 +304,30 @@ export const AutosaveDemo: Story = {
     storageService: {
       ...mockStorageService,
       saveEntry: async (id: string, content: string) => {
-        console.log(`💾 Autosaving entry ${id} (${content.length} characters)`);
+        console.log(`🔄 Starting autosave for entry ${id}...`);
+        console.log(`📝 Content length: ${content.length} characters`);
+        console.log(`⏱️  Simulating save delay (800ms)...`);
         await new Promise(resolve => setTimeout(resolve, 800));
+        console.log(`💾 Autosave completed successfully!`);
         return true;
       }
     },
     entryId: mockEntries.existingEntry.id,
     preloadedEntry: {
       ...mockEntries.existingEntry,
-      content: 'Start typing to see autosave in action...'
+      content: '# Autosave Test\n\nStart typing here to see autosave in action after 1.5 seconds of inactivity...\n\nTry typing something and watch the console and footer status!'
     },
     onclose: mockActions.onclose,
     onsaved: (data) => {
-      console.log(`✅ Entry saved: ${data.id} (${data.content.length} characters)`);
+      console.log(`✅ Save callback triggered: ${data.id}`);
+      console.log(`📊 Final content: ${data.content.length} characters`);
+      console.log(`🎯 Content preview: "${data.content.substring(0, 50)}${data.content.length > 50 ? '...' : ''}"`);
     },
     onrenamed: mockActions.onrenamed,
     onpublishtoggle: mockActions.onpublishtoggle,
-    onerror: mockActions.onerror,
+    onerror: (data) => {
+      console.error(`❌ Save error: ${data.title} - ${data.message}`);
+    },
     onkeyboardtoggle: mockActions.onkeyboardtoggle,
   },
 };
@@ -359,7 +366,14 @@ export const TitleEditingDemo: Story = {
  */
 export const InteractiveDemo: Story = {
   args: {
-    storageService: mockStorageService,
+    storageService: {
+      ...mockStorageService,
+      saveEntry: async (id: string, content: string) => {
+        console.log(`💾 Interactive demo autosave: ${content.split(' ').length} words`);
+        await new Promise(resolve => setTimeout(resolve, 600));
+        return true;
+      }
+    },
     entryId: mockEntries.existingEntry.id,
     preloadedEntry: {
       ...mockEntries.existingEntry,
@@ -376,7 +390,8 @@ This story demonstrates all the features of the refactored Editor component:
 5. **Mobile experience** - Switch to mobile viewport
 
 ## Content editing:
-- Type here to see **autosave** in action
+- Type here to see **autosave** in action (1.5s delay)
+- Watch the footer status: idle → saving → saved
 - The word count updates in real-time
 - Try adding *markdown* formatting
 
@@ -387,10 +402,10 @@ This story demonstrates all the features of the refactored Editor component:
 
 ---
 
-*This content will autosave as you type!*`
+*This content will autosave as you type! Check the console and footer for save status.*`
     },
     onclose: () => console.log('🚪 Editor closed - would return to entry list'),
-    onsaved: (data) => console.log(`💾 Auto-saved: ${data.content.split(' ').length} words`),
+    onsaved: (data) => console.log(`✅ Interactive demo saved: ${data.content.split(' ').length} words, ${data.content.length} chars`),
     onrenamed: (data) => console.log(`✏️  Renamed from "${data.oldId}" to "${data.newId}"`),
     onpublishtoggle: (data) => console.log(`📢 ${data.publish ? 'Published' : 'Unpublished'} entry with tags: ${data.tagIds?.join(', ') || 'none'}`),
     onerror: (data) => console.error(`⚠️  ${data.title}: ${data.message}`),
