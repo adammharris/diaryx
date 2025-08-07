@@ -36,7 +36,7 @@
  */
 
 import nacl from 'tweetnacl';
-import { decodeUTF8, encodeBase64, decodeBase64 } from 'tweetnacl-util';
+import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
 import type { UserKeyPair } from './KeyManager.js';
 
 /**

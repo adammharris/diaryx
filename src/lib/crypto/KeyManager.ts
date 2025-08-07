@@ -37,7 +37,7 @@
  */
 
 import nacl from 'tweetnacl';
-import { encodeUTF8, decodeUTF8, encodeBase64, decodeBase64 } from 'tweetnacl-util';
+import { encodeUTF8, encodeBase64, decodeBase64 } from 'tweetnacl-util';
 
 /**
  * User key pair in binary format

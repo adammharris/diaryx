@@ -73,8 +73,22 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if isVisible && entry}
-    <div class="modal-overlay" onclick={handleBackdropClick}>
-        <div class="modal-content">
+    <div 
+        class="modal-overlay" 
+        onclick={handleBackdropClick} 
+        onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') handleBackdropClick(); }} 
+        role="button" 
+        tabindex="0" 
+        aria-label="Close modal by clicking outside"
+    >
+        <div 
+            class="modal-content" 
+            onclick={(e: Event) => e.stopPropagation()} 
+            onkeydown={(e: KeyboardEvent) => e.stopPropagation()} 
+            role="dialog" 
+            aria-modal="true"
+            tabindex="-1"
+        >
             <div class="modal-header">
                 <div class="entry-header">
                     <h1 class="entry-title">{entry.title}</h1>
@@ -198,7 +212,6 @@
         gap: 0.5rem;
     }
 
-    .share-btn,
     .close-btn {
         background: none;
         border: none;
@@ -216,20 +229,10 @@
         transition: all 0.2s;
     }
 
-    .share-btn:hover,
     .close-btn:hover {
         background: var(--color-border);
         color: var(--color-text);
         transform: scale(1.05);
-    }
-
-    .share-btn {
-        color: var(--color-primary);
-    }
-
-    .share-btn:hover {
-        background: var(--color-primaryShadow);
-        color: var(--color-primary);
     }
 
     .modal-body {

@@ -4,10 +4,10 @@
         FrontmatterService,
         type ParsedContent,
     } from "../storage/frontmatter.service";
-    import { detectTauri } from '../utils/tauri.js';
-    import { save } from '@tauri-apps/plugin-dialog';
-    import { writeTextFile } from '@tauri-apps/plugin-fs';
-    import ShareLink from './ShareLink.svelte';
+    import { detectTauri } from "../utils/tauri.js";
+    import { save } from "@tauri-apps/plugin-dialog";
+    import { writeTextFile } from "@tauri-apps/plugin-fs";
+    import ShareLink from "./ShareLink.svelte";
 
     interface Props {
         entry: JournalEntry | null;
@@ -96,8 +96,8 @@
                 const filePath = await save({
                     filters: [
                         {
-                            name: 'Markdown',
-                            extensions: ['md'],
+                            name: "Markdown",
+                            extensions: ["md"],
                         },
                     ],
                     defaultPath: filename,
@@ -105,7 +105,9 @@
 
                 if (filePath) {
                     await writeTextFile(filePath, content);
-                    console.log(`Exported entry "${entry.title}" to ${filePath}`);
+                    console.log(
+                        `Exported entry "${entry.title}" to ${filePath}`,
+                    );
                 }
             } else {
                 // Web environment - use blob download
@@ -126,7 +128,7 @@
                 console.log(`Exported entry "${entry.title}" as ${filename}`);
             }
         } catch (error) {
-            console.error('Export failed:', error);
+            console.error("Export failed:", error);
             // TODO: Show user-friendly error message
         }
     }
@@ -158,11 +160,15 @@
                     <h3>Basic Information</h3>
                     <div class="grid grid-cols-1 gap-3">
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">Title:</span>
+                            <span class="font-medium text-secondary"
+                                >Title:</span
+                            >
                             <span class="text-right">{entry.title}</span>
                         </div>
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">Created:</span>
+                            <span class="font-medium text-secondary"
+                                >Created:</span
+                            >
                             <span class="text-right text-sm"
                                 >{new Date(
                                     entry.created_at,
@@ -170,7 +176,9 @@
                             >
                         </div>
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">Modified:</span>
+                            <span class="font-medium text-secondary"
+                                >Modified:</span
+                            >
                             <span class="text-right text-sm"
                                 >{new Date(
                                     entry.modified_at,
@@ -178,8 +186,11 @@
                             >
                         </div>
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">File Path:</span>
-                            <span class="text-right text-sm font-mono truncate max-w-xs"
+                            <span class="font-medium text-secondary"
+                                >File Path:</span
+                            >
+                            <span
+                                class="text-right text-sm font-mono truncate max-w-xs"
                                 >{entry.file_path || "N/A"}</span
                             >
                         </div>
@@ -191,19 +202,25 @@
                     <h3>Content Statistics</h3>
                     <div class="grid grid-cols-1 gap-3">
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">Word Count:</span>
+                            <span class="font-medium text-secondary"
+                                >Word Count:</span
+                            >
                             <span class="text-right font-mono"
                                 >{wordCount.toLocaleString()}</span
                             >
                         </div>
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">Character Count:</span>
+                            <span class="font-medium text-secondary"
+                                >Character Count:</span
+                            >
                             <span class="text-right font-mono"
                                 >{characterCount.toLocaleString()}</span
                             >
                         </div>
                         <div class="flex justify-between">
-                            <span class="font-medium text-secondary">Has Frontmatter:</span>
+                            <span class="font-medium text-secondary"
+                                >Has Frontmatter:</span
+                            >
                             <span class="text-right"
                                 >{parsedContent?.hasFrontmatter
                                     ? "Yes"
@@ -219,7 +236,10 @@
                         <h3>Tags</h3>
                         <div class="flex flex-wrap gap-2">
                             {#each tags as tag}
-                                <span class="px-2 py-1 bg-accent text-sm rounded border">{tag}</span>
+                                <span
+                                    class="px-2 py-1 bg-accent text-sm rounded border"
+                                    >{tag}</span
+                                >
                             {/each}
                         </div>
                     </section>
@@ -232,7 +252,9 @@
                         <div class="grid grid-cols-1 gap-3">
                             {#each metadataInfo as meta}
                                 <div class="flex justify-between">
-                                    <span class="font-medium text-secondary">{meta.key}:</span>
+                                    <span class="font-medium text-secondary"
+                                        >{meta.key}:</span
+                                    >
                                     <span
                                         class="text-right text-sm"
                                         class:font-mono={meta.type === "array"}
@@ -249,7 +271,8 @@
                 {#if parsedContent?.hasFrontmatter && Object.keys(parsedContent.frontmatter).length > 0}
                     <section class="form-section">
                         <h3>Raw Frontmatter</h3>
-                        <pre class="bg-background p-3 rounded text-sm font-mono overflow-x-auto">{JSON.stringify(
+                        <pre
+                            class="bg-background p-3 rounded text-sm font-mono overflow-x-auto">{JSON.stringify(
                                 parsedContent.frontmatter,
                                 null,
                                 2,
@@ -291,12 +314,4 @@
     </div>
 {/if}
 
-<ShareLink 
-    entry={entry}
-    isVisible={showShareDialog}
-    onclose={handleCloseShare}
-/>
-
-<style>
-    /* Component-specific styles that can't be replaced with utility classes - InfoModal uses extracted styles */
-</style>
+<ShareLink {entry} isVisible={showShareDialog} onclose={handleCloseShare} />

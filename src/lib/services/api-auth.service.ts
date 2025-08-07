@@ -34,7 +34,6 @@ import { VITE_API_BASE_URL, VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_REDIRECT_URI } fr
 
 // Import Tauri plugins - these modules may not exist in web environment
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { fetch } from '../utils/fetch.js';
 import { info as tauriInfo, error as tauriError } from '@tauri-apps/plugin-log';
 

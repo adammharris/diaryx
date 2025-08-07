@@ -1,6 +1,13 @@
 <script lang="ts">
     import { browser } from '$app/environment';
     import { onMount } from 'svelte';
+    import type { Snippet } from 'svelte';
+
+    interface Props {
+        children: Snippet;
+    }
+
+    let { children }: Props = $props();
 
     // Import theme system but use minimal theming for public pages
     let isDarkMode = $state(false);
@@ -71,7 +78,7 @@
 </svelte:head>
 
 <main class="share-layout">
-    <slot />
+    {@render children()}
 </main>
 
 <style>

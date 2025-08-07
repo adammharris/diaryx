@@ -410,7 +410,7 @@ class EntrySharingService {
   /**
    * Get reactive store for access keys
    */
-  get accessKeysStore() {
+  get accessKeysStoreReadable() {
     return this.accessKeysStore;
   }
 

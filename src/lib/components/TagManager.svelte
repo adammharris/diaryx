@@ -165,6 +165,7 @@
     <div 
         class="modal-content tag-manager-modal"
         onclick={(e: Event) => e.stopPropagation()}
+        onkeydown={(e: KeyboardEvent) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="tag-manager-title"
