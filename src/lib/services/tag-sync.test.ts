@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { tagSyncService } from './tag-sync.service';
+import { apiAuthService } from './api-auth.service';
 
 // Mock the tag service
 vi.mock('./tag.service', () => ({
@@ -22,6 +23,8 @@ describe('TagSyncService', () => {
     // Clear any cached metadata
     tagSyncService.clearSyncMetadata();
     vi.clearAllMocks();
+  // Default to authenticated for tests unless explicitly overridden in a test
+  (apiAuthService as any).isAuthenticated = () => true;
   });
 
   describe('getFrontmatterTags', () => {
@@ -166,12 +169,8 @@ Content.`;
     });
 
     it('should handle missing authentication gracefully', async () => {
-      // Mock unauthenticated state
-      vi.doMock('./api-auth.service', () => ({
-        apiAuthService: {
-          isAuthenticated: () => false
-        }
-      }));
+      // Force unauthenticated state
+      (apiAuthService as any).isAuthenticated = () => false;
 
       const content = `---
 tags: [work]
@@ -181,8 +180,8 @@ Content.`;
 
       const result = await tagSyncService.syncFrontmatterToBackend('test-entry', content, []);
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('User not authenticated');
+  expect(result.success).toBe(false);
+  expect(result.error).toBe('User not authenticated');
     });
   });
 

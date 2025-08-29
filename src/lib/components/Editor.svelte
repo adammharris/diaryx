@@ -88,7 +88,7 @@
     let canPublish = $derived.by(() => {
         const auth = authSession?.isAuthenticated;
         const e2e = e2eSession?.isUnlocked;
-        return auth && e2e;
+        return !!auth && !!e2e;
     });
     let canEdit = $derived(!isEntryLocked); // Can edit if entry is not locked
 
@@ -131,12 +131,7 @@
 
     // Autosave effect
     $effect(() => {
-        if (
-            content &&
-            content !== lastSavedContent &&
-            !isLoading &&
-            !saveInProgress
-        ) {
+        if (content !== lastSavedContent && !isLoading && !saveInProgress) {
             if (saveTimeout) {
                 clearTimeout(saveTimeout);
             }
@@ -144,10 +139,10 @@
             saveTimeout = setTimeout(() => {
                 handleAutosave();
             }, AUTOSAVE_DELAY);
-
-            // Update frontmatter tags when content changes
-            updateFrontmatterTags();
         }
+
+        // Keep frontmatter tags in sync regardless of autosave
+        updateFrontmatterTags();
     });
 
     async function loadEntry() {
@@ -158,8 +153,8 @@
             return;
         }
 
-        // Don't reload if user has unsaved changes (content differs from lastSavedContent)
-        if (content && lastSavedContent && content !== lastSavedContent) {
+    // Don't reload if user has unsaved changes (even when lastSavedContent is empty)
+    if (content !== lastSavedContent) {
             return;
         }
 
@@ -202,7 +197,7 @@
             entry = rawEntry;
             editableTitle = rawEntry.title;
             // Don't overwrite content if save is in progress or if user has unsaved changes
-            if (!saveInProgress && !(content && lastSavedContent && content !== lastSavedContent)) {
+            if (!saveInProgress && content === lastSavedContent) {
                 content = rawEntry.content;
                 lastSavedContent = rawEntry.content; // Initialize lastSavedContent to prevent false autosave triggers
             }
@@ -546,14 +541,7 @@
     onCancel={handleCancelPublish}
 />
 
-<!-- Password prompt no longer needed with E2E encryption -->
-
 <style>
-    /* Main editor container styles */
-    .flex.flex-col.h-full.bg-surface.rounded-lg.shadow-lg.overflow-hidden {
-        /* Base styles are handled by Tailwind classes */
-    }
-
     /* Mobile responsive container */
     @media (max-width: 768px) {
         .flex.flex-col.h-full.bg-surface.rounded-lg.shadow-lg.overflow-hidden {

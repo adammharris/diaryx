@@ -52,7 +52,7 @@ export interface EditorContentProps {
     isEntryLocked: boolean;
     isMobile: boolean;
     textareaFocused: boolean;
-    onContentChange: (content: string) => void;
+    onContentChange?: (content: string) => void;
     onTextareaFocus: () => void;
     onTextareaBlur: () => void;
     onTextareaInput: () => void;
